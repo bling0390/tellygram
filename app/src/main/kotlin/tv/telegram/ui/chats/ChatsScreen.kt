@@ -72,6 +72,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -81,7 +82,8 @@ import coil.request.ImageRequest
 import androidx.media3.common.MediaItem as ExoMediaItem
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.ui.compose.PlayerSurface
+import androidx.media3.ui.AspectRatioFrameLayout
+import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
@@ -806,8 +808,20 @@ private fun SidebarMediaCard(
     ) {
         Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
             if (previewing && previewPlayer != null) {
-                PlayerSurface(
-                    player = previewPlayer,
+                // Classic PlayerView, not the compose PlayerSurface: the
+                // compose surface is a bare SurfaceView hookup that ignores
+                // rotation metadata and aspect ratio, so portrait videos
+                // (encoded landscape + rotation=90) render stretched. PlayerView
+                // applies rotation and letterboxes via AspectRatioFrameLayout.
+                AndroidView(
+                    factory = { ctx ->
+                        PlayerView(ctx).apply {
+                            useController = false
+                            resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                            player = previewPlayer
+                        }
+                    },
+                    update = { it.player = previewPlayer },
                     modifier = Modifier.fillMaxSize(),
                 )
                 // Keep the thumbnail on top until the player has rendered its

@@ -62,6 +62,7 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -69,9 +70,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.MediaItem as ExoMediaItem
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.ui.compose.PlayerSurface
-import androidx.media3.ui.compose.state.rememberPlayPauseButtonState
-import androidx.media3.ui.compose.state.rememberPresentationState
+import androidx.media3.ui.AspectRatioFrameLayout
+import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import tv.telegram.R
@@ -241,9 +241,6 @@ fun PlayerScreen(
         if (showController) showController = false else onClose()
     }
 
-    @Suppress("UNUSED_VARIABLE")
-    val presentation = rememberPresentationState(exo)
-
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -318,8 +315,22 @@ fun PlayerScreen(
                 CircularProgressIndicator(color = Color.White)
             }
         } else {
-            PlayerSurface(
-                player = exo,
+            // Classic PlayerView (not the compose PlayerSurface): the compose
+            // surface is a bare SurfaceView hookup — it neither applies the
+            // video's rotation metadata nor preserves its aspect ratio, so
+            // portrait videos (encoded landscape + rotation=90) render
+            // stretched full-screen. PlayerView handles both: AspectRatio-
+            // FrameLayout + RESIZE_MODE_FIT letterboxes the long edge and
+            // black-bars the sides, and it applies unappliedRotationDegrees.
+            AndroidView(
+                factory = { ctx ->
+                    PlayerView(ctx).apply {
+                        useController = false // custom compose controller below
+                        resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                        player = exo
+                    }
+                },
+                update = { it.player = exo },
                 modifier = Modifier.fillMaxSize(),
             )
         }
