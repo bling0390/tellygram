@@ -571,13 +571,20 @@ private fun MediaPane(
     // search). Left key remains the deliberate path back to the sidebar.
     var firstRowFocused by remember { mutableStateOf(false) }
 
-    // Switch-chat focus: when a different chat is opened, focus lands on the
-    // first media card (like ChatSidebar's firstFocus). Keyed on the first
-    // item's messageId so loadMore (which keeps item[0]) never re-steals
-    // focus while the user is already navigating the grid.
+    // Switch-chat focus: when a different chat is opened, scroll the grid
+    // back to the top and focus the first media card (like ChatSidebar's
+    // firstFocus). Keyed on the first item's messageId so loadMore (which
+    // keeps item[0]) never re-steals focus while the user is already
+    // navigating the grid.
+    //
+    // scrollToItem(0) is essential: the grid reuses its state across chats,
+    // so the old scroll offset persists — without scrolling back, the first
+    // card may not even be composed and the focus request silently no-ops.
+    val gridState = rememberLazyGridState()
     val firstCardFocus = remember { FocusRequester() }
     LaunchedEffect(items.firstOrNull()?.messageId) {
         if (items.isNotEmpty()) {
+            gridState.scrollToItem(0)
             withFrameNanos { }
             try { firstCardFocus.requestFocus() }
             catch (_: IllegalStateException) {}
@@ -637,8 +644,6 @@ private fun MediaPane(
         previewPlayer.prepare()
         previewPlayer.play()
     }
-
-    val gridState = rememberLazyGridState()
 
     val nearEnd by remember {
         derivedStateOf {
