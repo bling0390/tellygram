@@ -571,6 +571,19 @@ private fun MediaPane(
     // search). Left key remains the deliberate path back to the sidebar.
     var firstRowFocused by remember { mutableStateOf(false) }
 
+    // Switch-chat focus: when a different chat is opened, focus lands on the
+    // first media card (like ChatSidebar's firstFocus). Keyed on the first
+    // item's messageId so loadMore (which keeps item[0]) never re-steals
+    // focus while the user is already navigating the grid.
+    val firstCardFocus = remember { FocusRequester() }
+    LaunchedEffect(items.firstOrNull()?.messageId) {
+        if (items.isNotEmpty()) {
+            withFrameNanos { }
+            try { firstCardFocus.requestFocus() }
+            catch (_: IllegalStateException) {}
+        }
+    }
+
     // Hover preview: one shared muted ExoPlayer reused across all cards.
     // Focus on a video card for 2.5s → play the first chunk of the file
     // inline; losing focus stops it and restores the thumbnail.
@@ -740,6 +753,7 @@ private fun MediaPane(
                             previewReady = previewReady,
                             previewPlayer = previewPlayer,
                             onFocusChange = onFocusChange,
+                            fr = if (index == 0) firstCardFocus else null,
                         )
                     }
                 } else {
@@ -775,6 +789,7 @@ private fun SidebarMediaCard(
     previewReady: Boolean = false,
     previewPlayer: ExoPlayer? = null,
     onFocusChange: (Boolean) -> Unit = {},
+    fr: FocusRequester? = null,
 ) {
     val ctx = LocalContext.current
     val thumbId = item.thumbnailFileId
@@ -804,7 +819,8 @@ private fun SidebarMediaCard(
         modifier = Modifier
             .fillMaxWidth()
             .aspectRatio(16f / 10f)
-            .onFocusChanged { onFocusChange(it.hasFocus) },
+            .onFocusChanged { onFocusChange(it.hasFocus) }
+            .let { if (fr != null) it.focusRequester(fr) else it },
     ) {
         Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
             if (previewing && previewPlayer != null) {
