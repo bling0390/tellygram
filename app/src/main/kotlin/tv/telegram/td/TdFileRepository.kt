@@ -20,6 +20,22 @@ sealed class FileDownloadState {
     data class Failed(val reason: String) : FileDownloadState()
 }
 
+/**
+ * Progressive (streaming) download state for a file that is being played
+ * while still downloading. Driven by updateFile: downloadedSize grows until
+ * the file is complete. A single TDLib download task per fileId is active at
+ * a time, so playback reads sequentially and waits for the download to catch
+ * up when read() reaches the downloaded frontier.
+ */
+data class StreamingState(
+    val fileId: Int,
+    val path: String? = null,
+    val downloadedSize: Long = 0,
+    val expectedSize: Long = 0,
+    val completed: Boolean = false,
+    val failed: Boolean = false,
+)
+
 class TdFileRepository(
     private val client: TdClient = TdClient,
     private val scope: CoroutineScope = CoroutineScope(Dispatchers.IO + SupervisorJob()),
@@ -30,6 +46,10 @@ class TdFileRepository(
 
     private val pendingDownloads = ConcurrentHashMap<Int, CompletableDeferred<String>>()
     private val previewDownloads = ConcurrentHashMap<Int, PreviewRequest>()
+
+    // Streaming (progressive playback) state, one entry per fileId that is
+    // being played while still downloading.
+    private val streamingStates = ConcurrentHashMap<Int, StreamingState>()
 
     private data class PreviewRequest(
         val deferred: CompletableDeferred<String>,
@@ -65,6 +85,20 @@ class TdFileRepository(
                 previewDownloads.remove(fileId)
                 pr.deferred.complete(local.path)
             }
+        }
+
+        // Progressive download progress for streaming playback.
+        val cur = streamingStates[fileId]
+        if (cur != null) {
+            val failed = !local.isDownloadingActive && !local.isDownloadingCompleted
+                && local.path.isNotEmpty() && cur.path != null
+            streamingStates[fileId] = cur.copy(
+                path = local.path.takeIf { it.isNotEmpty() } ?: cur.path,
+                downloadedSize = local.downloadedSize.toLong(),
+                expectedSize = file.expectedSize.toLong().takeIf { it > 0 } ?: cur.expectedSize,
+                completed = local.isDownloadingCompleted,
+                failed = failed,
+            )
         }
     }
 
@@ -147,6 +181,64 @@ class TdFileRepository(
     }
 
     fun stateFor(fileId: Int): FileDownloadState? = _states.value[fileId]
+
+    // ── Progressive / streaming playback ────────────────────────────────────
+
+    /**
+     * Start (or reuse) a sequential full-file download for progressive playback.
+     * Idempotent: repeated calls for the same fileId keep the existing task.
+     */
+    fun startStreaming(fileId: Int, priority: Int = 1) {
+        if (streamingStates.containsKey(fileId)) return
+        streamingStates[fileId] = StreamingState(fileId = fileId)
+        client.send(TdApi.DownloadFile(fileId, priority, 0, 0, false))
+        Log.d(TAG, "startStreaming(fileId=$fileId, priority=$priority)")
+    }
+
+    /** Re-target the active download to start at [offset] (used on seek). */
+    fun seekStream(fileId: Int, offset: Long, priority: Int = 1) {
+        streamingStates[fileId]?.let {
+            streamingStates[fileId] = it.copy(downloadedSize = offset, completed = false)
+        }
+        client.send(TdApi.DownloadFile(fileId, priority, offset.toInt(), 0, false))
+        Log.d(TAG, "seekStream(fileId=$fileId, offset=$offset)")
+    }
+
+    fun streamState(fileId: Int): StreamingState? = streamingStates[fileId]
+
+    /**
+     * Block until at least [minBytes] have been downloaded (or the file is
+     * complete / failed). Polls the updateFile-driven state; used by the
+     * streaming DataSource on ExoPlayer's loader thread. Returns false on
+     * timeout or failure.
+     */
+    fun awaitStreamBytes(fileId: Int, minBytes: Long, timeoutMs: Long = 30_000): Boolean {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() < deadline) {
+            val st = streamingStates[fileId] ?: return false
+            if (st.failed) return false
+            if (st.completed || st.downloadedSize >= minBytes) return true
+            Thread.sleep(50)
+        }
+        val st = streamingStates[fileId]
+        return st != null && (st.completed || st.downloadedSize >= minBytes)
+    }
+
+    /** Block until TDLib has assigned a local path for the streaming file. */
+    fun awaitStreamPath(fileId: Int, timeoutMs: Long = 15_000): String? {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() < deadline) {
+            val st = streamingStates[fileId] ?: return null
+            if (st.path != null) return st.path
+            Thread.sleep(50)
+        }
+        return streamingStates[fileId]?.path
+    }
+
+    /** Drop the streaming state (called when leaving the player). */
+    fun stopStreaming(fileId: Int) {
+        streamingStates.remove(fileId)
+    }
 
     companion object {
         private const val TAG = "TdFileRepo"

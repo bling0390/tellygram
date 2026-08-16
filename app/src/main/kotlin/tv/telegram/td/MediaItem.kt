@@ -14,4 +14,5 @@ data class MediaItem(
     val caption: String? = null,
     val date: Int = 0,
     val chatId: Long = 0,
+    val supportsStreaming: Boolean = false,
 )

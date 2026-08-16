@@ -194,6 +194,7 @@ class TdMediaRepository(
                     caption = c.caption.text,
                     date = message.date,
                     chatId = chatId,
+                    supportsStreaming = video.supportsStreaming,
                 )
             }
             is TdApi.MessageAnimation -> {

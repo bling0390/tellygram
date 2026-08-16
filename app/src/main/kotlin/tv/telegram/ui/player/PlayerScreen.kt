@@ -69,7 +69,9 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.MediaItem as ExoMediaItem
 import androidx.media3.common.Player
+import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.delay
@@ -78,6 +80,8 @@ import tv.telegram.R
 import tv.telegram.td.FileDownloadState
 import tv.telegram.td.MediaItem
 import tv.telegram.td.MediaType
+import tv.telegram.td.TdDataSource
+import tv.telegram.td.TdDataSourceFactory
 import tv.telegram.ui.MainViewModel
 import androidx.tv.material3.Icon
 import androidx.tv.material3.MaterialTheme
@@ -124,24 +128,51 @@ fun PlayerScreen(
 
     val currentFileState = viewModel.fileStateFor(current.fileId)
     val currentPath = (currentFileState as? FileDownloadState.Local)?.path
+    // Progressive playback: only videos the server marked supportsStreaming
+    // are streamed (moov/faststart guaranteed); everything else keeps the
+    // full-download-then-play path.
+    val canStream = current.type == MediaType.Video && current.supportsStreaming
     LaunchedEffect(current.fileId) {
-        if (currentPath == null) {
+        if (canStream) {
+            viewModel.fileRepo.startStreaming(current.fileId, priority = 32)
+        } else if (currentPath == null) {
             viewModel.ensureMediaFile(current.fileId, priority = 32)
         }
     }
 
     val exo = remember(current.fileId) {
-        ExoPlayer.Builder(context).build().apply {
-            playWhenReady = true
-        }
+        ExoPlayer.Builder(context)
+            .setMediaSourceFactory(
+                DefaultMediaSourceFactory(context)
+                    .setDataSourceFactory(
+                        TdDataSourceFactory(
+                            fileRepo = viewModel.fileRepo,
+                            fallback = DefaultDataSource.Factory(context),
+                        ),
+                    ),
+            )
+            .build().apply {
+                playWhenReady = true
+            }
     }
     DisposableEffect(exo) {
         onDispose { exo.release() }
     }
 
     var mediaPrepared by remember(current.fileId) { mutableStateOf(false) }
-    LaunchedEffect(currentPath, current.fileId) {
-        if (currentPath != null && !mediaPrepared) {
+    LaunchedEffect(current.fileId) {
+        if (mediaPrepared) return@LaunchedEffect
+        if (canStream) {
+            // td:// URI — TdDataSource blocks inside open() until TDLib has
+            // assigned a local path, then streams from the growing file.
+            exo.setMediaItem(ExoMediaItem.fromUri(TdDataSource.uriFor(current.fileId)))
+            exo.prepare()
+            val resume = resumeMap[current.fileId]
+            if (resume != null && resume > 0L) {
+                exo.seekTo(resume)
+            }
+            mediaPrepared = true
+        } else if (currentPath != null) {
             exo.setMediaItem(ExoMediaItem.fromUri("file://$currentPath"))
             exo.prepare()
             val resume = resumeMap[current.fileId]
@@ -310,7 +341,7 @@ fun PlayerScreen(
                 }
             },
     ) {
-        if (currentPath == null || !mediaPrepared) {
+        if (!mediaPrepared) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(color = Color.White)
             }
