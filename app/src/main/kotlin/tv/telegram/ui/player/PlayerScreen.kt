@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.RotateRight
 import androidx.compose.material.icons.filled.Forward10
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -70,6 +71,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.MediaItem as ExoMediaItem
 import androidx.media3.common.Player
 import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.effect.ScaleAndRotateTransformation
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.AspectRatioFrameLayout
@@ -157,6 +159,24 @@ fun PlayerScreen(
     }
     DisposableEffect(exo) {
         onDispose { exo.release() }
+    }
+
+    // Manual screen rotation: 0/90/180/270, cycled by the rotate button.
+    // Applied via setVideoEffects (rendering pipeline) so the aspect-ratio
+    // frame layout and letterboxing follow the rotated frame.
+    var rotationDeg by remember(current.fileId) { mutableIntStateOf(0) }
+    LaunchedEffect(exo, rotationDeg) {
+        exo.setVideoEffects(
+            if (rotationDeg == 0) {
+                emptyList()
+            } else {
+                listOf(
+                    ScaleAndRotateTransformation.Builder()
+                        .setRotationDegrees(rotationDeg.toFloat())
+                        .build(),
+                )
+            },
+        )
     }
 
     var mediaPrepared by remember(current.fileId) { mutableStateOf(false) }
@@ -401,6 +421,10 @@ fun PlayerScreen(
                     viewModel.cyclePlayerSpeed()
                     bumpController()
                 },
+                onRotate = {
+                    rotationDeg = (rotationDeg + 90) % 360
+                    bumpController()
+                },
                 onPrev = if (hasPrevVideo) {
                     { neighborVideo(-1)?.let { onNavigateTo(it) }; bumpController() }
                 } else null,
@@ -427,6 +451,7 @@ private fun PlayerController(
     onSeekBack: () -> Unit,
     onSeekFwd: () -> Unit,
     onSpeedCycle: () -> Unit,
+    onRotate: () -> Unit,
     onPrev: (() -> Unit)?,
     onNext: (() -> Unit)?,
 ) {
@@ -457,6 +482,7 @@ private fun PlayerController(
     val seekFwdFocus = remember { FocusRequester() }
     val nextFocus = remember { FocusRequester() }
     val speedFocus = remember { FocusRequester() }
+    val rotateFocus = remember { FocusRequester() }
     val buttonFocuses = remember(onPrev, onNext) {
         buildList {
             if (onPrev != null) add(prevFocus)
@@ -465,6 +491,7 @@ private fun PlayerController(
             add(seekFwdFocus)
             if (onNext != null) add(nextFocus)
             add(speedFocus)
+            add(rotateFocus)
         }
     }
     val playIndex = buttonFocuses.indexOf(playFocus)
@@ -599,6 +626,13 @@ private fun PlayerController(
                 contentDescription = stringResource(R.string.player_btn_speed),
                 onClick = onSpeedCycle,
                 modifier = Modifier.focusRequester(speedFocus),
+            )
+            Spacer(Modifier.width(24.dp))
+            ControllerButton(
+                icon = Icons.AutoMirrored.Filled.RotateRight,
+                contentDescription = stringResource(R.string.player_btn_rotate),
+                onClick = onRotate,
+                modifier = Modifier.focusRequester(rotateFocus),
             )
         }
     }
