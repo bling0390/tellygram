@@ -49,7 +49,6 @@
     <string name="player_btn_seek_back">◀◀ 10s</string>
     <string name="player_btn_seek_fwd">10s ▶▶</string>
     <string name="player_btn_speed">Speed</string>
-    <string name="player_btn_rotate">Rotate</string>
     <string name="player_btn_prev">« Prev</string>
     <string name="player_btn_next">Next »</string>
 

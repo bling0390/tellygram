@@ -223,7 +223,6 @@ dependencies {
     implementation(libs.androidx.media3.common)
     implementation(libs.androidx.media3.datasource)
     implementation(libs.androidx.media3.ui.compose)
-    implementation(libs.androidx.media3.effect)
 
     // Coil for image loading
     implementation(libs.coil.compose)

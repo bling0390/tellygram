@@ -72,7 +72,6 @@ androidx-media3-ui          = { module = "androidx.media3:media3-ui",           
 androidx-media3-common      = { module = "androidx.media3:media3-common",               version.ref = "media3" }
 androidx-media3-datasource  = { module = "androidx.media3:media3-datasource",           version.ref = "media3" }
 androidx-media3-ui-compose  = { module = "androidx.media3:media3-ui-compose",           version.ref = "media3" }
-androidx-media3-effect      = { module = "androidx.media3:media3-effect",               version.ref = "media3" }
 
 # Coil (image loading)
 coil-compose               = { module = "io.coil-kt:coil-compose",                    version.ref = "coil" }
