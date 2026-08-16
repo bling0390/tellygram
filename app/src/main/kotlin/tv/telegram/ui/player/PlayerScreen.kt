@@ -375,6 +375,7 @@ fun PlayerScreen(
             PlayerController(
                 positionMs = { exo.currentPosition },
                 durationMs = { exo.duration.coerceAtLeast(0L) },
+                bufferedMs = { exo.bufferedPosition.coerceAtLeast(0L) },
                 isPlaying = { nowPlaying },
                 speed = speed,
                 progressFocusRequester = progressFocusRequester,
@@ -415,6 +416,7 @@ fun PlayerScreen(
 private fun PlayerController(
     positionMs: () -> Long,
     durationMs: () -> Long,
+    bufferedMs: () -> Long,
     isPlaying: () -> Boolean,
     speed: Float,
     progressFocusRequester: FocusRequester,
@@ -435,10 +437,12 @@ private fun PlayerController(
     // AnimatedVisibility removes us from the tree).
     var nowPos by remember { mutableLongStateOf(positionMs()) }
     var nowDur by remember { mutableLongStateOf(durationMs()) }
+    var nowBuffered by remember { mutableLongStateOf(bufferedMs()) }
     LaunchedEffect(Unit) {
         while (true) {
             nowPos = positionMs()
             nowDur = durationMs()
+            nowBuffered = bufferedMs()
             delay(500L)
         }
     }
@@ -493,6 +497,7 @@ private fun PlayerController(
         ProgressBar(
             positionMs = nowPos,
             durationMs = nowDur,
+            bufferedMs = nowBuffered,
             focusRequester = progressFocusRequester,
             onProgressFocusChange = onProgressFocusChange,
             onSeekBack = onSeekBack,
@@ -603,6 +608,7 @@ private fun PlayerController(
 private fun ProgressBar(
     positionMs: Long,
     durationMs: Long,
+    bufferedMs: Long,
     focusRequester: FocusRequester,
     onProgressFocusChange: (Boolean) -> Unit,
     onSeekBack: () -> Unit,
@@ -612,6 +618,10 @@ private fun ProgressBar(
     onInteraction: () -> Unit,
 ) {
     val pct = if (durationMs > 0L) (positionMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
+    // Buffered frontier (what ExoPlayer can play up to without stalling):
+    // a dimmer bar under the white playhead. During progressive streaming
+    // this tracks how far the TDLib download has caught up.
+    val bufferedPct = if (durationMs > 0L) (bufferedMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
     val interactionSource = remember { MutableInteractionSource() }
     val isFocused by interactionSource.collectIsFocusedAsState()
     // Focus feedback via height: 6dp idle -> 10dp focused (no glow). The bar
@@ -665,6 +675,14 @@ private fun ProgressBar(
                     RoundedCornerShape(50),
                 ),
         ) {
+            // Buffered layer: dim white, under the playhead. Clamped so it
+            // never visually exceeds the playhead position.
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(bufferedPct.coerceAtLeast(pct))
+                    .height(barHeight)
+                    .background(Color.White.copy(alpha = 0.35f), RoundedCornerShape(50)),
+            )
             Box(
                 modifier = Modifier
                     .fillMaxWidth(pct)
