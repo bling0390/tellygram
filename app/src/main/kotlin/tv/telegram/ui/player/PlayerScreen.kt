@@ -129,9 +129,12 @@ fun PlayerScreen(
     val currentFileState = viewModel.fileStateFor(current.fileId)
     val currentPath = (currentFileState as? FileDownloadState.Local)?.path
     // Progressive playback: only videos the server marked supportsStreaming
-    // are streamed (moov/faststart guaranteed); everything else keeps the
-    // full-download-then-play path.
-    val canStream = current.type == MediaType.Video && current.supportsStreaming
+    // are streamed (moov/faststart guaranteed) — and only when the file is
+    // NOT already fully downloaded. A fully-local file must go through the
+    // plain file:// path: TdDataSource.awaitStreamPath waits on updateFile
+    // events, but a completed download never fires one, so streaming an
+    // already-downloaded file would time out and fail to play.
+    val canStream = current.type == MediaType.Video && current.supportsStreaming && currentPath == null
     LaunchedEffect(current.fileId) {
         if (canStream) {
             viewModel.fileRepo.startStreaming(current.fileId, priority = 32)

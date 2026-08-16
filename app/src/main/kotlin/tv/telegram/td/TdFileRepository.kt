@@ -187,9 +187,23 @@ class TdFileRepository(
     /**
      * Start (or reuse) a sequential full-file download for progressive playback.
      * Idempotent: repeated calls for the same fileId keep the existing task.
+     * If the file is already fully downloaded locally, mark the streaming
+     * state complete immediately — a completed file never fires updateFile,
+     * so without this awaitStreamPath would hang and playback would fail.
      */
     fun startStreaming(fileId: Int, priority: Int = 1) {
         if (streamingStates.containsKey(fileId)) return
+        val existing = _states.value[fileId]
+        if (existing is FileDownloadState.Local) {
+            streamingStates[fileId] = StreamingState(
+                fileId = fileId,
+                path = existing.path,
+                expectedSize = 0,
+                completed = true,
+            )
+            Log.d(TAG, "startStreaming(fileId=$fileId): already local, marked complete")
+            return
+        }
         streamingStates[fileId] = StreamingState(fileId = fileId)
         client.send(TdApi.DownloadFile(fileId, priority, 0, 0, false))
         Log.d(TAG, "startStreaming(fileId=$fileId, priority=$priority)")
