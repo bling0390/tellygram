@@ -36,6 +36,7 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Replay10
+import androidx.compose.material.icons.filled.ScreenRotation
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Speed
@@ -257,6 +258,12 @@ fun PlayerScreen(
     // Box keeps focus (left/right seek without revealing the controller);
     // OK / Up / Down reveal the controller with focus on the progress bar.
     var showController by remember { mutableStateOf(false) }
+    // Screen rotation for the video surface: 0 / 90 / 180 / 270 degrees.
+    // Portrait videos (very common in TG) play with big black bars on a
+    // landscape TV — one rotate press turns them full-screen. Kept across
+    // video switches so a portrait playlist stays rotated; press the button
+    // three more times to cycle back.
+    var rotation by remember { mutableIntStateOf(0) }
     var lastInteractionMs by remember { mutableStateOf(System.currentTimeMillis()) }
     var controllerShownBefore by remember { mutableStateOf(false) }
     // Auto-hide applies only while focus sits on the progress bar; focus on
@@ -407,17 +414,37 @@ fun PlayerScreen(
             // stretched full-screen. PlayerView handles both: AspectRatio-
             // FrameLayout + RESIZE_MODE_FIT letterboxes the long edge and
             // black-bars the sides, and it applies unappliedRotationDegrees.
-            AndroidView(
-                factory = { ctx ->
-                    PlayerView(ctx).apply {
-                        useController = false // custom compose controller below
-                        resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
-                        player = exo
-                    }
-                },
-                update = { it.player = exo },
-                modifier = Modifier.fillMaxSize(),
-            )
+            //
+            // User rotation on top: a graphicsLayer turns the whole surface
+            // 0/90/180/270° for portrait videos (very common in TG). At
+            // 90/270° the surface's aspect flips, so we scale up by the
+            // screen's W/H ratio to keep it filling the screen (cover).
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer {
+                        rotationZ = rotation.toFloat()
+                        if (rotation % 180 != 0) {
+                            val w = size.width.toFloat()
+                            val h = size.height.toFloat()
+                            val s = if (w >= h) w / h else h / w
+                            scaleX = s
+                            scaleY = s
+                        }
+                    },
+            ) {
+                AndroidView(
+                    factory = { ctx ->
+                        PlayerView(ctx).apply {
+                            useController = false // custom compose controller below
+                            resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                            player = exo
+                        }
+                    },
+                    update = { it.player = exo },
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
         }
 
         AnimatedVisibility(
@@ -454,6 +481,10 @@ fun PlayerScreen(
                 },
                 onSpeedCycle = {
                     viewModel.cyclePlayerSpeed()
+                    bumpController()
+                },
+                onRotate = {
+                    rotation = (rotation + 90) % 360
                     bumpController()
                 },
                 onPrev = if (hasPrevVideo) {
@@ -522,6 +553,7 @@ private fun PlayerController(
     onSeekBack: () -> Unit,
     onSeekFwd: () -> Unit,
     onSpeedCycle: () -> Unit,
+    onRotate: () -> Unit,
     onInfo: () -> Unit,
     onPrev: (() -> Unit)?,
     onNext: (() -> Unit)?,
@@ -553,6 +585,7 @@ private fun PlayerController(
     val seekFwdFocus = remember { FocusRequester() }
     val nextFocus = remember { FocusRequester() }
     val speedFocus = remember { FocusRequester() }
+    val rotateFocus = remember { FocusRequester() }
     val infoFocus = infoFocusRequester
     val buttonFocuses = remember(onPrev, onNext) {
         buildList {
@@ -562,6 +595,7 @@ private fun PlayerController(
             add(seekFwdFocus)
             if (onNext != null) add(nextFocus)
             add(speedFocus)
+            add(rotateFocus)
             add(infoFocus)
         }
     }
@@ -697,6 +731,13 @@ private fun PlayerController(
                 contentDescription = stringResource(R.string.player_btn_speed),
                 onClick = onSpeedCycle,
                 modifier = Modifier.focusRequester(speedFocus),
+            )
+            Spacer(Modifier.width(24.dp))
+            ControllerButton(
+                icon = Icons.Default.ScreenRotation,
+                contentDescription = stringResource(R.string.player_btn_rotate),
+                onClick = onRotate,
+                modifier = Modifier.focusRequester(rotateFocus),
             )
             Spacer(Modifier.width(24.dp))
             ControllerButton(
