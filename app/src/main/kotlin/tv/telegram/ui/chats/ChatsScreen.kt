@@ -21,11 +21,13 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed as gridItemsIndexed
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Campaign
@@ -46,6 +48,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -125,6 +128,13 @@ fun ChatsScreen(
         }
     }
 
+    // Media grid Left at left edge → focus the currently selected chat in
+    // the sidebar (not some random neighbour from global focus search).
+    // sidebarFocusTick increments on each such Left press; ChatSidebar
+    // watches it, scrolls the selected chat into view and requests focus.
+    val selectedChatFocus = remember { FocusRequester() }
+    var sidebarFocusTick by remember { mutableIntStateOf(0) }
+
     Row(modifier = Modifier.fillMaxSize()) {
 
         ChatSidebar(
@@ -139,6 +149,8 @@ fun ChatsScreen(
             onShowArchive = { viewModel.setViewingArchive(true) },
             onShowMain = { viewModel.setViewingArchive(false) },
             viewModel = viewModel,
+            selectedChatFocus = selectedChatFocus,
+            sidebarFocusTick = sidebarFocusTick,
             modifier = Modifier
                 .width(296.dp)
                 .fillMaxHeight()
@@ -161,6 +173,7 @@ fun ChatsScreen(
                     loaded = mediaLoaded,
                     onOpenPlayer = onOpenPlayer,
                     viewModel = viewModel,
+                    onLeftToSelectedChat = { sidebarFocusTick++ },
                 )
             }
         }
@@ -180,6 +193,14 @@ private fun ChatSidebar(
     onShowArchive: () -> Unit,
     onShowMain: () -> Unit,
     viewModel: MainViewModel,
+    // Focus target for the currently selected chat row. The media grid
+    // hands focus back to the sidebar (Left at grid's left edge) and this
+    // requester makes sure the selected chat — not some random neighbour —
+    // receives it.
+    selectedChatFocus: FocusRequester,
+    // Monotonic tick: each media-grid Left transfer bumps it, and the
+    // sidebar scrolls the selected chat into view and focuses it.
+    sidebarFocusTick: Int,
     modifier: Modifier = Modifier,
 ) {
     val firstFocus = remember { FocusRequester() }
@@ -188,11 +209,32 @@ private fun ChatSidebar(
     // NavRail (Compose's default directional focus search would find Search
     // at top-left). Left key is the deliberate path back to the rail.
     var firstItemFocused by remember { mutableStateOf(false) }
+    val listState = rememberLazyListState()
 
     LaunchedEffect(viewingArchive) {
         withFrameNanos { }
         try { firstFocus.requestFocus() }
         catch (_: IllegalStateException) {}
+    }
+
+    // Media grid pressed Left at the grid's left edge: scroll the selected
+    // chat into view (requestFocus silently no-ops if the item isn't
+    // composed) and focus it.
+    LaunchedEffect(sidebarFocusTick, selectedChatId, viewingArchive) {
+        if (sidebarFocusTick > 0) {
+            val offset = when {
+                viewingArchive -> 1 // "Back to Chats" entry sits at index 0
+                archiveCount > 0 -> 1 // "Archived Chats" entry sits at index 0
+                else -> 0
+            }
+            val idx = chats.indexOfFirst { it.id == selectedChatId }
+            if (idx >= 0) {
+                listState.scrollToItem(idx + offset)
+                withFrameNanos { }
+                try { selectedChatFocus.requestFocus() }
+                catch (_: IllegalStateException) {}
+            }
+        }
     }
 
     Column(modifier = modifier) {
@@ -217,6 +259,7 @@ private fun ChatSidebar(
             return@Column
         }
         LazyColumn(
+            state = listState,
             verticalArrangement = Arrangement.spacedBy(6.dp),
             modifier = Modifier.onKeyEvent { ev ->
                 if (ev.type == KeyEventType.KeyDown && ev.key == Key.DirectionUp && firstItemFocused) {
@@ -250,23 +293,33 @@ private fun ChatSidebar(
                 }
             }
             items(chats, key = { it.id }) { chat ->
+                val isSelected = chat.id == selectedChatId
                 val isFirst = chat.id == chats.firstOrNull()?.id && viewingArchive.not() && archiveCount == 0
+                // The selected chat also carries selectedChatFocus so the
+                // media grid's Left transfer can land exactly on it. When
+                // the selected chat IS the first item, keep firstFocus as
+                // the primary requester and attach selectedChatFocus as an
+                // extra (a node may carry several focus requesters).
+                val fr = if (isFirst) firstFocus else null
+                val extraFr = if (isSelected) selectedChatFocus else null
                 if (isFirst) {
                     Box(Modifier.onFocusChanged { firstItemFocused = it.hasFocus }) {
                         SidebarItem(
                             chat = chat,
-                            selected = chat.id == selectedChatId,
+                            selected = isSelected,
                             onClick = { onSelect(chat.id) },
-                            fr = firstFocus,
+                            fr = fr,
+                            extraFr = extraFr,
                             viewModel = viewModel,
                         )
                     }
                 } else {
                     SidebarItem(
                         chat = chat,
-                        selected = chat.id == selectedChatId,
+                        selected = isSelected,
                         onClick = { onSelect(chat.id) },
-                        fr = null,
+                        fr = fr,
+                        extraFr = extraFr,
                         viewModel = viewModel,
                     )
                 }
@@ -362,6 +415,7 @@ private fun SidebarItem(
     selected: Boolean,
     onClick: () -> Unit,
     fr: FocusRequester? = null,
+    extraFr: FocusRequester? = null,
     viewModel: MainViewModel,
 ) {
     val ctx = LocalContext.current
@@ -389,7 +443,8 @@ private fun SidebarItem(
         modifier = Modifier
             .fillMaxWidth()
             .height(48.dp)
-            .let { if (fr != null) it.focusRequester(fr) else it },
+            .let { if (fr != null) it.focusRequester(fr) else it }
+            .let { if (extraFr != null) it.focusRequester(extraFr) else it },
     ) {
         Row(
             modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 4.dp),
@@ -562,6 +617,7 @@ private fun MediaPane(
     loaded: Boolean,
     onOpenPlayer: (Int) -> Unit,
     viewModel: MainViewModel,
+    onLeftToSelectedChat: () -> Unit,
 ) {
 
     var openedIndex by rememberSaveable { mutableStateOf<Int?>(null) }
@@ -571,13 +627,10 @@ private fun MediaPane(
     // search).
     var firstRowFocused by remember { mutableStateOf(false) }
     // True while focus sits on a card in the grid's left column
-    // (index % 3 == 0). With no in-grid candidate to the left, Compose's
-    // global focus search would jump to the chat sidebar — consume Left so
-    // focus stays in the current chat's media grid, EXCEPT from the very
-    // first card (index 0), which keeps Left as the deliberate path back
-    // to the sidebar.
+    // (index % 3 == 0). Left here would make Compose's global focus search
+    // jump to an arbitrary chat in the sidebar — instead we consume the key
+    // and hand focus explicitly to the currently selected chat.
     var leftEdgeFocused by remember { mutableStateOf(false) }
-    var homeCardFocused by remember { mutableStateOf(false) }
 
     // Switch-chat focus: when a different chat is opened, scroll the grid
     // back to the top and focus the first media card (like ChatSidebar's
@@ -731,13 +784,17 @@ private fun MediaPane(
                 .fillMaxSize()
                 .onKeyEvent { ev ->
                     // Only when focus is on a first-row card is there no
-                    // upward candidate; consume so focus stays put. Same for
-                    // Left on the left column (except the very first card,
-                    // which keeps Left as the path back to the sidebar).
+                    // upward candidate; consume so focus stays put. Left on
+                    // the left column: consume and hand focus to the
+                    // selected chat in the sidebar (avoids Compose's global
+                    // search landing on some random chat).
                     if (ev.type == KeyEventType.KeyDown) {
                         when {
                             ev.key == Key.DirectionUp && firstRowFocused -> true
-                            ev.key == Key.DirectionLeft && leftEdgeFocused && !homeCardFocused -> true
+                            ev.key == Key.DirectionLeft && leftEdgeFocused -> {
+                                onLeftToSelectedChat()
+                                true
+                            }
                             else -> false
                         }
                     } else {
@@ -757,13 +814,12 @@ private fun MediaPane(
                 val isLeftEdge = index % 3 == 0
                 val isHome = index == 0
                 // Track focus for the grid-boundary key handling above:
-                // first row (Up), left column (Left), and the very first
-                // card (the one spot Left is allowed to leave the grid).
+                // first row (Up) and left column (Left). isHome only
+                // decides which card owns the initial grid focus requester.
                 Box(
                     Modifier.onFocusChanged { focused ->
                         if (isFirstRow) firstRowFocused = focused.hasFocus
                         if (isLeftEdge) leftEdgeFocused = focused.hasFocus
-                        if (isHome) homeCardFocused = focused.hasFocus
                     },
                 ) {
                     SidebarMediaCard(
