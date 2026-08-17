@@ -301,12 +301,14 @@ fun PlayerScreen(
             .focusRequester(focusRequester)
             .focusable()
             // Capture-phase Back: intercept BEFORE the focused button/progress
-            // bar can consume it, so a single Back always hides the controller
-            // while it's visible. When hidden, fall through to BackHandler.
+            // bar can consume it. Priority: info drawer > controller > exit.
             .onPreviewKeyEvent { ev ->
-                if (ev.type == KeyEventType.KeyDown && ev.key == Key.Back && showController) {
-                    showController = false
-                    true
+                if (ev.type == KeyEventType.KeyDown && ev.key == Key.Back) {
+                    when {
+                        showInfo -> { showInfo = false; true }
+                        showController -> { showController = false; true }
+                        else -> false
+                    }
                 } else {
                     false
                 }
@@ -437,11 +439,15 @@ fun PlayerScreen(
         }
 
         // Media info drawer: right-side slide-in overlay, shown on demand.
+        // fillMaxHeight on the AnimatedVisibility (not just the inner Box) so
+        // the drawer spans the full screen height edge-to-edge.
         AnimatedVisibility(
             visible = showInfo,
             enter = slideInHorizontally(initialOffsetX = { it }) + fadeIn(),
             exit = slideOutHorizontally(targetOffsetX = { it }) + fadeOut(),
-            modifier = Modifier.align(Alignment.CenterEnd),
+            modifier = Modifier
+                .align(Alignment.CenterEnd)
+                .fillMaxHeight(),
         ) {
             MediaInfoDrawer(
                 item = current,
