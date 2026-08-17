@@ -150,6 +150,16 @@ fun PlayerScreen(
         }
     }
 
+    // Cancel the previous file's download when switching to another video
+    // or leaving the player. Without this, TDLib keeps downloading the
+    // abandoned streaming file in the background (priority 32, same as the
+    // current video) and competes for bandwidth.
+    DisposableEffect(current.fileId) {
+        onDispose {
+            viewModel.fileRepo.cancelDownload(current.fileId)
+        }
+    }
+
     val exo = remember(current.fileId) {
         ExoPlayer.Builder(context)
             .setMediaSourceFactory(

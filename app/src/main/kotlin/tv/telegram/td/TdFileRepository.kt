@@ -225,6 +225,22 @@ class TdFileRepository(
         Log.d(TAG, "seekStream(fileId=$fileId, offset=$offset)")
     }
 
+    /**
+     * Cancel an in-flight download for [fileId] (progressive streaming or
+     * ensureLocal). Called when the player moves away from a file so abandoned
+     * downloads don't keep consuming bandwidth in the background. No-op if the
+     * file is already local or nothing is downloading.
+     */
+    fun cancelDownload(fileId: Int) {
+        streamingStates.remove(fileId)
+        // Unblock a waiting ensureLocal() coroutine immediately (its
+        // await returns null → the pending entry is dropped, not marked
+        // Local). The next open of this file re-downloads from scratch.
+        pendingDownloads.remove(fileId)?.cancel()
+        client.send(TdApi.CancelDownloadFile(fileId, false))
+        Log.d(TAG, "cancelDownload(fileId=$fileId)")
+    }
+
     fun streamState(fileId: Int): StreamingState? = streamingStates[fileId]
 
     /**
