@@ -26,6 +26,13 @@ sealed class FileDownloadState {
  * the file is complete. A single TDLib download task per fileId is active at
  * a time, so playback reads sequentially and waits for the download to catch
  * up when read() reaches the downloaded frontier.
+ *
+ * Seeking re-points the download to a new offset (seekStream), which leaves
+ * the previously downloaded bytes as a frozen [ranges] segment and starts a
+ * fresh active segment at [activeStart]. Bytes between segments are holes
+ * that were never downloaded; read() must not treat them as available just
+ * because the file on disk is longer (TDLib seeks the file and writes past
+ * the hole).
  */
 data class StreamingState(
     val fileId: Int,
@@ -34,6 +41,14 @@ data class StreamingState(
     val expectedSize: Long = 0,
     val completed: Boolean = false,
     val failed: Boolean = false,
+    // Start offset of the current (active) download segment. The active
+    // segment is [activeStart, downloadedSize] and is written sequentially,
+    // so every byte in it is real data.
+    val activeStart: Long = 0,
+    // Frozen, fully-downloaded byte ranges (sorted, non-overlapping), not
+    // including the active segment. Produced by seekStream when it abandons
+    // the previous segment.
+    val ranges: List<LongRange> = emptyList(),
 )
 
 class TdFileRepository(
@@ -218,11 +233,52 @@ class TdFileRepository(
 
     /** Re-target the active download to start at [offset] (used on seek). */
     fun seekStream(fileId: Int, offset: Long, priority: Int = 1) {
-        streamingStates[fileId]?.let {
-            streamingStates[fileId] = it.copy(downloadedSize = offset, completed = false)
+        streamingStates[fileId]?.let { cur ->
+            // Freeze the active segment (anything actually downloaded so far)
+            // into ranges before re-pointing the download to the new offset.
+            val frozen = if (cur.downloadedSize > cur.activeStart) {
+                addRange(cur.ranges, cur.activeStart..cur.downloadedSize)
+            } else {
+                cur.ranges
+            }
+            streamingStates[fileId] = cur.copy(
+                activeStart = offset,
+                downloadedSize = offset,
+                completed = false,
+                ranges = frozen,
+            )
         }
         client.send(TdApi.DownloadFile(fileId, priority, offset.toInt(), 0, false))
         Log.d(TAG, "seekStream(fileId=$fileId, offset=$offset)")
+    }
+
+    /**
+     * True if the byte range [pos, pos+len) is real downloaded data: either
+     * inside the active segment or inside a frozen downloaded range. Holes
+     * between segments return false even though the file on disk may be
+     * longer (TDLib seeks past the hole and writes at the new offset).
+     */
+    fun isStreamRangeAvailable(fileId: Int, pos: Long, len: Int): Boolean {
+        val st = streamingStates[fileId] ?: return false
+        if (st.completed) return true
+        if (pos >= st.activeStart && pos + len <= st.downloadedSize) return true
+        return st.ranges.any { pos >= it.first && pos + len <= it.last + 1 }
+    }
+
+    private fun addRange(ranges: List<LongRange>, segment: LongRange): List<LongRange> {
+        val merged = ranges.toMutableList()
+        merged.add(segment)
+        merged.sortBy { it.first }
+        val result = mutableListOf<LongRange>()
+        for (r in merged) {
+            val last = result.lastOrNull()
+            if (last != null && r.first <= last.last + 1) {
+                result[result.size - 1] = last.first..maxOf(last.last, r.last)
+            } else {
+                result.add(r)
+            }
+        }
+        return result
     }
 
     /**

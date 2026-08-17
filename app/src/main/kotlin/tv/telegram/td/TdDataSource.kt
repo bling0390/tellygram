@@ -68,34 +68,38 @@ class TdDataSource(
         val st = fileRepo.streamState(fileId)
             ?: throw IOException("streaming state lost for file $fileId")
 
-        // Bytes actually on disk — the authoritative frontier. downloadedSize
-        // can be offset-relative after a seek, file.length() never lies.
-        val avail = maxOf(st.downloadedSize, runCatching { f.length() }.getOrDefault(0L))
-
-        if (st.completed) {
-            if (st.expectedSize > 0 && pos >= st.expectedSize) return C.RESULT_END_OF_INPUT
-            val n = f.read(buffer, offset, length)
-            return if (n < 0) C.RESULT_END_OF_INPUT else n
+        if (st.completed && st.expectedSize > 0 && pos >= st.expectedSize) {
+            return C.RESULT_END_OF_INPUT
         }
 
-        // Wait for the download to reach pos + length.
-        if (pos + length > avail) {
+        // The requested range must be real downloaded data (inside the active
+        // segment or a frozen downloaded range). A hole — bytes skipped when a
+        // seek jumped the download forward — reads as zeros and corrupts
+        // playback, so re-point the download at the hole and wait for it to
+        // be filled instead of reading garbage.
+        if (!fileRepo.isStreamRangeAvailable(fileId, pos, length)) {
+            fileRepo.seekStream(fileId, pos)
             if (!fileRepo.awaitStreamBytes(fileId, pos + length)) {
-                // Re-check completion; if genuinely stalled, surface the error.
-                val cur = fileRepo.streamState(fileId)
-                if (cur?.completed == true) {
-                    val n = f.read(buffer, offset, length)
-                    return if (n < 0) C.RESULT_END_OF_INPUT else n
+                // Re-check after timeout; surface the error only if the range
+                // is genuinely still missing.
+                if (!fileRepo.isStreamRangeAvailable(fileId, pos, length)) {
+                    Log.w(TAG, "read: download stalled for file $fileId at pos $pos")
+                    throw IOException("download stalled for file $fileId at $pos")
                 }
-                Log.w(TAG, "read: download stalled for file $fileId at pos $pos")
-                throw IOException("download stalled for file $fileId at $pos")
             }
         }
-        val now = maxOf(
-            fileRepo.streamState(fileId)?.downloadedSize ?: 0L,
-            runCatching { f.length() }.getOrDefault(0L),
-        )
-        val toRead = minOf(length.toLong(), now - pos).toInt()
+
+        // Clamp the read to the end of the downloaded segment containing pos.
+        // downloadedSize/file.length() may extend past the segment when a seek
+        // left holes behind, so never read beyond the segment boundary.
+        val cur = fileRepo.streamState(fileId)
+            ?: throw IOException("streaming state lost for file $fileId")
+        val segEnd = when {
+            cur.completed -> cur.expectedSize.coerceAtLeast(0L) - 1
+            pos >= cur.activeStart -> cur.downloadedSize - 1
+            else -> cur.ranges.firstOrNull { pos in it }?.last ?: (pos - 1)
+        }
+        val toRead = minOf(length.toLong(), segEnd - pos + 1).toInt()
         if (toRead <= 0) return C.RESULT_END_OF_INPUT
         val n = f.read(buffer, offset, toRead)
         if (n < 0) return C.RESULT_END_OF_INPUT
