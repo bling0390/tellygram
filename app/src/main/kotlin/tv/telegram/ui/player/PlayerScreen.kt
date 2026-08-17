@@ -6,6 +6,8 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -18,6 +20,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -28,6 +31,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Forward10
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Replay10
@@ -83,6 +87,7 @@ import tv.telegram.td.MediaType
 import tv.telegram.td.TdDataSource
 import tv.telegram.td.TdDataSourceFactory
 import tv.telegram.ui.MainViewModel
+import org.drinkless.td.libcore.telegram.TdApi
 import androidx.tv.material3.Icon
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
@@ -270,9 +275,23 @@ fun PlayerScreen(
         lastInteractionMs = System.currentTimeMillis()
     }
 
+    // Media info drawer: queried from TDLib (GetFile) when opened.
+    var showInfo by remember { mutableStateOf(false) }
+    var fileInfo by remember(current.fileId) { mutableStateOf<TdApi.File?>(null) }
+    LaunchedEffect(showInfo, current.fileId) {
+        if (showInfo) {
+            fileInfo = viewModel.fileRepo.fileInfo(current.fileId)
+        }
+    }
+
     // Back hides the controller first; a second Back leaves the player.
+    // Info drawer takes priority when open.
     BackHandler(enabled = true) {
-        if (showController) showController = false else onClose()
+        when {
+            showInfo -> showInfo = false
+            showController -> showController = false
+            else -> onClose()
+        }
     }
 
     Box(
@@ -410,6 +429,24 @@ fun PlayerScreen(
                 onNext = if (hasNextVideo) {
                     { neighborVideo(+1)?.let { onNavigateTo(it) }; bumpController() }
                 } else null,
+                onInfo = {
+                    showInfo = !showInfo
+                    bumpController()
+                },
+            )
+        }
+
+        // Media info drawer: right-side slide-in overlay, shown on demand.
+        AnimatedVisibility(
+            visible = showInfo,
+            enter = slideInHorizontally(initialOffsetX = { it }) + fadeIn(),
+            exit = slideOutHorizontally(targetOffsetX = { it }) + fadeOut(),
+            modifier = Modifier.align(Alignment.CenterEnd),
+        ) {
+            MediaInfoDrawer(
+                item = current,
+                fileInfo = fileInfo,
+                onClose = { showInfo = false },
             )
         }
     }
@@ -430,6 +467,7 @@ private fun PlayerController(
     onSeekBack: () -> Unit,
     onSeekFwd: () -> Unit,
     onSpeedCycle: () -> Unit,
+    onInfo: () -> Unit,
     onPrev: (() -> Unit)?,
     onNext: (() -> Unit)?,
 ) {
@@ -460,6 +498,7 @@ private fun PlayerController(
     val seekFwdFocus = remember { FocusRequester() }
     val nextFocus = remember { FocusRequester() }
     val speedFocus = remember { FocusRequester() }
+    val infoFocus = remember { FocusRequester() }
     val buttonFocuses = remember(onPrev, onNext) {
         buildList {
             if (onPrev != null) add(prevFocus)
@@ -468,6 +507,7 @@ private fun PlayerController(
             add(seekFwdFocus)
             if (onNext != null) add(nextFocus)
             add(speedFocus)
+            add(infoFocus)
         }
     }
     val playIndex = buttonFocuses.indexOf(playFocus)
@@ -602,6 +642,13 @@ private fun PlayerController(
                 contentDescription = stringResource(R.string.player_btn_speed),
                 onClick = onSpeedCycle,
                 modifier = Modifier.focusRequester(speedFocus),
+            )
+            Spacer(Modifier.width(24.dp))
+            ControllerButton(
+                icon = Icons.Default.Info,
+                contentDescription = stringResource(R.string.player_btn_info),
+                onClick = onInfo,
+                modifier = Modifier.focusRequester(infoFocus),
             )
         }
     }
@@ -740,4 +787,117 @@ private fun formatMs(ms: Long): String {
     val m = (total % 3600) / 60
     val s = total % 60
     return if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%d:%02d".format(m, s)
+}
+
+@Composable
+private fun MediaInfoDrawer(
+    item: MediaItem,
+    fileInfo: TdApi.File?,
+    onClose: () -> Unit,
+) {
+    val infoFocus = remember { FocusRequester() }
+    LaunchedEffect(Unit) {
+        withFrameNanos { }
+        try { infoFocus.requestFocus() }
+        catch (_: IllegalStateException) {}
+    }
+
+    val typeLabel = when (item.type) {
+        MediaType.Video -> "Video"
+        MediaType.Photo -> "Photo"
+        MediaType.Animation -> "Animation/GIF"
+        else -> "Unknown"
+    }
+    val sizeBytes = fileInfo?.size?.toLong()?.takeIf { it > 0 }
+        ?: fileInfo?.expectedSize?.toLong()?.takeIf { it > 0 }
+    val dateText = if (item.date > 0) {
+        java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault())
+            .format(java.util.Date(item.date * 1000L))
+    } else {
+        "—"
+    }
+
+    Box(
+        modifier = Modifier
+            .width(360.dp)
+            .fillMaxHeight()
+            .background(Color(0xE6161616), RoundedCornerShape(topStart = 16.dp, bottomStart = 16.dp))
+            .focusRequester(infoFocus)
+            .focusable()
+            .onKeyEvent { ev ->
+                if (ev.type != KeyEventType.KeyDown) return@onKeyEvent false
+                when (ev.key) {
+                    Key.Back, Key.DirectionLeft, Key.DirectionCenter, Key.Enter -> {
+                        onClose(); true
+                    }
+                    else -> false
+                }
+            },
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 24.dp, vertical = 28.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.player_info_title),
+                color = Color.White,
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold,
+            )
+            Spacer(Modifier.height(20.dp))
+
+            InfoRow(stringResource(R.string.player_info_type), typeLabel)
+            InfoRow(
+                stringResource(R.string.player_info_resolution),
+                if (item.width > 0 && item.height > 0) "${item.width} × ${item.height}" else "—",
+            )
+            InfoRow(
+                stringResource(R.string.player_info_size),
+                if (sizeBytes != null) formatBytes(sizeBytes) else "—",
+            )
+            InfoRow(
+                stringResource(R.string.player_info_streaming),
+                if (item.supportsStreaming) "Yes" else "No",
+            )
+            InfoRow(stringResource(R.string.player_info_date), dateText)
+            InfoRow(stringResource(R.string.player_info_file_id), item.fileId.toString())
+
+            if (!item.caption.isNullOrBlank()) {
+                Spacer(Modifier.height(16.dp))
+                Text(
+                    text = item.caption!!,
+                    color = Color.White.copy(alpha = 0.85f),
+                    fontSize = 14.sp,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun InfoRow(label: String, value: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = label,
+            color = Color.White.copy(alpha = 0.55f),
+            fontSize = 14.sp,
+            modifier = Modifier.width(110.dp),
+        )
+        Text(
+            text = value,
+            color = Color.White,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Medium,
+        )
+    }
+}
+
+private fun formatBytes(bytes: Long): String {
+    if (bytes <= 0L) return "—"
+    val mb = bytes / (1024.0 * 1024.0)
+    return if (mb >= 1024.0) "%.2f GB".format(mb / 1024.0) else "%.1f MB".format(mb)
 }

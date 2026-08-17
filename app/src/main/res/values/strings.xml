@@ -49,6 +49,14 @@
     <string name="player_btn_seek_back">◀◀ 10s</string>
     <string name="player_btn_seek_fwd">10s ▶▶</string>
     <string name="player_btn_speed">Speed</string>
+    <string name="player_btn_info">Info</string>
+    <string name="player_info_title">Media Info</string>
+    <string name="player_info_type">Type</string>
+    <string name="player_info_resolution">Resolution</string>
+    <string name="player_info_size">Size</string>
+    <string name="player_info_streaming">Streaming</string>
+    <string name="player_info_date">Date</string>
+    <string name="player_info_file_id">File ID</string>
     <string name="player_btn_prev">« Prev</string>
     <string name="player_btn_next">Next »</string>
 

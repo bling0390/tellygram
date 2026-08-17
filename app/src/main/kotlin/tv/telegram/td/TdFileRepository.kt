@@ -182,6 +182,13 @@ class TdFileRepository(
 
     fun stateFor(fileId: Int): FileDownloadState? = _states.value[fileId]
 
+    /**
+     * Fetch current file metadata (size / expectedSize / local state) from
+     * TDLib. Returns null if the query fails or times out.
+     */
+    suspend fun fileInfo(fileId: Int): TdApi.File? =
+        client.execute(TdApi.GetFile(fileId), timeoutMs = 5_000L) as? TdApi.File
+
     // ── Progressive / streaming playback ────────────────────────────────────
 
     /**
