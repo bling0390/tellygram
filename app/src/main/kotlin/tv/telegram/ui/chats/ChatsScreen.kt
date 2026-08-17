@@ -217,9 +217,11 @@ private fun ChatSidebar(
         catch (_: IllegalStateException) {}
     }
 
-    // Media grid pressed Left at the grid's left edge: scroll the selected
-    // chat into view (requestFocus silently no-ops if the item isn't
-    // composed) and focus it.
+    // Media grid pressed Left at the grid's left edge: focus the selected
+    // chat in the sidebar. Only scroll when the selected chat is NOT fully
+    // visible — an unconditional scrollToItem makes the list jump (the top
+    // "Archived Chats" entry slides out of view) and then the focus
+    // system's bringIntoView animates it back, which reads as a flicker.
     LaunchedEffect(sidebarFocusTick, selectedChatId, viewingArchive) {
         if (sidebarFocusTick > 0) {
             val offset = when {
@@ -229,8 +231,21 @@ private fun ChatSidebar(
             }
             val idx = chats.indexOfFirst { it.id == selectedChatId }
             if (idx >= 0) {
-                listState.scrollToItem(idx + offset)
-                withFrameNanos { }
+                val targetIndex = idx + offset
+                val info = listState.layoutInfo
+                val fullyVisible = info.visibleItemsInfo.any { item ->
+                    item.index == targetIndex &&
+                        item.offset >= 0 &&
+                        item.offset + item.size <= info.viewportEndOffset
+                }
+                if (!fullyVisible) {
+                    listState.scrollToItem(targetIndex)
+                    // Let the scrolled item actually compose before
+                    // focusing; requestFocus on an uncomposed item silently
+                    // no-ops.
+                    withFrameNanos { }
+                    withFrameNanos { }
+                }
                 try { selectedChatFocus.requestFocus() }
                 catch (_: IllegalStateException) {}
             }
