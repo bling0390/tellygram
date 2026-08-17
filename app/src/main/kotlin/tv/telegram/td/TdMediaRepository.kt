@@ -49,6 +49,10 @@ class TdMediaRepository(
 
     private fun handleNewMessage(message: TdApi.Message) {
         val chatId = _currentChatId.value ?: return
+        // Only live-append messages from the currently open chat. Without
+        // this check, media sent to ANY chat on another device would leak
+        // into the open chat's media list.
+        if (message.chatId != chatId) return
         val item = parseMessage(message, chatId) ?: return
         if (item.messageId !in _items.value.map { it.messageId }) {
             _items.value = listOf(item) + _items.value
