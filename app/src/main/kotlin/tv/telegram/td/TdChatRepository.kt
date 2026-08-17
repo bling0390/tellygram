@@ -45,6 +45,12 @@ class TdChatRepository(
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error.asStateFlow()
 
+    // Cooldown for live-update refreshes. UpdateChatPosition fires on every
+    // reorder (each new message changes position), so a full list reload per
+    // event would be wasteful; coalesce bursts into at most one per window.
+    private var lastLiveRefreshMs = 0L
+    private val liveRefreshCooldownMs = 2_000L
+
     init {
         scope.launch {
             client.updates.collect { obj -> dispatchUpdate(obj) }
@@ -60,11 +66,15 @@ class TdChatRepository(
                     scope.launch { loadArchiveChats() }
                 }
             }
-            is TdApi.UpdateNewChat, is TdApi.UpdateChatPosition -> {
+            is TdApi.UpdateNewChat, is TdApi.UpdateChatPosition, is TdApi.UpdateChatLastMessage -> {
                 if (_loaded.value) {
-                    Log.i(TAG, "Chat list change (${obj.javaClass.simpleName}) → refreshing")
-                    scope.launch { loadAllChats() }
-                    scope.launch { loadArchiveChats() }
+                    val now = System.currentTimeMillis()
+                    if (now - lastLiveRefreshMs >= liveRefreshCooldownMs) {
+                        lastLiveRefreshMs = now
+                        Log.i(TAG, "Chat list change (${obj.javaClass.simpleName}) → refreshing")
+                        scope.launch { loadAllChats(force = true) }
+                        scope.launch { loadArchiveChats() }
+                    }
                 }
             }
             is TdApi.UpdateChatReadInbox -> {
@@ -103,8 +113,13 @@ class TdChatRepository(
     private fun isMuted(settings: TdApi.ChatNotificationSettings): Boolean =
         !settings.useDefaultMuteFor && settings.muteFor > 0
 
-    suspend fun loadAllChats(limit: Int = 200) {
-        if (_loaded.value && _allChats.value.isNotEmpty()) {
+    /**
+     * Load the main chat list. With [force]=false the already-loaded guard
+     * skips redundant reloads; live updates (chat added/removed/reordered)
+     * pass force=true so the list actually refreshes.
+     */
+    suspend fun loadAllChats(limit: Int = 200, force: Boolean = false) {
+        if (!force && _loaded.value && _allChats.value.isNotEmpty()) {
             Log.d(TAG, "loadAllChats: already loaded (${_allChats.value.size}); skipping")
             return
         }
