@@ -6,8 +6,9 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -57,6 +58,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -230,6 +232,11 @@ fun PlayerScreen(
 
     val focusRequester = remember { FocusRequester() }
     val progressFocusRequester = remember { FocusRequester() }
+    // Info button focus requester — hoisted here so the drawer-close path
+    // can hand focus back to it (the drawer steals focus while open;
+    // without this, focus is lost after the drawer closes and the control
+    // bar can't be re-focused until it's hidden and re-shown).
+    val infoButtonFocus = remember { FocusRequester() }
     LaunchedEffect(Unit) {
         withFrameNanos { }
         try { focusRequester.requestFocus() }
@@ -281,6 +288,19 @@ fun PlayerScreen(
     LaunchedEffect(showInfo, current.fileId) {
         if (showInfo) {
             fileInfo = viewModel.fileRepo.fileInfo(current.fileId)
+        }
+    }
+
+    // Drawer close → return focus to the Info button that opened it.
+    var infoDrawerWasOpen by remember { mutableStateOf(false) }
+    LaunchedEffect(showInfo) {
+        if (showInfo) {
+            infoDrawerWasOpen = true
+        } else if (infoDrawerWasOpen) {
+            infoDrawerWasOpen = false
+            delay(300L)  // let the exit slide finish removing the drawer
+            try { infoButtonFocus.requestFocus() }
+            catch (_: IllegalStateException) {}
         }
     }
 
@@ -403,6 +423,7 @@ fun PlayerScreen(
                 isPlaying = { nowPlaying },
                 speed = speed,
                 progressFocusRequester = progressFocusRequester,
+                infoFocusRequester = infoButtonFocus,
                 onProgressFocusChange = { progressFocused = it },
                 onInteraction = bumpController,
                 onHideController = { showController = false },
@@ -439,21 +460,38 @@ fun PlayerScreen(
         }
 
         // Media info drawer: right-side slide-in overlay, shown on demand.
-        // fillMaxHeight on the AnimatedVisibility (not just the inner Box) so
-        // the drawer spans the full screen height edge-to-edge.
-        AnimatedVisibility(
-            visible = showInfo,
-            enter = slideInHorizontally(initialOffsetX = { it }) + fadeIn(),
-            exit = slideOutHorizontally(targetOffsetX = { it }) + fadeOut(),
-            modifier = Modifier
-                .align(Alignment.CenterEnd)
-                .fillMaxHeight(),
-        ) {
-            MediaInfoDrawer(
-                item = current,
-                fileInfo = fileInfo,
-                onClose = { showInfo = false },
-            )
+        // Plain full-height Box + graphicsLayer slide/fade instead of
+        // AnimatedVisibility: a plain Box's fillMaxHeight always resolves
+        // against the full screen height (AnimatedVisibility's size
+        // handling left gaps at the top/bottom). The drawer stays composed
+        // through its exit slide, then leaves composition so it stops
+        // holding focus.
+        val drawerX by animateDpAsState(
+            targetValue = if (showInfo) 0.dp else 420.dp,
+            animationSpec = tween(durationMillis = 250),
+            label = "infoDrawerX",
+        )
+        val drawerAlpha by animateFloatAsState(
+            targetValue = if (showInfo) 1f else 0f,
+            animationSpec = tween(durationMillis = 250),
+            label = "infoDrawerAlpha",
+        )
+        if (showInfo || drawerX < 420.dp) {
+            Box(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .align(Alignment.CenterEnd)
+                    .graphicsLayer {
+                        translationX = drawerX.toPx()
+                        alpha = drawerAlpha
+                    },
+            ) {
+                MediaInfoDrawer(
+                    item = current,
+                    fileInfo = fileInfo,
+                    onClose = { showInfo = false },
+                )
+            }
         }
     }
 }
@@ -466,6 +504,7 @@ private fun PlayerController(
     isPlaying: () -> Boolean,
     speed: Float,
     progressFocusRequester: FocusRequester,
+    infoFocusRequester: FocusRequester,
     onProgressFocusChange: (Boolean) -> Unit,
     onInteraction: () -> Unit,
     onHideController: () -> Unit,
@@ -504,7 +543,7 @@ private fun PlayerController(
     val seekFwdFocus = remember { FocusRequester() }
     val nextFocus = remember { FocusRequester() }
     val speedFocus = remember { FocusRequester() }
-    val infoFocus = remember { FocusRequester() }
+    val infoFocus = infoFocusRequester
     val buttonFocuses = remember(onPrev, onNext) {
         buildList {
             if (onPrev != null) add(prevFocus)
