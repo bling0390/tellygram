@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import org.drinkless.td.libcore.telegram.TdApi
+import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 
 sealed class FileDownloadState {
@@ -62,6 +63,12 @@ class TdFileRepository(
     private val pendingDownloads = ConcurrentHashMap<Int, CompletableDeferred<String>>()
     private val previewDownloads = ConcurrentHashMap<Int, PreviewRequest>()
 
+    // LRU bookkeeping for the media cache quota: fileId -> last-touched
+    // epoch ms. Touched whenever a file is used (streaming start, download
+    // completion). enforceQuota() evicts the oldest files once the total
+    // on-disk size of locally downloaded media exceeds CACHE_QUOTA_BYTES.
+    private val lastAccess = ConcurrentHashMap<Int, Long>()
+
     // Streaming (progressive playback) state, one entry per fileId that is
     // being played while still downloading.
     private val streamingStates = ConcurrentHashMap<Int, StreamingState>()
@@ -88,11 +95,15 @@ class TdFileRepository(
         val local = file.local ?: return
         val fileId = file.id
         if (local.isDownloadingCompleted && local.path.isNotEmpty()) {
+            touch(fileId)
             val d = pendingDownloads.remove(fileId)
             d?.complete(local.path)
             val pr = previewDownloads.remove(fileId)
             pr?.deferred?.complete(local.path)
             _states.value = _states.value + (fileId to FileDownloadState.Local(local.path))
+            // A file just landed on disk — check the cache quota right away
+            // so a long playlist can't grow the cache past the cap.
+            enforceCacheQuota()
         } else {
             // Preview download: complete as soon as we have the requested prefix.
             val pr = previewDownloads[fileId]
@@ -196,6 +207,61 @@ class TdFileRepository(
     }
 
     fun stateFor(fileId: Int): FileDownloadState? = _states.value[fileId]
+
+    /** Mark [fileId] as recently used for LRU eviction purposes. */
+    fun touch(fileId: Int) {
+        lastAccess[fileId] = System.currentTimeMillis()
+    }
+
+    /**
+     * Delete the local copy of [fileId] (keeps the remote reference — a
+     * later ensureLocal / startStreaming re-downloads it). Called when a
+     * video finishes playing and by the cache quota eviction.
+     */
+    fun deleteLocalFile(fileId: Int) {
+        streamingStates.remove(fileId)
+        pendingDownloads.remove(fileId)?.cancel()
+        previewDownloads.remove(fileId)
+        lastAccess.remove(fileId)
+        client.send(TdApi.DeleteFile(fileId))
+        // Best-effort: drop the state so the UI no longer reports it local.
+        _states.value = _states.value + (fileId to FileDownloadState.Remote)
+        Log.d(TAG, "deleteLocalFile(fileId=$fileId)")
+    }
+
+    /**
+     * Enforce the media cache quota: if the total size of locally stored
+     * media exceeds [CACHE_QUOTA_BYTES], evict the least-recently-used
+     * files (skipping any that are actively downloading / being previewed)
+     * until total size drops to [CACHE_QUOTA_FLOOR_BYTES].
+     */
+    fun enforceCacheQuota() {
+        val localEntries = _states.value.entries
+            .filter { (_, st) -> st is FileDownloadState.Local }
+        if (localEntries.isEmpty()) return
+
+        val total = localEntries.sumOf { (_, st) ->
+            runCatching { File((st as FileDownloadState.Local).path).length() }.getOrDefault(0L)
+        }
+        if (total <= CACHE_QUOTA_BYTES) return
+
+        // Active downloads (streaming, pending, preview) must not be evicted.
+        val inUse = streamingStates.keys + pendingDownloads.keys + previewDownloads.keys
+        val evictable = localEntries
+            .filter { (fileId, _) -> fileId !in inUse }
+            .sortedBy { (fileId, _) -> lastAccess[fileId] ?: 0L }
+
+        var freed = 0L
+        for ((fileId, _) in evictable) {
+            if (total - freed <= CACHE_QUOTA_FLOOR_BYTES) break
+            val sz = runCatching {
+                File((_states.value[fileId] as FileDownloadState.Local).path).length()
+            }.getOrDefault(0L)
+            deleteLocalFile(fileId)
+            freed += sz
+            Log.i(TAG, "enforceCacheQuota: evicted fileId=$fileId (${sz / 1024 / 1024} MB)")
+        }
+    }
 
     /**
      * Fetch current file metadata (size / expectedSize / local state) from
@@ -335,5 +401,12 @@ class TdFileRepository(
 
     companion object {
         private const val TAG = "TdFileRepo"
+
+        // Media cache quota: total on-disk size of locally downloaded media
+        // (videos, photos, previews). TV boxes have tiny storage (6-8 GB), so
+        // cap aggressively: evict oldest files once total exceeds 256 MB and
+        // keep evicting down to the 128 MB floor.
+        private const val CACHE_QUOTA_BYTES = 256L * 1024 * 1024
+        private const val CACHE_QUOTA_FLOOR_BYTES = 128L * 1024 * 1024
     }
 }

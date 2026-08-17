@@ -177,7 +177,34 @@ fun PlayerScreen(
             }
     }
     DisposableEffect(exo) {
-        onDispose { exo.release() }
+        // 方案 A：播完即删 — video reaches its end → drop the local copy
+        // (TDLib keeps the remote reference; streaming videos re-download
+        // almost instantly on next play, non-streaming ones re-download on
+        // demand). Prevents finished videos from piling up on tiny TV
+        // storage.
+        val listener = object : Player.Listener {
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                if (playbackState == Player.STATE_ENDED) {
+                    viewModel.fileRepo.deleteLocalFile(current.fileId)
+                }
+            }
+        }
+        exo.addListener(listener)
+        onDispose {
+            exo.removeListener(listener)
+            exo.release()
+        }
+    }
+
+    // 方案 A：退出播放器即删 — leaving the player screen also drops the
+    // current file's local copy (in addition to the ENDED hook above, which
+    // only fires when a video plays to completion). Skipping away mid-video
+    // otherwise leaves the half-downloaded file on disk forever.
+    DisposableEffect(Unit) {
+        val fid = current.fileId
+        onDispose {
+            viewModel.fileRepo.deleteLocalFile(fid)
+        }
     }
 
     var mediaPrepared by remember(current.fileId) { mutableStateOf(false) }
