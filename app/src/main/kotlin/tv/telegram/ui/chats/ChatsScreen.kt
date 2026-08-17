@@ -568,8 +568,16 @@ private fun MediaPane(
     // True while focus sits on a card in the grid's first row (index < 3).
     // When it does, DirectionUp is consumed so focus stays in the media
     // grid instead of jumping to the chats list (Compose's global focus
-    // search). Left key remains the deliberate path back to the sidebar.
+    // search).
     var firstRowFocused by remember { mutableStateOf(false) }
+    // True while focus sits on a card in the grid's left column
+    // (index % 3 == 0). With no in-grid candidate to the left, Compose's
+    // global focus search would jump to the chat sidebar — consume Left so
+    // focus stays in the current chat's media grid, EXCEPT from the very
+    // first card (index 0), which keeps Left as the deliberate path back
+    // to the sidebar.
+    var leftEdgeFocused by remember { mutableStateOf(false) }
+    var homeCardFocused by remember { mutableStateOf(false) }
 
     // Switch-chat focus: when a different chat is opened, scroll the grid
     // back to the top and focus the first media card (like ChatSidebar's
@@ -723,9 +731,15 @@ private fun MediaPane(
                 .fillMaxSize()
                 .onKeyEvent { ev ->
                     // Only when focus is on a first-row card is there no
-                    // upward candidate; consume so focus stays put.
-                    if (ev.type == KeyEventType.KeyDown && ev.key == Key.DirectionUp && firstRowFocused) {
-                        true
+                    // upward candidate; consume so focus stays put. Same for
+                    // Left on the left column (except the very first card,
+                    // which keeps Left as the path back to the sidebar).
+                    if (ev.type == KeyEventType.KeyDown) {
+                        when {
+                            ev.key == Key.DirectionUp && firstRowFocused -> true
+                            ev.key == Key.DirectionLeft && leftEdgeFocused && !homeCardFocused -> true
+                            else -> false
+                        }
                     } else {
                         false
                     }
@@ -739,29 +753,19 @@ private fun MediaPane(
                     if (focused) focusedMessageId = item.messageId
                     else if (focusedMessageId == item.messageId) focusedMessageId = null
                 }
-                if (index < 3) {
-                    // Track focus on first-row cards so DirectionUp at the top
-                    // of the grid is consumed (see onKeyEvent above).
-                    Box(Modifier.onFocusChanged { firstRowFocused = it.hasFocus }) {
-                        SidebarMediaCard(
-                            item = item,
-                            onClick = {
-                                if (item.type == MediaType.Video) {
-                                    onOpenPlayer(index)
-                                } else {
-                                    openedIndex = index
-                                }
-                            },
-                            viewModel = viewModel,
-                            previewing = previewing,
-                            previewLoading = previewLoading,
-                            previewReady = previewReady,
-                            previewPlayer = previewPlayer,
-                            onFocusChange = onFocusChange,
-                            fr = if (index == 0) firstCardFocus else null,
-                        )
-                    }
-                } else {
+                val isFirstRow = index < 3
+                val isLeftEdge = index % 3 == 0
+                val isHome = index == 0
+                // Track focus for the grid-boundary key handling above:
+                // first row (Up), left column (Left), and the very first
+                // card (the one spot Left is allowed to leave the grid).
+                Box(
+                    Modifier.onFocusChanged { focused ->
+                        if (isFirstRow) firstRowFocused = focused.hasFocus
+                        if (isLeftEdge) leftEdgeFocused = focused.hasFocus
+                        if (isHome) homeCardFocused = focused.hasFocus
+                    },
+                ) {
                     SidebarMediaCard(
                         item = item,
                         onClick = {
@@ -777,6 +781,7 @@ private fun MediaPane(
                         previewReady = previewReady,
                         previewPlayer = previewPlayer,
                         onFocusChange = onFocusChange,
+                        fr = if (isHome) firstCardFocus else null,
                     )
                 }
             }
