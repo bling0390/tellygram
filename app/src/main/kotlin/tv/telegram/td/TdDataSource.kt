@@ -33,6 +33,15 @@ class TdDataSource(
     private var fileId: Int = -1
     private var openedUri: Uri? = null
     private var bytesRemaining: Long = 0
+    // Epoch of the StreamingState the current RandomAccessFile was opened
+    // against. When the repo resets the stream window (emergency disk
+    // watermark: DeleteFile + re-download from a new offset), the epoch
+    // bumps — the old handle points at a deleted file, so read() must close
+    // it and re-open the recreated file.
+    private var openedEpoch: Int = 0
+    // Throttle for the disk water-mark check: statfs is a syscall, and read()
+    // is called with ~32KB buffers, so only re-check every few seconds.
+    private var lastHeadroomCheckMs: Long = 0
 
     override fun open(dataSpec: DataSpec): Long {
         val uri = dataSpec.uri
@@ -57,6 +66,7 @@ class TdDataSource(
         val f = RandomAccessFile(path, "r")
         f.seek(dataSpec.position)
         file = f
+        openedEpoch = fileRepo.streamState(fileId)?.epoch ?: 0
         bytesRemaining = dataSpec.length
         val expected = fileRepo.streamState(fileId)?.expectedSize ?: 0L
         return if (expected > 0) expected - dataSpec.position else C.LENGTH_UNSET.toLong()
@@ -65,8 +75,43 @@ class TdDataSource(
     override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
         val f = file ?: return C.RESULT_END_OF_INPUT
         val pos = f.filePointer
-        val st = fileRepo.streamState(fileId)
+
+        // Throttled disk water-mark check (we know the exact byte position
+        // here — PlayerScreen only has milliseconds). If the TDLib files
+        // volume is critically low the repo evicts inactive files and may
+        // reset the stream window, bumping the epoch; the re-check below
+        // picks up the new StreamingState and re-opens the recreated file.
+        val nowMs = System.currentTimeMillis()
+        if (nowMs - lastHeadroomCheckMs >= HEADROOM_CHECK_INTERVAL_MS) {
+            lastHeadroomCheckMs = nowMs
+            fileRepo.ensureStorageHeadroom(fileId, pos)
+        }
+
+        var st = fileRepo.streamState(fileId)
             ?: throw IOException("streaming state lost for file $fileId")
+
+        // Emergency disk-watermark reset: the repo deleted the local file and
+        // restarted a fresh windowed download at the playhead (epoch bump).
+        // The old handle points at the deleted inode — close it and re-open
+        // the recreated file, then continue reading at the same position.
+        if (st.epoch != openedEpoch) {
+            val newPath = fileRepo.awaitStreamPath(fileId)
+                ?: throw IOException("stream reset (epoch ${st.epoch}) but no local path for file $fileId")
+            f.close()
+            val nf = RandomAccessFile(newPath, "r")
+            nf.seek(pos)
+            file = nf
+            openedEpoch = st.epoch
+            st = fileRepo.streamState(fileId) ?: st
+        }
+
+        // Windowed streaming: the active download only fetches up to the
+        // current frontier (targetBytes ≈ playhead + window). When the
+        // playhead reaches the frontier and the file isn't complete yet,
+        // extend the download so playback can continue past it.
+        if (!st.completed && pos + length > st.targetBytes) {
+            fileRepo.extendStream(fileId, pos + fileRepo.streamWindowBytes)
+        }
 
         if (st.completed && st.expectedSize > 0 && pos >= st.expectedSize) {
             return C.RESULT_END_OF_INPUT
@@ -123,6 +168,9 @@ class TdDataSource(
     companion object {
         private const val TAG = "TdDataSource"
         const val SCHEME_TD = "td"
+
+        // Re-check free space every 3s while streaming (statfs cost amortized).
+        private const val HEADROOM_CHECK_INTERVAL_MS = 3_000L
 
         fun uriFor(fileId: Int): Uri = Uri.parse("$SCHEME_TD://$fileId")
     }

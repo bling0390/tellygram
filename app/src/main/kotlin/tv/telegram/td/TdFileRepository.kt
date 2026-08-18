@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import org.drinkless.td.libcore.telegram.TdApi
+import android.os.StatFs
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 
@@ -50,11 +51,28 @@ data class StreamingState(
     // including the active segment. Produced by seekStream when it abandons
     // the previous segment.
     val ranges: List<LongRange> = emptyList(),
+    // Absolute end position of the current windowed download task
+    // (activeStart + limit). Windowed streaming only downloads up to this
+    // frontier instead of the whole file, so disk usage stays ≈ playhead +
+    // window instead of the full video size. Grows as playback advances
+    // (extendStream).
+    val targetBytes: Long = 0,
+    // Bumped every time the file is deleted and re-downloaded from a new
+    // offset (emergency disk-watermark reset). TdDataSource watches this to
+    // know when to close the old RandomAccessFile and re-open the new one.
+    val epoch: Int = 0,
 )
 
 class TdFileRepository(
     private val client: TdClient = TdClient,
     private val scope: CoroutineScope = CoroutineScope(Dispatchers.IO + SupervisorJob()),
+    // Windowed streaming: DownloadFile only fetches up to this many bytes
+    // ahead of the playhead (instead of the whole file), so a multi-GB video
+    // doesn't fill tiny TV storage. Sized from device RAM (see MainViewModel:
+    // ram/18, clamped 64-256MB).
+    private val windowBytes: Long = DEFAULT_WINDOW_BYTES,
+    // TDLib files directory — used for StatFs low-disk-watermark checks.
+    private val filesDirectory: String? = null,
 ) {
 
     private val _states = MutableStateFlow<Map<Int, FileDownloadState>>(emptyMap())
@@ -292,9 +310,14 @@ class TdFileRepository(
             Log.d(TAG, "startStreaming(fileId=$fileId): already local, marked complete")
             return
         }
-        streamingStates[fileId] = StreamingState(fileId = fileId)
-        client.send(TdApi.DownloadFile(fileId, priority, 0, 0, false))
-        Log.d(TAG, "startStreaming(fileId=$fileId, priority=$priority)")
+        // Windowed download: fetch [0, windowBytes) only — playback advances
+        // the frontier via extendStream as the playhead moves.
+        streamingStates[fileId] = StreamingState(
+            fileId = fileId,
+            targetBytes = windowBytes,
+        )
+        client.send(TdApi.DownloadFile(fileId, priority, 0, windowBytes.toInt(), false))
+        Log.d(TAG, "startStreaming(fileId=$fileId, priority=$priority, window=${windowBytes / 1024 / 1024}MB)")
     }
 
     /** Re-target the active download to start at [offset] (used on seek). */
@@ -312,10 +335,28 @@ class TdFileRepository(
                 downloadedSize = offset,
                 completed = false,
                 ranges = frozen,
+                targetBytes = offset + windowBytes,
             )
         }
-        client.send(TdApi.DownloadFile(fileId, priority, offset.toInt(), 0, false))
-        Log.d(TAG, "seekStream(fileId=$fileId, offset=$offset)")
+        client.send(TdApi.DownloadFile(fileId, priority, offset.toInt(), windowBytes.toInt(), false))
+        Log.d(TAG, "seekStream(fileId=$fileId, offset=$offset, window=${windowBytes / 1024 / 1024}MB)")
+    }
+
+    /**
+     * Grow the windowed download frontier to [targetBytes] (absolute file
+     * position). Continues the sequential write from the current downloaded
+     * size — no holes within the active segment. No-op if the target is
+     * already covered or the file is complete.
+     */
+    fun extendStream(fileId: Int, targetBytes: Long, priority: Int = 1) {
+        streamingStates[fileId]?.let { cur ->
+            if (cur.completed) return
+            if (targetBytes <= cur.targetBytes) return
+            val limit = (targetBytes - cur.downloadedSize).toInt().coerceAtLeast(1)
+            streamingStates[fileId] = cur.copy(targetBytes = targetBytes)
+            client.send(TdApi.DownloadFile(fileId, priority, cur.downloadedSize.toInt(), limit, false))
+            Log.d(TAG, "extendStream(fileId=$fileId, to=$targetBytes)")
+        }
     }
 
     /**
@@ -330,6 +371,9 @@ class TdFileRepository(
         if (pos >= st.activeStart && pos + len <= st.downloadedSize) return true
         return st.ranges.any { pos >= it.first && pos + len <= it.last + 1 }
     }
+
+    /** Current window size used for windowed streaming (bytes). */
+    val streamWindowBytes: Long get() = windowBytes
 
     private fun addRange(ranges: List<LongRange>, segment: LongRange): List<LongRange> {
         val merged = ranges.toMutableList()
@@ -399,6 +443,62 @@ class TdFileRepository(
         streamingStates.remove(fileId)
     }
 
+    // ── Disk water-mark emergency ───────────────────────────────────────────
+
+    /**
+     * Check free space on the TDLib files volume. If it drops below
+     * [LOW_DISK_WATERMARK_BYTES]: first evict inactive fully-downloaded files
+     * (LRU); if still critically low, reset the actively-streamed file to a
+     * fresh window at [activePos] — deleting the local copy and re-downloading
+     * only [windowBytes] from the playhead, so disk usage collapses from
+     * "playhead + window" back to just the window. Playback stutters briefly
+     * (re-download) but the disk can never fill up.
+     */
+    fun ensureStorageHeadroom(activeFileId: Int?, activePos: Long) {
+        val dir = filesDirectory ?: return
+        if (StatFs(dir).availableBytes.toLong() >= LOW_DISK_WATERMARK_BYTES) return
+        Log.w(TAG, "ensureStorageHeadroom: low disk (< ${LOW_DISK_WATERMARK_BYTES / 1024 / 1024}MB free), evicting inactive files")
+        evictInactiveLocalFiles()
+        if (StatFs(dir).availableBytes.toLong() >= LOW_DISK_WATERMARK_BYTES) return
+        if (activeFileId != null) {
+            Log.w(TAG, "ensureStorageHeadroom: still low, resetting stream window for file $activeFileId at pos $activePos")
+            resetStreamWindow(activeFileId, activePos)
+        }
+    }
+
+    /** Delete all fully-downloaded files not currently in use (LRU order). */
+    private fun evictInactiveLocalFiles() {
+        val inUse = streamingStates.keys + pendingDownloads.keys + previewDownloads.keys
+        val evictable = _states.value.entries
+            .filter { (fileId, st) -> st is FileDownloadState.Local && fileId !in inUse }
+            .sortedBy { (fileId, _) -> lastAccess[fileId] ?: 0L }
+        for ((fileId, _) in evictable) {
+            deleteLocalFile(fileId)
+        }
+    }
+
+    /**
+     * Delete the local copy of [fileId] and restart windowed download at
+     * [pos]. Used by the disk water-mark: collapses on-disk usage back to a
+     * single window. TdDataSource detects the epoch bump and re-opens the
+     * (recreated) file.
+     */
+    fun resetStreamWindow(fileId: Int, pos: Long, priority: Int = 1) {
+        val cur = streamingStates[fileId]
+        client.send(TdApi.CancelDownloadFile(fileId, false))
+        client.send(TdApi.DeleteFile(fileId))
+        streamingStates[fileId] = StreamingState(
+            fileId = fileId,
+            activeStart = pos,
+            downloadedSize = pos,
+            targetBytes = pos + windowBytes,
+            epoch = (cur?.epoch ?: 0) + 1,
+        )
+        client.send(TdApi.DownloadFile(fileId, priority, pos.toInt(), windowBytes.toInt(), false))
+        _states.value = _states.value + (fileId to FileDownloadState.Pending())
+        Log.i(TAG, "resetStreamWindow(fileId=$fileId, pos=$pos, epoch=${(cur?.epoch ?: 0) + 1})")
+    }
+
     companion object {
         private const val TAG = "TdFileRepo"
 
@@ -408,5 +508,13 @@ class TdFileRepository(
         // keep evicting down to the 128 MB floor.
         private const val CACHE_QUOTA_BYTES = 256L * 1024 * 1024
         private const val CACHE_QUOTA_FLOOR_BYTES = 128L * 1024 * 1024
+
+        // Windowed streaming fallback (used when MainViewModel doesn't pass a
+        // RAM-derived value): fetch this many bytes ahead of the playhead.
+        private const val DEFAULT_WINDOW_BYTES = 128L * 1024 * 1024
+
+        // If the TDLib files volume has less than this much free space,
+        // start evicting inactive files, then reset the active stream window.
+        private const val LOW_DISK_WATERMARK_BYTES = 800L * 1024 * 1024
     }
 }

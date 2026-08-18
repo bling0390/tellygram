@@ -1,6 +1,8 @@
 package tv.telegram.ui
 
+import android.app.ActivityManager
 import android.app.Application
+import android.content.Context
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
@@ -34,7 +36,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val auth = TdAuth(client = TdClient, scope = viewModelScope)
     val chatRepo = TdChatRepository(client = TdClient, scope = viewModelScope)
     val mediaRepo = TdMediaRepository(client = TdClient, scope = viewModelScope)
-    val fileRepo = TdFileRepository(client = TdClient, scope = viewModelScope)
+    val fileRepo = TdFileRepository(
+        client = TdClient,
+        scope = viewModelScope,
+        // Windowed streaming, SmartTube-style: buffer ≈ device RAM / 18,
+        // clamped to [64MB, 256MB]. Multi-GB videos never fully land on the
+        // TV's tiny storage — the download only runs a window ahead of the
+        // playhead (extended on demand as playback advances).
+        windowBytes = streamWindowBytes(app),
+        filesDirectory = java.io.File(app.filesDir, "tdlib-files").absolutePath,
+    )
 
     val authState: StateFlow<AuthState> = auth.state
     val chatList = chatRepo.items
@@ -75,6 +86,20 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             val dir = java.io.File(app.filesDir, "tdlib-files")
             _cacheSizeBytes.value = TdClient.cacheSize(dir.absolutePath)
         }
+    }
+
+    /**
+     * Windowed-streaming buffer size derived from device RAM (SmartTube
+     * heuristic: ram/18), clamped to a sane [64MB, 256MB] band for small TV
+     * storage. Falls back to 128MB if RAM can't be queried.
+     */
+    private fun streamWindowBytes(app: Application): Long {
+        val memInfo = ActivityManager.MemoryInfo()
+        val am = app.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+        am?.getMemoryInfo(memInfo)
+        val ram = memInfo.totalMem
+        if (ram <= 0L) return 128L * 1024 * 1024
+        return (ram / 18L).coerceIn(64L * 1024 * 1024, 256L * 1024 * 1024)
     }
 
     fun clearCache() {
