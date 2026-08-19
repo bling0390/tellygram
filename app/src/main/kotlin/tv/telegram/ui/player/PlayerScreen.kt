@@ -2,6 +2,7 @@
 
 package tv.telegram.ui.player
 
+import android.util.Log
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -75,6 +76,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.MediaItem as ExoMediaItem
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.exoplayer.ExoPlayer
@@ -94,6 +96,8 @@ import org.drinkless.td.libcore.telegram.TdApi
 import androidx.tv.material3.Icon
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
+
+private const val TAG = "PlayerScreen"
 
 @Composable
 fun PlayerScreen(
@@ -134,7 +138,14 @@ fun PlayerScreen(
 
     fun neighborVideo(delta: Int): Int? = videoIndices.getOrNull(posInVideos + delta)
 
-    val currentFileState = viewModel.fileStateFor(current.fileId)
+    // Reactive file state: collect the repo's state map so this screen
+    // recomposes when a download completes (path appears) or fails. The old
+    // one-shot stateFor() read never recomposed, so a file that had to be
+    // re-downloaded (方案 A deletes the local copy on player exit) kept
+    // currentPath == null forever → the prepare effect never ran → infinite
+    // spinner / black screen.
+    val fileStates by viewModel.fileRepo.states.collectAsStateWithLifecycle()
+    val currentFileState = fileStates[current.fileId]
     val currentPath = (currentFileState as? FileDownloadState.Local)?.path
     // Progressive playback: only videos the server marked supportsStreaming
     // are streamed (moov/faststart guaranteed) — and only when the file is
@@ -143,7 +154,10 @@ fun PlayerScreen(
     // events, but a completed download never fires one, so streaming an
     // already-downloaded file would time out and fail to play.
     val canStream = current.type == MediaType.Video && current.supportsStreaming && currentPath == null
-    LaunchedEffect(current.fileId) {
+    // retryTick: bumped by the error overlay's retry action so both effects
+    // below re-run (re-trigger download / re-prepare playback).
+    var retryTick by remember(current.fileId) { mutableIntStateOf(0) }
+    LaunchedEffect(current.fileId, retryTick) {
         if (canStream) {
             viewModel.fileRepo.startStreaming(current.fileId, priority = 32)
         } else if (currentPath == null) {
@@ -208,7 +222,12 @@ fun PlayerScreen(
     }
 
     var mediaPrepared by remember(current.fileId) { mutableStateOf(false) }
-    LaunchedEffect(current.fileId) {
+    // Keyed on currentPath too: when a non-streaming video needs a
+    // (re)download, the path only appears AFTER the download completes —
+    // keying on fileId alone meant the effect ran once with path == null and
+    // never re-ran, leaving the player stuck on the spinner. retryTick lets
+    // the error overlay re-run the whole prepare after a failure.
+    LaunchedEffect(current.fileId, currentPath, retryTick) {
         if (mediaPrepared) return@LaunchedEffect
         if (canStream) {
             // td:// URI — TdDataSource blocks inside open() until TDLib has
@@ -244,6 +263,15 @@ fun PlayerScreen(
         }
     }
 
+    // Playback error surfaced to the UI — previously any error left the
+    // player silently black (there was no onPlayerError listener at all).
+    var playerError by remember(current.fileId) { mutableStateOf<String?>(null) }
+    val retryPlayback = {
+        playerError = null
+        mediaPrepared = false
+        retryTick++
+    }
+
     // Live play state: mirror playWhenReady (user intent) into a State so the
     // play/pause icon flips immediately on toggle. Using playWhenReady (not
     // isPlaying) means seeking doesn't flicker the button — isPlaying goes
@@ -253,6 +281,10 @@ fun PlayerScreen(
         exo.addListener(object : Player.Listener {
             override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
                 nowPlaying = playWhenReady
+            }
+            override fun onPlayerError(error: PlaybackException) {
+                Log.e(TAG, "playback error for file ${current.fileId}", error)
+                playerError = error.errorCodeName + ": " + (error.message ?: "")
             }
             override fun onPlaybackStateChanged(state: Int) {
                 if (state == Player.STATE_ENDED) {
@@ -406,10 +438,16 @@ fun PlayerScreen(
                     }
                     // Reveal the controller; focus lands on the progress bar
                     // (handled by the LaunchedEffect above). Hidden mode only.
+                    // With an error showing, OK/Enter retries instead.
                     Key.DirectionUp, Key.DirectionDown, Key.DirectionCenter, Key.Enter -> {
                         if (showController) return@onKeyEvent false
-                        showController = true
-                        true
+                        if (playerError != null || currentFileState is FileDownloadState.Failed) {
+                            retryPlayback()
+                            true
+                        } else {
+                            showController = true
+                            true
+                        }
                     }
                     // Physical play keys toggle playback directly, no reveal.
                     // In controller mode they still count as interaction so
@@ -429,7 +467,36 @@ fun PlayerScreen(
                 }
             },
     ) {
-        if (!mediaPrepared) {
+        val downloadError = (currentFileState as? FileDownloadState.Failed)?.reason
+        val errorMsg = playerError
+            ?: downloadError?.let { stringResource(R.string.player_download_failed, it) }
+        if (errorMsg != null) {
+            // Error overlay — replaces the silent black screen: shows what
+            // failed, OK retries (re-download / re-prepare), Back exits.
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        text = stringResource(R.string.player_error_title),
+                        color = Color.White,
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        text = errorMsg,
+                        color = Color.White.copy(alpha = 0.85f),
+                        fontSize = 15.sp,
+                        modifier = Modifier.padding(horizontal = 40.dp),
+                    )
+                    Spacer(Modifier.height(24.dp))
+                    Text(
+                        text = stringResource(R.string.player_error_hint),
+                        color = Color.White.copy(alpha = 0.6f),
+                        fontSize = 14.sp,
+                    )
+                }
+            }
+        } else if (!mediaPrepared) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(color = Color.White)
             }

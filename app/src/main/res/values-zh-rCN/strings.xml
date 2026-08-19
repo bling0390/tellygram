@@ -48,6 +48,9 @@
     <string name="player_btn_speed">倍速</string>
     <string name="player_btn_prev">« 上一条</string>
     <string name="player_btn_next">下一条 »</string>
+    <string name="player_error_title">播放出错</string>
+    <string name="player_error_hint">OK 重试 · 返回退出</string>
+    <string name="player_download_failed">下载失败:%1$s</string>
 
     <string name="settings_title">设置</string>
     <string name="settings_account">账户信息</string>
