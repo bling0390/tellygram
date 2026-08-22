@@ -8,6 +8,9 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -151,7 +154,13 @@ private fun AppNavHost(viewModel: MainViewModel) {
             composable(Routes.QR_LOGIN) { QrCodeScreen(viewModel = viewModel) }
 
             navigation(startDestination = Routes.HOME_CHATS, route = Routes.HOME) {
-                composable(Routes.HOME_SEARCH) {
+                composable(
+                    route = Routes.HOME_SEARCH,
+                    enterTransition = { slideInHorizontally(tween(300)) { it } },
+                    exitTransition = { slideOutHorizontally(tween(300)) { -it / 3 } },
+                    popEnterTransition = { slideInHorizontally(tween(300)) { -it / 3 } },
+                    popExitTransition = { slideOutHorizontally(tween(300)) { it } },
+                ) {
                     SearchScreen(
                         viewModel = viewModel,
                         onOpenChats = {
@@ -163,13 +172,25 @@ private fun AppNavHost(viewModel: MainViewModel) {
                         },
                     )
                 }
-                composable(Routes.HOME_CHATS) {
+                composable(
+                    route = Routes.HOME_CHATS,
+                    enterTransition = { slideInHorizontally(tween(300)) { it } },
+                    exitTransition = { slideOutHorizontally(tween(300)) { -it / 3 } },
+                    popEnterTransition = { slideInHorizontally(tween(300)) { -it / 3 } },
+                    popExitTransition = { slideOutHorizontally(tween(300)) { it } },
+                ) {
                     ChatsScreen(
                         viewModel = viewModel,
                         onOpenPlayer = { index -> navController.navigate(Routes.player(index)) },
                     )
                 }
-                composable(Routes.HOME_SETTINGS) { SettingsScreen(viewModel = viewModel) }
+                composable(
+                    route = Routes.HOME_SETTINGS,
+                    enterTransition = { slideInHorizontally(tween(300)) { it } },
+                    exitTransition = { slideOutHorizontally(tween(300)) { -it / 3 } },
+                    popEnterTransition = { slideInHorizontally(tween(300)) { -it / 3 } },
+                    popExitTransition = { slideOutHorizontally(tween(300)) { it } },
+                ) { SettingsScreen(viewModel = viewModel) }
             }
 
             composable(
