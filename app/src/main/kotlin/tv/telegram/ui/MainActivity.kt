@@ -1,4 +1,7 @@
-@file:OptIn(androidx.tv.material3.ExperimentalTvMaterial3Api::class)
+@file:OptIn(
+    androidx.tv.material3.ExperimentalTvMaterial3Api::class,
+    androidx.compose.ui.ExperimentalComposeUiApi::class,
+)
 
 package tv.telegram.ui
 
@@ -32,6 +35,7 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.material.icons.Icons
@@ -216,7 +220,7 @@ private fun AppNavHost(viewModel: MainViewModel) {
 
         if (inHome) {
             NavRail(
-                current = if (settingsOpen) Routes.HOME_SETTINGS else currentRoute,
+                current = currentRoute,
                 onSelect = { route ->
                     // Settings is a drawer overlay, not a page — selecting it
                     // opens the drawer instead of navigating.
@@ -231,6 +235,10 @@ private fun AppNavHost(viewModel: MainViewModel) {
                     }
                 },
                 settingsFocus = settingsRailFocus,
+                // While the settings drawer is open, the rail must not
+                // participate in focus search — otherwise pressing Up from
+                // the drawer's first row escapes to the rail's chats item.
+                enabled = !settingsOpen,
                 modifier = Modifier
                     .align(Alignment.CenterStart)
                     .width(railWidth)
@@ -265,6 +273,7 @@ private fun NavRail(
     onSelect: (String) -> Unit,
     modifier: Modifier = Modifier,
     settingsFocus: FocusRequester? = null,
+    enabled: Boolean = true,
 ) {
     val entries = listOf(
         NavEntry(Routes.HOME_SEARCH, stringResource(R.string.nav_search), Icons.Default.Search),
@@ -298,6 +307,7 @@ private fun NavRail(
                     2 -> settingsFocus
                     else -> null
                 },
+                enabled = enabled,
             )
         }
     }
@@ -309,6 +319,7 @@ private fun RailItem(
     selected: Boolean,
     onClick: () -> Unit,
     fr: FocusRequester? = null,
+    enabled: Boolean = true,
 ) {
     var focused by remember { mutableStateOf(false) }
     // Selected and focused items get a true CIRCLE background (CircleShape,
@@ -335,6 +346,10 @@ private fun RailItem(
         modifier = Modifier
             .width(48.dp)
             .height(48.dp)
+            // While the settings drawer is open (enabled = false) the rail
+            // item drops out of focus search — D-pad can't escape the drawer
+            // into the rail. Visuals (selected chip) stay unchanged.
+            .focusProperties { canFocus = enabled }
             .onFocusChanged { focused = it.hasFocus }
             .let { if (fr != null) it.focusRequester(fr) else it },
     ) {
