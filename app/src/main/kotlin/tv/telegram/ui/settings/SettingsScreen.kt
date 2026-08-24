@@ -63,11 +63,8 @@ fun SettingsScreen(viewModel: MainViewModel) {
     LaunchedEffect(Unit) { viewModel.refreshCacheSize() }
 
     Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background),
+        modifier = Modifier.fillMaxSize(),
     ) {
-
         Column(
             modifier = Modifier
                 .fillMaxSize()

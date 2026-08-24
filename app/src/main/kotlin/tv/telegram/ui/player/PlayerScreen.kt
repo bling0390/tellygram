@@ -7,9 +7,6 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -22,7 +19,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -92,6 +88,7 @@ import tv.telegram.td.MediaType
 import tv.telegram.td.TdDataSource
 import tv.telegram.td.TdDataSourceFactory
 import tv.telegram.ui.MainViewModel
+import tv.telegram.ui.components.RightDrawer
 import org.drinkless.td.libcore.telegram.TdApi
 import androidx.tv.material3.Icon
 import androidx.tv.material3.MaterialTheme
@@ -367,18 +364,7 @@ fun PlayerScreen(
         }
     }
 
-    // Drawer close → return focus to the Info button that opened it.
-    var infoDrawerWasOpen by remember { mutableStateOf(false) }
-    LaunchedEffect(showInfo) {
-        if (showInfo) {
-            infoDrawerWasOpen = true
-        } else if (infoDrawerWasOpen) {
-            infoDrawerWasOpen = false
-            delay(300L)  // let the exit slide finish removing the drawer
-            try { infoButtonFocus.requestFocus() }
-            catch (_: IllegalStateException) {}
-        }
-    }
+
 
     // Back hides the controller first; a second Back leaves the player.
     // Info drawer takes priority when open.
@@ -595,38 +581,18 @@ fun PlayerScreen(
         }
 
         // Media info drawer: right-side slide-in overlay, shown on demand.
-        // Plain full-height Box + graphicsLayer slide/fade instead of
-        // AnimatedVisibility: a plain Box's fillMaxHeight always resolves
-        // against the full screen height (AnimatedVisibility's size
-        // handling left gaps at the top/bottom). The drawer stays composed
-        // through its exit slide, then leaves composition so it stops
-        // holding focus.
-        val drawerX by animateDpAsState(
-            targetValue = if (showInfo) 0.dp else 420.dp,
-            animationSpec = tween(durationMillis = 250),
-            label = "infoDrawerX",
-        )
-        val drawerAlpha by animateFloatAsState(
-            targetValue = if (showInfo) 1f else 0f,
-            animationSpec = tween(durationMillis = 250),
-            label = "infoDrawerAlpha",
-        )
-        if (showInfo || drawerX < 420.dp) {
-            Box(
-                modifier = Modifier
-                    .fillMaxHeight()
-                    .align(Alignment.CenterEnd)
-                    .graphicsLayer {
-                        translationX = drawerX.toPx()
-                        alpha = drawerAlpha
-                    },
-            ) {
-                MediaInfoDrawer(
-                    item = current,
-                    fileInfo = fileInfo,
-                    onClose = { showInfo = false },
-                )
-            }
+        // Shared RightDrawer component — same popup behavior used by the
+        // settings drawer.
+        RightDrawer(
+            visible = showInfo,
+            onClose = { showInfo = false },
+            restoreFocus = infoButtonFocus,
+            modifier = Modifier.align(Alignment.CenterEnd),
+        ) {
+            MediaInfoDrawer(
+                item = current,
+                fileInfo = fileInfo,
+            )
         }
     }
 }
@@ -983,14 +949,7 @@ private fun formatMs(ms: Long): String {
 private fun MediaInfoDrawer(
     item: MediaItem,
     fileInfo: TdApi.File?,
-    onClose: () -> Unit,
 ) {
-    val infoFocus = remember { FocusRequester() }
-    LaunchedEffect(Unit) {
-        withFrameNanos { }
-        try { infoFocus.requestFocus() }
-        catch (_: IllegalStateException) {}
-    }
 
     val typeLabel = when (item.type) {
         MediaType.Video -> "Video"
@@ -1009,58 +968,40 @@ private fun MediaInfoDrawer(
 
     Box(
         modifier = Modifier
-            .width(360.dp)
-            .fillMaxHeight()
-            .background(Color(0xE6161616), RoundedCornerShape(topStart = 16.dp, bottomStart = 16.dp))
-            .focusRequester(infoFocus)
-            .focusable()
-            .onKeyEvent { ev ->
-                if (ev.type != KeyEventType.KeyDown) return@onKeyEvent false
-                when (ev.key) {
-                    Key.Back, Key.DirectionLeft, Key.DirectionCenter, Key.Enter -> {
-                        onClose(); true
-                    }
-                    else -> false
-                }
-            },
+            .fillMaxSize()
+            .padding(horizontal = 24.dp, vertical = 28.dp),
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 24.dp, vertical = 28.dp),
-        ) {
+        Text(
+            text = stringResource(R.string.player_info_title),
+            color = Color.White,
+            fontSize = 20.sp,
+            fontWeight = FontWeight.Bold,
+        )
+        Spacer(Modifier.height(20.dp))
+
+        InfoRow(stringResource(R.string.player_info_type), typeLabel)
+        InfoRow(
+            stringResource(R.string.player_info_resolution),
+            if (item.width > 0 && item.height > 0) "${item.width} × ${item.height}" else "—",
+        )
+        InfoRow(
+            stringResource(R.string.player_info_size),
+            if (sizeBytes != null) formatBytes(sizeBytes) else "—",
+        )
+        InfoRow(
+            stringResource(R.string.player_info_streaming),
+            if (item.supportsStreaming) "Yes" else "No",
+        )
+        InfoRow(stringResource(R.string.player_info_date), dateText)
+        InfoRow(stringResource(R.string.player_info_file_id), item.fileId.toString())
+
+        if (!item.caption.isNullOrBlank()) {
+            Spacer(Modifier.height(16.dp))
             Text(
-                text = stringResource(R.string.player_info_title),
-                color = Color.White,
-                fontSize = 20.sp,
-                fontWeight = FontWeight.Bold,
+                text = item.caption!!,
+                color = Color.White.copy(alpha = 0.85f),
+                fontSize = 14.sp,
             )
-            Spacer(Modifier.height(20.dp))
-
-            InfoRow(stringResource(R.string.player_info_type), typeLabel)
-            InfoRow(
-                stringResource(R.string.player_info_resolution),
-                if (item.width > 0 && item.height > 0) "${item.width} × ${item.height}" else "—",
-            )
-            InfoRow(
-                stringResource(R.string.player_info_size),
-                if (sizeBytes != null) formatBytes(sizeBytes) else "—",
-            )
-            InfoRow(
-                stringResource(R.string.player_info_streaming),
-                if (item.supportsStreaming) "Yes" else "No",
-            )
-            InfoRow(stringResource(R.string.player_info_date), dateText)
-            InfoRow(stringResource(R.string.player_info_file_id), item.fileId.toString())
-
-            if (!item.caption.isNullOrBlank()) {
-                Spacer(Modifier.height(16.dp))
-                Text(
-                    text = item.caption!!,
-                    color = Color.White.copy(alpha = 0.85f),
-                    fontSize = 14.sp,
-                )
-            }
         }
     }
 }

@@ -15,11 +15,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -46,7 +43,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -66,6 +62,7 @@ import tv.telegram.ui.player.PlayerScreen
 import tv.telegram.ui.search.SearchScreen
 import tv.telegram.ui.settings.SettingsScreen
 import tv.telegram.ui.nav.Routes
+import tv.telegram.ui.components.RightDrawer
 import tv.telegram.ui.theme.TvgramTheme
 import androidx.tv.material3.Border
 import androidx.tv.material3.Card
@@ -99,6 +96,15 @@ private fun AppNavHost(viewModel: MainViewModel) {
     val currentRoute = backStackEntry?.destination?.route
     val inHome = currentRoute?.startsWith(Routes.HOME) == true
 
+    // Settings lives in a right-side drawer (same popup as the player's
+    // media-info drawer) instead of a full NavHost page: selecting the rail
+    // entry opens the overlay on top of the current page, rail stays
+    // visible. Back / Left / OK inside the drawer close it.
+    var settingsOpen by remember { mutableStateOf(false) }
+    // Focus target for the rail's settings item — the drawer returns focus
+    // here when it closes.
+    val settingsRailFocus = remember { FocusRequester() }
+
     LaunchedEffect(Unit) {
         viewModel.navEvents.collect { event ->
             val target = when (event) {
@@ -114,11 +120,14 @@ private fun AppNavHost(viewModel: MainViewModel) {
         }
     }
 
-    BackHandler(enabled = currentRoute == Routes.HOME_SEARCH || currentRoute == Routes.HOME_SETTINGS) {
-        navController.navigate(Routes.HOME_CHATS) {
-            popUpTo(Routes.HOME) { saveState = true }
-            launchSingleTop = true
-            restoreState = true
+    BackHandler(enabled = currentRoute == Routes.HOME_SEARCH || settingsOpen) {
+        when {
+            settingsOpen -> settingsOpen = false
+            else -> navController.navigate(Routes.HOME_CHATS) {
+                popUpTo(Routes.HOME) { saveState = true }
+                launchSingleTop = true
+                restoreState = true
+            }
         }
     }
 
@@ -184,13 +193,6 @@ private fun AppNavHost(viewModel: MainViewModel) {
                         onOpenPlayer = { index -> navController.navigate(Routes.player(index)) },
                     )
                 }
-                composable(
-                    route = Routes.HOME_SETTINGS,
-                    enterTransition = { slideInHorizontally(tween(300)) { it } },
-                    exitTransition = { slideOutHorizontally(tween(300)) { -it / 3 } },
-                    popEnterTransition = { slideInHorizontally(tween(300)) { -it / 3 } },
-                    popExitTransition = { slideOutHorizontally(tween(300)) { it } },
-                ) { SettingsScreen(viewModel = viewModel) }
             }
 
             composable(
@@ -214,19 +216,43 @@ private fun AppNavHost(viewModel: MainViewModel) {
 
         if (inHome) {
             NavRail(
-                current = currentRoute,
+                current = if (settingsOpen) Routes.HOME_SETTINGS else currentRoute,
                 onSelect = { route ->
-                    navController.navigate(route) {
-                        popUpTo(Routes.HOME) { saveState = true }
-                        launchSingleTop = true
-                        restoreState = true
+                    // Settings is a drawer overlay, not a page — selecting it
+                    // opens the drawer instead of navigating.
+                    if (route == Routes.HOME_SETTINGS) {
+                        settingsOpen = true
+                    } else {
+                        navController.navigate(route) {
+                            popUpTo(Routes.HOME) { saveState = true }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
                     }
                 },
+                settingsFocus = settingsRailFocus,
                 modifier = Modifier
                     .align(Alignment.CenterStart)
                     .width(railWidth)
                     .fillMaxHeight(),
             )
+        }
+
+        // Settings drawer: same right-side popup behavior as the player's
+        // media-info drawer, overlaid on the current page. takeFocus = false:
+        // the settings list manages its own focus (first row), so the drawer
+        // container doesn't steal it.
+        if (inHome) {
+            RightDrawer(
+                visible = settingsOpen,
+                onClose = { settingsOpen = false },
+                width = 400.dp,
+                takeFocus = false,
+                restoreFocus = settingsRailFocus,
+                modifier = Modifier.align(Alignment.CenterEnd),
+            ) {
+                SettingsScreen(viewModel = viewModel)
+            }
         }
     }
 }
@@ -238,6 +264,7 @@ private fun NavRail(
     current: String?,
     onSelect: (String) -> Unit,
     modifier: Modifier = Modifier,
+    settingsFocus: FocusRequester? = null,
 ) {
     val entries = listOf(
         NavEntry(Routes.HOME_SEARCH, stringResource(R.string.nav_search), Icons.Default.Search),
@@ -266,7 +293,11 @@ private fun NavRail(
                 entry = entry,
                 selected = current == entry.route,
                 onClick = { onSelect(entry.route) },
-                fr = if (idx == 0) railFocus else null,
+                fr = when (idx) {
+                    0 -> railFocus
+                    2 -> settingsFocus
+                    else -> null
+                },
             )
         }
     }
