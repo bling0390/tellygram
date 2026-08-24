@@ -971,37 +971,39 @@ private fun MediaInfoDrawer(
             .fillMaxSize()
             .padding(horizontal = 24.dp, vertical = 28.dp),
     ) {
-        Text(
-            text = stringResource(R.string.player_info_title),
-            color = Color.White,
-            fontSize = 20.sp,
-            fontWeight = FontWeight.Bold,
-        )
-        Spacer(Modifier.height(20.dp))
-
-        InfoRow(stringResource(R.string.player_info_type), typeLabel)
-        InfoRow(
-            stringResource(R.string.player_info_resolution),
-            if (item.width > 0 && item.height > 0) "${item.width} × ${item.height}" else "—",
-        )
-        InfoRow(
-            stringResource(R.string.player_info_size),
-            if (sizeBytes != null) formatBytes(sizeBytes) else "—",
-        )
-        InfoRow(
-            stringResource(R.string.player_info_streaming),
-            if (item.supportsStreaming) "Yes" else "No",
-        )
-        InfoRow(stringResource(R.string.player_info_date), dateText)
-        InfoRow(stringResource(R.string.player_info_file_id), item.fileId.toString())
-
-        if (!item.caption.isNullOrBlank()) {
-            Spacer(Modifier.height(16.dp))
+        Column(modifier = Modifier.fillMaxSize()) {
             Text(
-                text = item.caption!!,
-                color = Color.White.copy(alpha = 0.85f),
-                fontSize = 14.sp,
+                text = stringResource(R.string.player_info_title),
+                color = Color.White,
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold,
             )
+            Spacer(Modifier.height(20.dp))
+
+            InfoRow(stringResource(R.string.player_info_type), typeLabel)
+            InfoRow(
+                stringResource(R.string.player_info_resolution),
+                if (item.width > 0 && item.height > 0) "${item.width} × ${item.height}" else "—",
+            )
+            InfoRow(
+                stringResource(R.string.player_info_size),
+                if (sizeBytes != null) formatBytes(sizeBytes) else "—",
+            )
+            InfoRow(
+                stringResource(R.string.player_info_streaming),
+                if (item.supportsStreaming) "Yes" else "No",
+            )
+            InfoRow(stringResource(R.string.player_info_date), dateText)
+            InfoRow(stringResource(R.string.player_info_file_id), item.fileId.toString())
+
+            if (!item.caption.isNullOrBlank()) {
+                Spacer(Modifier.height(16.dp))
+                Text(
+                    text = item.caption!!,
+                    color = Color.White.copy(alpha = 0.85f),
+                    fontSize = 14.sp,
+                )
+            }
         }
     }
 }
