@@ -660,7 +660,10 @@ private fun PlayerController(
         }
     }
     val playIndex = buttonFocuses.indexOf(playFocus)
-    var selectedIndex by remember { mutableIntStateOf(playIndex) }
+    // Keyed to onPrev/onNext: buttonFocuses is rebuilt when prev/next
+    // appear or disappear (first/last video), so the index must rebuild
+    // with it or it can point at a button that no longer exists.
+    var selectedIndex by remember(onPrev, onNext) { mutableIntStateOf(playIndex) }
     fun select(delta: Int) {
         onInteraction()
         val next = (selectedIndex + delta).coerceIn(0, buttonFocuses.lastIndex)

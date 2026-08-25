@@ -19,11 +19,18 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -59,8 +66,20 @@ fun SettingsScreen(viewModel: MainViewModel) {
     var showClearCacheConfirm by remember { mutableStateOf(false) }
 
     val firstFocus = remember { FocusRequester() }
-    LaunchedEffect(Unit) { firstFocus.requestFocus() }
+    LaunchedEffect(Unit) {
+        // Wait a frame so the node is actually attached — requesting in the
+        // same frame as composition can silently no-op.
+        withFrameNanos { }
+        firstFocus.requestFocus()
+    }
     LaunchedEffect(Unit) { viewModel.refreshCacheSize() }
+
+    // List-edge focus trap: while focus sits on the first row, DirectionUp
+    // is consumed (stay put); on the last row, DirectionDown is consumed.
+    // Without this, Compose's global directional search can escape the
+    // drawer into the page behind it (media grid / sidebar).
+    var firstRowFocused by remember { mutableStateOf(false) }
+    var lastRowFocused by remember { mutableStateOf(false) }
 
     Box(
         modifier = Modifier.fillMaxSize(),
@@ -77,13 +96,27 @@ fun SettingsScreen(viewModel: MainViewModel) {
                 fontWeight = FontWeight.Bold,
             )
             Spacer(Modifier.height(24.dp))
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            LazyColumn(
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.onKeyEvent { ev ->
+                    if (ev.type == KeyEventType.KeyDown) {
+                        when {
+                            ev.key == Key.DirectionUp && firstRowFocused -> true
+                            ev.key == Key.DirectionDown && lastRowFocused -> true
+                            else -> false
+                        }
+                    } else {
+                        false
+                    }
+                },
+            ) {
                 item {
                     SettingsRow(
                         title = stringResource(R.string.settings_account),
                         value = accountValue(authState, user),
                         onClick = {  },
                         fr = firstFocus,
+                        onFocusChange = { firstRowFocused = it },
                     )
                 }
                 item {
@@ -120,6 +153,7 @@ fun SettingsScreen(viewModel: MainViewModel) {
                         value = stringResource(R.string.settings_signout_value),
                         onClick = { showLogoutConfirm = true },
                         danger = true,
+                        onFocusChange = { lastRowFocused = it },
                     )
                 }
             }
@@ -257,6 +291,7 @@ private fun SettingsRow(
     onClick: () -> Unit,
     fr: FocusRequester? = null,
     danger: Boolean = false,
+    onFocusChange: ((Boolean) -> Unit)? = null,
 ) {
     Card(
         onClick = onClick,
@@ -268,6 +303,7 @@ private fun SettingsRow(
         modifier = Modifier
             .fillMaxWidth()
             .height(72.dp)
+            .then(if (onFocusChange != null) Modifier.onFocusChanged { onFocusChange(it.hasFocus) } else Modifier)
             .let { if (fr != null) it.focusRequester(fr) else it },
     ) {
         Row(

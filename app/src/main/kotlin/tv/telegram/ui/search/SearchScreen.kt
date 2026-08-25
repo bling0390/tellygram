@@ -2,6 +2,7 @@
 
 package tv.telegram.ui.search
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -16,6 +17,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -26,9 +28,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -68,11 +77,22 @@ fun SearchScreen(
     }
 
     val searchBarFocus = remember { FocusRequester() }
-    LaunchedEffect(Unit) {
-        withFrameNanos { }
-        try { searchBarFocus.requestFocus() }
-        catch (_: IllegalStateException) {}
+    // Initial focus on the search bar; also returns here after the keyboard
+    // closes (see below). Keyed on keyboardOpen so closing the keyboard
+    // re-requests — without this, focus is lost when the keyboard leaves
+    // composition and the first D-pad press lands somewhere random.
+    LaunchedEffect(keyboardOpen) {
+        if (!keyboardOpen) {
+            withFrameNanos { }
+            try { searchBarFocus.requestFocus() }
+            catch (_: IllegalStateException) {}
+        }
     }
+
+    // Back closes the keyboard first (rather than leaving the search page
+    // back to Chats — this handler is deeper in the tree than the one in
+    // MainActivity, so it wins while the keyboard is open).
+    BackHandler(enabled = keyboardOpen) { keyboardOpen = false }
 
     Box(
         modifier = Modifier
@@ -251,16 +271,42 @@ private fun DpadKeyboard(
         catch (_: IllegalStateException) {}
     }
 
+    // (row, col) of the currently focused key. The keyboard grid is rows
+    // 0-4 (letters) + row 5 (action row), columns 0-4. Used by the edge
+    // handling below: at the grid borders the direction key is consumed so
+    // focus can't escape into the search page behind (search bar, results
+    // grid — all still in the focus tree, just covered by the scrim).
+    var focusedKey by remember { mutableStateOf<Pair<Int, Int>?>(null) }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.6f)),
+            .background(Color.Black.copy(alpha = 0.6f))
+            // Focus trap for the keyboard: consume direction keys only at
+            // the grid edges (top row Up, bottom row Down, first column
+            // Left, last column Right); everywhere else let the focus
+            // system move normally.
+            .onKeyEvent { ev ->
+                if (ev.type != KeyEventType.KeyDown) return@onKeyEvent false
+                val (row, col) = focusedKey ?: return@onKeyEvent false
+                when (ev.key) {
+                    Key.DirectionUp -> row == 0
+                    Key.DirectionDown -> row == 5 // bottom action row
+                    Key.DirectionLeft -> col == 0
+                    Key.DirectionRight -> col == 4
+                    else -> false
+                }
+            },
         contentAlignment = Alignment.Center,
     ) {
-        Card(
-            onClick = {  },
-            modifier = Modifier.fillMaxWidth(0.8f).height(380.dp),
-            colors = CardDefaults.colors(containerColor = Color(0xFF1E1E1E)),
+        // Plain Box, not Card(onClick = {}): the empty onClick made the whole
+        // panel an accidental focus target. This is just a rounded backdrop.
+        Box(
+            modifier = Modifier
+                .fillMaxWidth(0.8f)
+                .height(380.dp)
+                .clip(RoundedCornerShape(28.dp))
+                .background(Color(0xFF1E1E1E)),
         ) {
             Column(
                 modifier = Modifier.fillMaxSize().padding(24.dp),
@@ -284,12 +330,13 @@ private fun DpadKeyboard(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        row.forEach { letter ->
+                        row.forEachIndexed { colIdx, letter ->
                             KeyButton(
                                 label = letter,
                                 onClick = { onChar(letter[0]) },
                                 modifier = Modifier.weight(1f),
                                 fr = if (rowIdx == 0 && letter == "A") firstKey else null,
+                                onFocusChange = { focused -> if (focused) focusedKey = rowIdx to colIdx },
                             )
                         }
                     }
@@ -299,11 +346,11 @@ private fun DpadKeyboard(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    KeyButton("Z", onClick = { onChar('Z') }, modifier = Modifier.weight(1f))
-                    KeyButton(stringResource(R.string.key_backspace), onClick = onBackspace, modifier = Modifier.weight(1f))
-                    KeyButton(stringResource(R.string.key_clear), onClick = onClear, modifier = Modifier.weight(1f))
-                    KeyButton(stringResource(R.string.key_search), onClick = onSearch, modifier = Modifier.weight(1.2f), accent = true)
-                    KeyButton(stringResource(R.string.key_close), onClick = onClose, modifier = Modifier.weight(1f))
+                    KeyButton("Z", onClick = { onChar('Z') }, modifier = Modifier.weight(1f), onFocusChange = { if (it) focusedKey = 5 to 0 })
+                    KeyButton(stringResource(R.string.key_backspace), onClick = onBackspace, modifier = Modifier.weight(1f), onFocusChange = { if (it) focusedKey = 5 to 1 })
+                    KeyButton(stringResource(R.string.key_clear), onClick = onClear, modifier = Modifier.weight(1f), onFocusChange = { if (it) focusedKey = 5 to 2 })
+                    KeyButton(stringResource(R.string.key_search), onClick = onSearch, modifier = Modifier.weight(1.2f), accent = true, onFocusChange = { if (it) focusedKey = 5 to 3 })
+                    KeyButton(stringResource(R.string.key_close), onClick = onClose, modifier = Modifier.weight(1f), onFocusChange = { if (it) focusedKey = 5 to 4 })
                 }
             }
         }
@@ -317,6 +364,7 @@ private fun KeyButton(
     modifier: Modifier = Modifier,
     accent: Boolean = false,
     fr: FocusRequester? = null,
+    onFocusChange: ((Boolean) -> Unit)? = null,
 ) {
     Card(
         onClick = onClick,
@@ -326,6 +374,7 @@ private fun KeyButton(
         ),
         modifier = modifier
             .height(48.dp)
+            .then(if (onFocusChange != null) Modifier.onFocusChanged { onFocusChange(it.hasFocus) } else Modifier)
             .let { if (fr != null) it.focusRequester(fr) else it },
     ) {
         Box(

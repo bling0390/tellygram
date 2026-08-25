@@ -22,6 +22,7 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.Key
@@ -64,6 +65,14 @@ fun RightDrawer(
     content: @Composable () -> Unit,
 ) {
     val drawerFocus = remember { FocusRequester() }
+    // True only while focus sits on the drawer container ITSELF (takeFocus =
+    // true, e.g. the player info drawer). When it does, Up/Down must be
+    // consumed — directional search from the container would otherwise
+    // escape into the page behind (controller buttons, media grid), which is
+    // still in the focus tree and only visually covered. When focus is on a
+    // child (takeFocus = false, settings list), this stays false and the
+    // child handles its own edge keys.
+    var containerFocused by remember { mutableStateOf(false) }
     // Off-screen target: fully past the right edge (with a small margin).
     val offscreen = width + 60.dp
     // Plain full-height Box + graphicsLayer slide/fade (same approach as the
@@ -126,6 +135,13 @@ fun RightDrawer(
                         backgroundColor,
                         RoundedCornerShape(topStart = cornerRadius, bottomStart = cornerRadius),
                     )
+                    // Focus trap for container-focus mode: Back/Left/OK/Enter
+                    // close; Up/Down are consumed only while the container
+                    // itself is focused (see containerFocused), so the drawer
+                    // never escapes into the page behind it. Children (e.g. a
+                    // settings list) get full directional freedom and are
+                    // responsible for their own edge handling.
+                    .onFocusChanged { containerFocused = it.isFocused }
                     .focusRequester(drawerFocus)
                     .focusable()
                     .onKeyEvent { ev ->
@@ -134,6 +150,7 @@ fun RightDrawer(
                             Key.Back, Key.DirectionLeft, Key.DirectionCenter, Key.Enter -> {
                                 onClose(); true
                             }
+                            Key.DirectionUp, Key.DirectionDown -> containerFocused
                             else -> false
                         }
                     },

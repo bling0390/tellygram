@@ -31,7 +31,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -281,14 +280,13 @@ private fun NavRail(
         NavEntry(Routes.HOME_SETTINGS, stringResource(R.string.nav_settings), Icons.Default.Settings),
     )
 
-    val railFocus = remember { FocusRequester() }
-    LaunchedEffect(Unit) {
-        withFrameNanos { }
-        try {
-            railFocus.requestFocus()
-        } catch (e: IllegalStateException) {
-        }
-    }
+    // No unconditional focus grab here: the content area (chat sidebar /
+    // search bar) owns initial focus per route. The rail gains focus only
+    // when the user deliberately moves Left into it, or when the settings
+    // drawer closes (settingsFocus restore). The old Unit-keyed request
+    // raced the content screens' own initial-focus requests and usually won
+    // (rail composes last in the Box), so returning from the player landed
+    // focus on the Search icon instead of the chat list / media grid.
 
     Column(
         modifier = modifier
@@ -301,12 +299,11 @@ private fun NavRail(
             RailItem(
                 entry = entry,
                 selected = current == entry.route,
-                onClick = { onSelect(entry.route) },
-                fr = when (idx) {
-                    0 -> railFocus
-                    2 -> settingsFocus
-                    else -> null
-                },
+                // enabled gates BOTH focusability (canFocus below) and
+                // activation — while the settings drawer is open the rail
+                // must not be clickable either (mouse / accessibility).
+                onClick = { if (enabled) onSelect(entry.route) },
+                fr = if (idx == 2) settingsFocus else null,
                 enabled = enabled,
             )
         }

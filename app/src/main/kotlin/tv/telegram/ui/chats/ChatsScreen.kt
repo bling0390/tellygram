@@ -173,6 +173,7 @@ fun ChatsScreen(
                     loaded = mediaLoaded,
                     onOpenPlayer = onOpenPlayer,
                     viewModel = viewModel,
+                    selectedChatId = selectedChatId!!,
                     onLeftToSelectedChat = { sidebarFocusTick++ },
                 )
             }
@@ -632,6 +633,7 @@ private fun MediaPane(
     loaded: Boolean,
     onOpenPlayer: (Int) -> Unit,
     viewModel: MainViewModel,
+    selectedChatId: Long,
     onLeftToSelectedChat: () -> Unit,
 ) {
 
@@ -647,19 +649,29 @@ private fun MediaPane(
     // and hand focus explicitly to the currently selected chat.
     var leftEdgeFocused by remember { mutableStateOf(false) }
 
-    // Switch-chat focus: when a different chat is opened, scroll the grid
-    // back to the top and focus the first media card (like ChatSidebar's
-    // firstFocus). Keyed on the first item's messageId so loadMore (which
-    // keeps item[0]) never re-steals focus while the user is already
-    // navigating the grid.
+    // Switch-chat focus: when a DIFFERENT chat's media actually arrives,
+    // scroll the grid back to the top and focus the first media card (like
+    // ChatSidebar's firstFocus).
+    //
+    // Keyed on (selectedChatId, first messageId) with a chatId check so this
+    // fires exactly once per chat switch — and NOT on:
+    //   - loadMore: item[0] stays stable, the key doesn't change;
+    //   - returning from the player: lastResetChatId is saveable, so it
+    //     survives the back-stack restore, matches the current chat, and the
+    //     grid keeps its restored scroll position (focus isn't yanked back
+    //     to the top). The old effect keyed on the first messageId ran on
+    //     EVERY composition entry, defeating restoreState.
     //
     // scrollToItem(0) is essential: the grid reuses its state across chats,
     // so the old scroll offset persists — without scrolling back, the first
     // card may not even be composed and the focus request silently no-ops.
     val gridState = rememberLazyGridState()
     val firstCardFocus = remember { FocusRequester() }
-    LaunchedEffect(items.firstOrNull()?.messageId) {
-        if (items.isNotEmpty()) {
+    var lastResetChatId by rememberSaveable { mutableStateOf<Long?>(null) }
+    LaunchedEffect(selectedChatId, items.firstOrNull()?.messageId) {
+        val first = items.firstOrNull()
+        if (first != null && first.chatId == selectedChatId && lastResetChatId != selectedChatId) {
+            lastResetChatId = selectedChatId
             gridState.scrollToItem(0)
             withFrameNanos { }
             try { firstCardFocus.requestFocus() }
