@@ -109,6 +109,10 @@ import java.io.File
 fun ChatsScreen(
     viewModel: MainViewModel,
     onOpenPlayer: (Int) -> Unit,
+    // Focus target for the rail's Chats item — the chat list routes Left
+    // here explicitly (see ChatSidebar), so Left never lands on the
+    // rail's Search/Settings icon via directional search.
+    railChatsFocus: FocusRequester? = null,
 ) {
     val chats by viewModel.chatList.collectAsStateWithLifecycle()
     val archiveChats by viewModel.archiveChats.collectAsStateWithLifecycle()
@@ -151,6 +155,7 @@ fun ChatsScreen(
             viewModel = viewModel,
             selectedChatFocus = selectedChatFocus,
             sidebarFocusTick = sidebarFocusTick,
+            railChatsFocus = railChatsFocus,
             modifier = Modifier
                 .width(296.dp)
                 .fillMaxHeight()
@@ -202,6 +207,9 @@ private fun ChatSidebar(
     // Monotonic tick: each media-grid Left transfer bumps it, and the
     // sidebar scrolls the selected chat into view and focuses it.
     sidebarFocusTick: Int,
+    // Left from a chat row lands on the rail's Chats item instead of
+    // whichever rail icon directional search happens to pick.
+    railChatsFocus: FocusRequester? = null,
     modifier: Modifier = Modifier,
 ) {
     val firstFocus = remember { FocusRequester() }
@@ -278,10 +286,21 @@ private fun ChatSidebar(
             state = listState,
             verticalArrangement = Arrangement.spacedBy(6.dp),
             modifier = Modifier.onKeyEvent { ev ->
-                if (ev.type == KeyEventType.KeyDown && ev.key == Key.DirectionUp && firstItemFocused) {
-                    true // at the top of the list — consume, stay put
-                } else {
-                    false
+                if (ev.type != KeyEventType.KeyDown) return@onKeyEvent false
+                when {
+                    // At the top of the list — consume, stay put.
+                    ev.key == Key.DirectionUp && firstItemFocused -> true
+                    // Left from a chat row goes to the rail's Chats item.
+                    // Directional search would otherwise pick whichever
+                    // rail icon is vertically nearest — Search near the
+                    // top, Settings near the bottom — which reads as
+                    // random.
+                    ev.key == Key.DirectionLeft && railChatsFocus != null -> {
+                        try { railChatsFocus!!.requestFocus() }
+                        catch (_: IllegalStateException) {}
+                        true
+                    }
+                    else -> false
                 }
             },
         ) {
