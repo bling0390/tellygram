@@ -118,6 +118,7 @@ fun SearchScreen(
                 query = editBuffer,
                 searching = searchSearching,
                 fr = searchBarFocus,
+                railSearchFocus = railSearchFocus,
                 onClick = { keyboardOpen = true },
             )
             Spacer(Modifier.height(12.dp))
@@ -185,6 +186,10 @@ private fun SearchBar(
     query: String,
     searching: Boolean,
     fr: FocusRequester,
+    // Left from the search bar lands on the rail's Search item — directional
+    // search would otherwise pick the rail icon that vertically overlaps the
+    // bar (Chats, since the bar sits at the page top), which reads as random.
+    railSearchFocus: FocusRequester? = null,
     onClick: () -> Unit,
 ) {
     Card(
@@ -193,7 +198,27 @@ private fun SearchBar(
         modifier = Modifier
             .fillMaxWidth()
             .height(64.dp)
-            .focusRequester(fr),
+            .focusRequester(fr)
+            .onKeyEvent { ev ->
+                if (ev.type != KeyEventType.KeyDown) return@onKeyEvent false
+                when (ev.key) {
+                    // Top of the page — consume so focus stays put instead of
+                    // escaping to the rail (same pattern as the chats list's
+                    // first row). Left is the deliberate path back to the rail.
+                    Key.DirectionUp -> true
+                    Key.DirectionLeft -> {
+                        val target = railSearchFocus
+                        if (target != null) {
+                            try { target.requestFocus() }
+                            catch (_: IllegalStateException) {}
+                            true
+                        } else {
+                            false
+                        }
+                    }
+                    else -> false
+                }
+            },
     ) {
         Row(
             modifier = Modifier.fillMaxSize().padding(horizontal = 20.dp),
@@ -331,7 +356,15 @@ private fun DpadKeyboard(
             // system move normally.
             .onKeyEvent { ev ->
                 if (ev.type != KeyEventType.KeyDown) return@onKeyEvent false
-                val (row, col) = focusedKey ?: return@onKeyEvent false
+                // Focus may not have landed on a key yet (keyboard just
+                // opened, onFocusChanged hasn't fired): consume direction
+                // keys so they can't escape into the search page behind the
+                // scrim. Other keys (Back/OK) keep their normal handling.
+                val (row, col) = focusedKey
+                    ?: return@onKeyEvent ev.key in setOf(
+                        Key.DirectionUp, Key.DirectionDown,
+                        Key.DirectionLeft, Key.DirectionRight,
+                    )
                 when (ev.key) {
                     Key.DirectionUp -> row == 0
                     Key.DirectionDown -> row == 5 // bottom action row
