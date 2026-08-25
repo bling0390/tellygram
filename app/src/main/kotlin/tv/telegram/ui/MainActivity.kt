@@ -114,6 +114,9 @@ private fun AppNavHost(viewModel: MainViewModel) {
     // nearest — Search near the top, Settings near the bottom — which
     // reads as random.
     val chatsRailFocus = remember { FocusRequester() }
+    // Focus target for the rail's search item. The search results grid
+    // routes Left here explicitly (see ResultsGrid) for the same reason.
+    val searchRailFocus = remember { FocusRequester() }
     // The rail keeps focusability for a short window after the drawer opens.
     // If it dropped out of the focus tree immediately (old: enabled =
     // !settingsOpen), the focus system would hand focus to the nearest
@@ -199,6 +202,7 @@ private fun AppNavHost(viewModel: MainViewModel) {
                 ) {
                     SearchScreen(
                         viewModel = viewModel,
+                        railSearchFocus = searchRailFocus,
                         onOpenChats = {
                             navController.navigate(Routes.HOME_CHATS) {
                                 popUpTo(Routes.HOME) { saveState = true }
@@ -260,6 +264,7 @@ private fun AppNavHost(viewModel: MainViewModel) {
                 },
                 settingsFocus = settingsRailFocus,
                 chatsFocus = chatsRailFocus,
+                searchFocus = searchRailFocus,
                 // While the settings drawer is open, the rail must not
                 // participate in focus search — otherwise pressing Up from
                 // the drawer's first row escapes to the rail's chats item.
@@ -302,6 +307,7 @@ private fun NavRail(
     modifier: Modifier = Modifier,
     settingsFocus: FocusRequester? = null,
     chatsFocus: FocusRequester? = null,
+    searchFocus: FocusRequester? = null,
     enabled: Boolean = true,
 ) {
     val entries = listOf(
@@ -334,6 +340,7 @@ private fun NavRail(
                 // must not be clickable either (mouse / accessibility).
                 onClick = { if (enabled) onSelect(entry.route) },
                 fr = when (idx) {
+                    0 -> searchFocus // Search — results grid Left lands here
                     1 -> chatsFocus // Chats — chat list Left lands here
                     2 -> settingsFocus
                     else -> null

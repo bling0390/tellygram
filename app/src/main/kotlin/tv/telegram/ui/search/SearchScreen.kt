@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -56,6 +57,10 @@ import kotlinx.coroutines.delay
 fun SearchScreen(
     viewModel: MainViewModel,
     onOpenChats: () -> Unit,
+    // Focus target for the rail's Search item — the results grid routes
+    // Left here explicitly (see ResultsGrid), so Left never lands on the
+    // rail's Chats/Settings icon via directional search.
+    railSearchFocus: FocusRequester? = null,
 ) {
     val chats by viewModel.chatList.collectAsStateWithLifecycle()
     val loaded by viewModel.chatListLoaded.collectAsStateWithLifecycle()
@@ -149,6 +154,8 @@ fun SearchScreen(
                 } else {
                     ResultsGrid(
                         items = results,
+                        searchBarFocus = searchBarFocus,
+                        railSearchFocus = railSearchFocus,
                         onSelect = { id ->
                             viewModel.selectSidebarChat(id)
                             onOpenChats()
@@ -214,16 +221,52 @@ private fun SearchBar(
 @Composable
 private fun ResultsGrid(
     items: List<ChatItem>,
+    searchBarFocus: FocusRequester,
+    railSearchFocus: FocusRequester?,
     onSelect: (Long) -> Unit,
 ) {
+    // Grid-boundary focus traps (same pattern as MediaPane): first-row Up
+    // goes back to the search bar; left-column Left goes to the rail's
+    // Search item. Directional search from these edges would otherwise
+    // escape to whichever rail icon happens to be vertically nearest
+    // (Chats / Settings), which reads as random.
+    var firstRowFocused by remember { mutableStateOf(false) }
+    var leftEdgeFocused by remember { mutableStateOf(false) }
+
     LazyVerticalGrid(
         columns = GridCells.Fixed(4),
         horizontalArrangement = Arrangement.spacedBy(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier
+            .fillMaxSize()
+            .onKeyEvent { ev ->
+                if (ev.type != KeyEventType.KeyDown) return@onKeyEvent false
+                when {
+                    ev.key == Key.DirectionUp && firstRowFocused -> {
+                        try { searchBarFocus.requestFocus() }
+                        catch (_: IllegalStateException) {}
+                        true
+                    }
+                    ev.key == Key.DirectionLeft && leftEdgeFocused && railSearchFocus != null -> {
+                        try { railSearchFocus!!.requestFocus() }
+                        catch (_: IllegalStateException) {}
+                        true
+                    }
+                    else -> false
+                }
+            },
     ) {
-        items(items, key = { it.id }) { chat ->
-            ResultCard(chat = chat, onClick = { onSelect(chat.id) })
+        itemsIndexed(items, key = { _, chat -> chat.id }) { index, chat ->
+            val isFirstRow = index < 4
+            val isLeftEdge = index % 4 == 0
+            Box(
+                Modifier.onFocusChanged { focused ->
+                    if (isFirstRow) firstRowFocused = focused.hasFocus
+                    if (isLeftEdge) leftEdgeFocused = focused.hasFocus
+                },
+            ) {
+                ResultCard(chat = chat, onClick = { onSelect(chat.id) })
+            }
         }
     }
 }
