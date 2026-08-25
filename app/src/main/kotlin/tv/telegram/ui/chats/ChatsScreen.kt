@@ -679,6 +679,13 @@ private fun MediaPane(
 ) {
 
     var openedIndex by rememberSaveable { mutableStateOf<Int?>(null) }
+    // When the fullscreen photo dialog closes, focus must return to the
+    // card that was being viewed — the dialog is a separate window, and
+    // without an explicit handoff focus falls to the rail's Search icon.
+    // Recorded on close, consumed (cleared) once the grid has scrolled
+    // to and focused the card.
+    var photoReturnMessageId by remember { mutableStateOf<Long?>(null) }
+    val photoCardFocus = remember { FocusRequester() }
     // True while focus sits on a card in the grid's first row (index < 3).
     // When it does, DirectionUp is consumed so focus stays in the media
     // grid instead of jumping to the chats list (Compose's global focus
@@ -737,6 +744,24 @@ private fun MediaPane(
             // One-shot: clear so a later re-entry (e.g. via rail) starts
             // with the normal initial focus instead of re-jumping here.
             viewModel.consumePlayerReturnFocus()
+        }
+    }
+
+    // Photo-dialog close focus: same idea as returnCardFocus but fully
+    // local — the dialog lives inside this composable, so no ViewModel
+    // hop needed. Fires once the dialog has left composition (openedIndex
+    // back to null) and the grid is rendering again.
+    LaunchedEffect(openedIndex, photoReturnMessageId, items.firstOrNull()?.messageId) {
+        val target = photoReturnMessageId ?: return@LaunchedEffect
+        if (openedIndex != null) return@LaunchedEffect // dialog still open
+        val idx = items.indexOfFirst { it.messageId == target }
+        if (idx >= 0) {
+            gridState.scrollToItem(idx)
+            withFrameNanos { }
+            withFrameNanos { }
+            try { photoCardFocus.requestFocus() }
+            catch (_: IllegalStateException) {}
+            photoReturnMessageId = null // one-shot
         }
     }
 
@@ -825,7 +850,10 @@ private fun MediaPane(
             // covers the whole screen (NavRail + chat sidebar included),
             // instead of replacing only the media pane.
             Dialog(
-                onDismissRequest = { openedIndex = null },
+                onDismissRequest = {
+                    photoReturnMessageId = items[idx].messageId
+                    openedIndex = null
+                },
                 properties = DialogProperties(
                     usePlatformDefaultWidth = false,
                 ),
@@ -836,7 +864,10 @@ private fun MediaPane(
                     hasNext = idx < items.size - 1,
                     onPrev = { openedIndex = idx - 1 },
                     onNext = { openedIndex = idx + 1 },
-                    onBack = { openedIndex = null },
+                    onBack = {
+                        photoReturnMessageId = items[idx].messageId
+                        openedIndex = null
+                    },
                     viewModel = viewModel,
                 )
             }
@@ -905,6 +936,9 @@ private fun MediaPane(
                 // carries returnCardFocus so the return-from-player effect
                 // can land exactly on it.
                 val isReturnTarget = item.messageId == returnFocusMessageId
+                // The card the photo dialog was viewing before it closed —
+                // carries photoCardFocus for the local dialog-close focus.
+                val isPhotoReturnTarget = item.messageId == photoReturnMessageId
                 // Track focus for the grid-boundary key handling above:
                 // first row (Up) and left column (Left). isHome only
                 // decides which card owns the initial grid focus requester.
@@ -930,6 +964,7 @@ private fun MediaPane(
                         previewPlayer = previewPlayer,
                         onFocusChange = onFocusChange,
                         fr = when {
+                            isPhotoReturnTarget -> photoCardFocus
                             isReturnTarget -> returnCardFocus
                             isHome -> firstCardFocus
                             else -> null
