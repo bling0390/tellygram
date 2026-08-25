@@ -101,4 +101,10 @@
     <string name="about_body">A non-official Telegram client for Android TV, focused on browsing images and videos in your chats.</string>
     <string name="about_repo">github.com/bling0390/tvgram</string>
     <string name="about_close_hint">Press OK to close</string>
+
+    <!-- Exit confirmation (Back on the rail) -->
+    <string name="exit_confirm_title">Exit app?</string>
+    <string name="exit_confirm_text">Are you sure you want to exit Tvgram?</string>
+    <string name="exit_confirm_confirm">Exit</string>
+    <string name="exit_confirm_cancel">Cancel</string>
 </resources>

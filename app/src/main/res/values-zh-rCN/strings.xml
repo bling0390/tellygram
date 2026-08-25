@@ -87,4 +87,10 @@
     <string name="about_body">Tvgram 是一款非官方的 Telegram 安卓电视客户端,专注于浏览聊天中的图片和视频。</string>
     <string name="about_repo">github.com/bling0390/tvgram</string>
     <string name="about_close_hint">按 OK 关闭</string>
+
+    <!-- Exit confirmation (Back on the rail) -->
+    <string name="exit_confirm_title">退出应用？</string>
+    <string name="exit_confirm_text">确定要退出 Tvgram 吗？</string>
+    <string name="exit_confirm_confirm">退出</string>
+    <string name="exit_confirm_cancel">取消</string>
 </resources>

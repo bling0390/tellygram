@@ -5,6 +5,7 @@
 
 package tv.telegram.ui
 
+import android.app.Activity
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -41,9 +42,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
+import androidx.compose.material3.TextButton
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -135,6 +139,31 @@ private fun AppNavHost(viewModel: MainViewModel) {
         }
     }
 
+    // Exit-confirmation dialog: Back on the rail (outermost layer) asks
+    // first instead of quitting immediately. railFocused comes from
+    // NavRail's onFocusChange (hasFocus bubbles up from the focused icon).
+    var railFocused by remember { mutableStateOf(false) }
+    var showExitConfirm by remember { mutableStateOf(false) }
+    // True once the dialog has been opened; the close handler restores
+    // focus to the current route's rail item (the dialog is a separate
+    // window — focus would otherwise be lost when it leaves).
+    var exitDialogWasShown by remember { mutableStateOf(false) }
+    // Hoisted out of the dialog's onClick lambdas: LocalContext.current is
+    // a @Composable read and can't be called from a plain onClick.
+    val context = LocalContext.current
+    LaunchedEffect(showExitConfirm) {
+        if (!showExitConfirm && exitDialogWasShown) {
+            delay(300L)
+            try {
+                when (currentRoute) {
+                    Routes.HOME_SEARCH -> searchRailFocus.requestFocus()
+                    Routes.HOME_CHATS -> chatsRailFocus.requestFocus()
+                    else -> settingsRailFocus.requestFocus()
+                }
+            } catch (_: IllegalStateException) {}
+        }
+    }
+
     LaunchedEffect(Unit) {
         viewModel.navEvents.collect { event ->
             val target = when (event) {
@@ -150,9 +179,17 @@ private fun AppNavHost(viewModel: MainViewModel) {
         }
     }
 
-    BackHandler(enabled = currentRoute == Routes.HOME_SEARCH || settingsOpen) {
+    BackHandler(
+        enabled = currentRoute == Routes.HOME_SEARCH || settingsOpen || (inHome && railFocused),
+    ) {
         when {
             settingsOpen -> settingsOpen = false
+            // Back on the rail (outermost layer): ask for confirmation
+            // before quitting.
+            inHome && railFocused -> {
+                exitDialogWasShown = true
+                showExitConfirm = true
+            }
             else -> navController.navigate(Routes.HOME_CHATS) {
                 popUpTo(Routes.HOME) { saveState = true }
                 launchSingleTop = true
@@ -272,10 +309,33 @@ private fun AppNavHost(viewModel: MainViewModel) {
                 // focus directly instead of the focus system flashing the
                 // chat list's "Archived Chats" for a frame.
                 enabled = railEnabled,
+                onFocusChange = { railFocused = it },
                 modifier = Modifier
                     .align(Alignment.CenterStart)
                     .width(railWidth)
                     .fillMaxHeight(),
+            )
+        }
+
+        // Exit confirmation (Back on the rail). Confirm quits the app;
+        // cancel / Back closes it and focus returns to the rail item.
+        if (showExitConfirm) {
+            AlertDialog(
+                onDismissRequest = { showExitConfirm = false },
+                title = { Text(stringResource(R.string.exit_confirm_title)) },
+                text = { Text(stringResource(R.string.exit_confirm_text)) },
+                confirmButton = {
+                    TextButton(onClick = {
+                        (context as? Activity)?.finish()
+                    }) {
+                        Text(stringResource(R.string.exit_confirm_confirm))
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showExitConfirm = false }) {
+                        Text(stringResource(R.string.exit_confirm_cancel))
+                    }
+                },
             )
         }
 
@@ -309,6 +369,11 @@ private fun NavRail(
     chatsFocus: FocusRequester? = null,
     searchFocus: FocusRequester? = null,
     enabled: Boolean = true,
+    // Reports whether any rail item holds focus (hasFocus bubbles up from
+    // the focused icon). AppNavHost uses it so Back on the rail — the
+    // outermost layer — opens an exit-confirmation dialog instead of
+    // quitting immediately.
+    onFocusChange: ((Boolean) -> Unit)? = null,
 ) {
     val entries = listOf(
         NavEntry(Routes.HOME_SEARCH, stringResource(R.string.nav_search), Icons.Default.Search),
@@ -327,7 +392,8 @@ private fun NavRail(
     Column(
         modifier = modifier
             .background(Color(0xFF141414))
-            .padding(vertical = 24.dp, horizontal = 8.dp),
+            .padding(vertical = 24.dp, horizontal = 8.dp)
+            .onFocusChanged { onFocusChange?.invoke(it.hasFocus) },
         verticalArrangement = Arrangement.spacedBy(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
