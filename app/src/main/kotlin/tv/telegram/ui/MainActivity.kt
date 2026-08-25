@@ -49,6 +49,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.delay
 import androidx.navigation.NavType
 import androidx.navigation.navArgument
 import androidx.navigation.compose.NavHost
@@ -107,6 +108,23 @@ private fun AppNavHost(viewModel: MainViewModel) {
     // Focus target for the rail's settings item — the drawer returns focus
     // here when it closes.
     val settingsRailFocus = remember { FocusRequester() }
+    // The rail keeps focusability for a short window after the drawer opens.
+    // If it dropped out of the focus tree immediately (old: enabled =
+    // !settingsOpen), the focus system would hand focus to the nearest
+    // remaining node — the chat list's "Archived Chats" — for one frame,
+    // flashing it before the drawer's first row takes over. Keeping the
+    // rail focusable lets the drawer's own first row claim focus directly
+    // (rail → drawer, no intermediate stop); the rail only drops out after
+    // the slide (250ms) plus handoff has settled.
+    var railEnabled by remember { mutableStateOf(true) }
+    LaunchedEffect(settingsOpen) {
+        if (settingsOpen) {
+            delay(300L)
+            railEnabled = false
+        } else {
+            railEnabled = true
+        }
+    }
 
     LaunchedEffect(Unit) {
         viewModel.navEvents.collect { event ->
@@ -237,7 +255,10 @@ private fun AppNavHost(viewModel: MainViewModel) {
                 // While the settings drawer is open, the rail must not
                 // participate in focus search — otherwise pressing Up from
                 // the drawer's first row escapes to the rail's chats item.
-                enabled = !settingsOpen,
+                // Delayed (railEnabled) so the drawer's first row can claim
+                // focus directly instead of the focus system flashing the
+                // chat list's "Archived Chats" for a frame.
+                enabled = railEnabled,
                 modifier = Modifier
                     .align(Alignment.CenterStart)
                     .width(railWidth)
