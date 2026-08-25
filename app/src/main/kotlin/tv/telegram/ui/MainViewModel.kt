@@ -128,6 +128,21 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val _sidebarSelectedChatId = MutableStateFlow<Long?>(null)
     val sidebarSelectedChatId: StateFlow<Long?> = _sidebarSelectedChatId.asStateFlow()
 
+    // Last played media messageId — set when the player exits so the chats
+    // screen can hand focus back to that exact media card (instead of the
+    // sidebar's first row "Archived Chats"). Consumed (cleared) by
+    // ChatsScreen once it has scrolled to and focused the card.
+    private val _playerReturnFocusMessageId = MutableStateFlow<Long?>(null)
+    val playerReturnFocusMessageId: StateFlow<Long?> = _playerReturnFocusMessageId.asStateFlow()
+
+    fun setPlayerReturnFocus(messageId: Long) {
+        _playerReturnFocusMessageId.value = messageId
+    }
+
+    fun consumePlayerReturnFocus() {
+        _playerReturnFocusMessageId.value = null
+    }
+
     private val _themeMode = MutableStateFlow(ThemeMode.Dark)
     val themeMode: StateFlow<ThemeMode> = _themeMode.asStateFlow()
 

@@ -123,6 +123,16 @@ fun ChatsScreen(
     val selectedChatId by viewModel.sidebarSelectedChatId.collectAsStateWithLifecycle()
     val mediaItems by viewModel.mediaItems.collectAsStateWithLifecycle()
     val mediaLoaded by viewModel.mediaLoaded.collectAsStateWithLifecycle()
+    // Set by the player on exit (Back / playback ended): the messageId of
+    // the card that was playing. ChatsScreen hands focus back to that
+    // exact media card instead of the sidebar's first row.
+    val playerReturnFocusMessageId by viewModel.playerReturnFocusMessageId.collectAsStateWithLifecycle()
+    // Only treat it as a real return target when the card actually exists
+    // in the current grid — otherwise keep the sidebar's normal initial
+    // focus behavior.
+    val returnFocusTarget = playerReturnFocusMessageId?.takeIf { id ->
+        mediaItems.any { it.messageId == id }
+    }
 
     // Toast 即时提醒：聊天列表加载失败时弹一次
     val context = LocalContext.current
@@ -156,6 +166,10 @@ fun ChatsScreen(
             selectedChatFocus = selectedChatFocus,
             sidebarFocusTick = sidebarFocusTick,
             railChatsFocus = railChatsFocus,
+            // Returning from the player: don't grab initial focus on the
+            // first sidebar row ("Archived Chats") — the media grid takes
+            // it instead (see MediaPane's returnFocus).
+            suppressInitialFocus = returnFocusTarget != null,
             modifier = Modifier
                 .width(296.dp)
                 .fillMaxHeight()
@@ -180,6 +194,7 @@ fun ChatsScreen(
                     viewModel = viewModel,
                     selectedChatId = selectedChatId!!,
                     onLeftToSelectedChat = { sidebarFocusTick++ },
+                    returnFocusMessageId = returnFocusTarget,
                 )
             }
         }
@@ -210,6 +225,9 @@ private fun ChatSidebar(
     // Left from a chat row lands on the rail's Chats item instead of
     // whichever rail icon directional search happens to pick.
     railChatsFocus: FocusRequester? = null,
+    // True when returning from the player: skip the initial first-row
+    // focus grab so the media grid can take focus (returnFocusMessageId).
+    suppressInitialFocus: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val firstFocus = remember { FocusRequester() }
@@ -221,6 +239,7 @@ private fun ChatSidebar(
     val listState = rememberLazyListState()
 
     LaunchedEffect(viewingArchive) {
+        if (suppressInitialFocus) return@LaunchedEffect
         withFrameNanos { }
         try { firstFocus.requestFocus() }
         catch (_: IllegalStateException) {}
@@ -654,6 +673,9 @@ private fun MediaPane(
     viewModel: MainViewModel,
     selectedChatId: Long,
     onLeftToSelectedChat: () -> Unit,
+    // Set when returning from the player: scroll to and focus the card
+    // that was playing (instead of the sidebar grabbing "Archived Chats").
+    returnFocusMessageId: Long? = null,
 ) {
 
     var openedIndex by rememberSaveable { mutableStateOf<Int?>(null) }
@@ -695,6 +717,26 @@ private fun MediaPane(
             withFrameNanos { }
             try { firstCardFocus.requestFocus() }
             catch (_: IllegalStateException) {}
+        }
+    }
+
+    // Return-from-player focus: scroll to the exact card that was playing
+    // and focus it. Unlike the chat-switch effect above (keyed on
+    // lastResetChatId), this fires when the SAME chat is still selected —
+    // returning from the player keeps the chat, so that effect no-ops.
+    val returnCardFocus = remember { FocusRequester() }
+    LaunchedEffect(returnFocusMessageId, items.firstOrNull()?.messageId) {
+        val target = returnFocusMessageId ?: return@LaunchedEffect
+        val idx = items.indexOfFirst { it.messageId == target }
+        if (idx >= 0) {
+            gridState.scrollToItem(idx)
+            withFrameNanos { }
+            withFrameNanos { }
+            try { returnCardFocus.requestFocus() }
+            catch (_: IllegalStateException) {}
+            // One-shot: clear so a later re-entry (e.g. via rail) starts
+            // with the normal initial focus instead of re-jumping here.
+            viewModel.consumePlayerReturnFocus()
         }
     }
 
@@ -859,6 +901,10 @@ private fun MediaPane(
                 val isFirstRow = index < 3
                 val isLeftEdge = index % 3 == 0
                 val isHome = index == 0
+                // The card that was playing before the player opened — it
+                // carries returnCardFocus so the return-from-player effect
+                // can land exactly on it.
+                val isReturnTarget = item.messageId == returnFocusMessageId
                 // Track focus for the grid-boundary key handling above:
                 // first row (Up) and left column (Left). isHome only
                 // decides which card owns the initial grid focus requester.
@@ -883,7 +929,11 @@ private fun MediaPane(
                         previewReady = previewReady,
                         previewPlayer = previewPlayer,
                         onFocusChange = onFocusChange,
-                        fr = if (isHome) firstCardFocus else null,
+                        fr = when {
+                            isReturnTarget -> returnCardFocus
+                            isHome -> firstCardFocus
+                            else -> null
+                        },
                     )
                 }
             }

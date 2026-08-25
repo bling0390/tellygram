@@ -49,7 +49,6 @@
     <string name="player_btn_prev">« 上一個</string>
     <string name="player_btn_next">下一個 »</string>
     <string name="player_error_title">播放錯誤</string>
-    <string name="player_error_hint">OK 重試 · 返回退出</string>
     <string name="player_download_failed">下載失敗:%1$s</string>
 
     <string name="settings_title">設定</string>

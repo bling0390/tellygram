@@ -126,6 +126,15 @@ fun PlayerScreen(
 
     val current = mediaItems[index]
 
+    // Exit hook: record the messageId being played so the chats screen can
+    // hand focus back to this exact media card on return (instead of the
+    // sidebar's "Archived Chats" row). Both player-exit paths (Back, and
+    // playback ENDED with no next video) go through here.
+    val closePlayer = {
+        viewModel.setPlayerReturnFocus(current.messageId)
+        onClose()
+    }
+
     val videoIndices = remember(mediaItems) {
         mediaItems.mapIndexedNotNull { i, m -> if (m.type == MediaType.Video) i else null }
     }
@@ -290,7 +299,7 @@ fun PlayerScreen(
                     if (next != null) {
                         onNavigateTo(next)
                     } else {
-                        onClose()
+                        closePlayer()
                     }
                 }
             }
@@ -372,7 +381,7 @@ fun PlayerScreen(
         when {
             showInfo -> showInfo = false
             showController -> showController = false
-            else -> onClose()
+            else -> closePlayer()
         }
     }
 
@@ -475,11 +484,6 @@ fun PlayerScreen(
                         modifier = Modifier.padding(horizontal = 40.dp),
                     )
                     Spacer(Modifier.height(24.dp))
-                    Text(
-                        text = stringResource(R.string.player_error_hint),
-                        color = Color.White.copy(alpha = 0.6f),
-                        fontSize = 14.sp,
-                    )
                 }
             }
         } else if (!mediaPrepared) {

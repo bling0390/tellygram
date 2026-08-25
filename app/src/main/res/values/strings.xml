@@ -61,7 +61,6 @@
     <string name="player_btn_prev">« Prev</string>
     <string name="player_btn_next">Next »</string>
     <string name="player_error_title">Playback error</string>
-    <string name="player_error_hint">OK Retry · Back Exit</string>
     <string name="player_download_failed">Download failed: %1$s</string>
 
     <!-- Settings screen -->
