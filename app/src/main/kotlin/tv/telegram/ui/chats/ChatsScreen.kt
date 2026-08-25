@@ -149,6 +149,30 @@ fun ChatsScreen(
     val selectedChatFocus = remember { FocusRequester() }
     var sidebarFocusTick by remember { mutableIntStateOf(0) }
 
+    // Back-key hierarchy on the home screen: Back inside the media grid
+    // returns focus to the selected chat in the sidebar; Back inside the
+    // chat list returns focus to the rail's Chats item. Without this, Back
+    // on HOME_CHATS exits the app (MainActivity's BackHandler only covers
+    // SEARCH/settings). Focus-region tracking comes from onFocusChange
+    // callbacks on ChatSidebar / MediaPane (hasFocus bubbles up from any
+    // focused row / card).
+    var sidebarFocused by remember { mutableStateOf(false) }
+    var mediaFocused by remember { mutableStateOf(false) }
+    BackHandler(enabled = mediaFocused || sidebarFocused) {
+        when {
+            // Media grid → selected chat in the sidebar (same path as the
+            // grid's left-edge Left key: bump the tick, ChatSidebar scrolls
+            // the selected chat into view and focuses it).
+            mediaFocused -> sidebarFocusTick++
+            // Chat list → rail's Chats item (same target as the list's
+            // Left key).
+            sidebarFocused -> {
+                try { railChatsFocus?.requestFocus() }
+                catch (_: IllegalStateException) {}
+            }
+        }
+    }
+
     Row(modifier = Modifier.fillMaxSize()) {
 
         ChatSidebar(
@@ -170,6 +194,7 @@ fun ChatsScreen(
             // first sidebar row ("Archived Chats") — the media grid takes
             // it instead (see MediaPane's returnFocus).
             suppressInitialFocus = returnFocusTarget != null,
+            onFocusChange = { sidebarFocused = it },
             modifier = Modifier
                 .width(296.dp)
                 .fillMaxHeight()
@@ -195,6 +220,7 @@ fun ChatsScreen(
                     selectedChatId = selectedChatId!!,
                     onLeftToSelectedChat = { sidebarFocusTick++ },
                     returnFocusMessageId = returnFocusTarget,
+                    onFocusChange = { mediaFocused = it },
                 )
             }
         }
@@ -228,6 +254,9 @@ private fun ChatSidebar(
     // True when returning from the player: skip the initial first-row
     // focus grab so the media grid can take focus (returnFocusMessageId).
     suppressInitialFocus: Boolean = false,
+    // Back-key hierarchy: reports whether focus sits inside the chat list
+    // (ChatsScreen uses it to decide where Back should move focus).
+    onFocusChange: ((Boolean) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val firstFocus = remember { FocusRequester() }
@@ -321,7 +350,7 @@ private fun ChatSidebar(
                     }
                     else -> false
                 }
-            },
+            }.onFocusChanged { onFocusChange?.invoke(it.hasFocus) },
         ) {
             if (viewingArchive) {
                 item(key = "back-to-main") {
@@ -676,6 +705,9 @@ private fun MediaPane(
     // Set when returning from the player: scroll to and focus the card
     // that was playing (instead of the sidebar grabbing "Archived Chats").
     returnFocusMessageId: Long? = null,
+    // Back-key hierarchy: reports whether focus sits inside the media grid
+    // (ChatsScreen uses it to decide where Back should move focus).
+    onFocusChange: ((Boolean) -> Unit)? = null,
 ) {
 
     var openedIndex by rememberSaveable { mutableStateOf<Int?>(null) }
@@ -877,7 +909,11 @@ private fun MediaPane(
         return
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .onFocusChanged { onFocusChange?.invoke(it.hasFocus) },
+    ) {
         if (items.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 if (loaded) {
