@@ -32,6 +32,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Campaign
 import androidx.compose.material.icons.filled.Groups
+import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.VideoFile
 import androidx.compose.material.icons.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.NorthWest
@@ -110,6 +112,11 @@ import androidx.tv.material3.Glow
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import java.io.File
+
+// Media grid thumbnails: if a thumbnail still isn't local after this long
+// (download stalled/failed, or the message has no thumbnail), stop spinning
+// and show a static type icon instead of an endless loading spinner.
+private const val THUMB_TIMEOUT_MS = 10_000L
 
 @Composable
 fun ChatsScreen(
@@ -1008,12 +1015,33 @@ private fun SidebarMediaCard(
 ) {
     val ctx = LocalContext.current
     val thumbId = item.thumbnailFileId
+    // Reactive thumbnail state: the old one-shot fileStateFor() read never
+    // recomposed when the download landed, so a card that fetched its
+    // thumbnail kept spinning forever (same bug PlayerScreen already fixed
+    // for its own file). Collect the repo state map so the card recomposes
+    // the moment the thumbnail becomes Local.
+    val fileStates by viewModel.fileRepo.states.collectAsStateWithLifecycle()
     val thumbState = if (thumbId != null) {
-        (viewModel.fileStateFor(thumbId) as? FileDownloadState.Local)?.path
+        (fileStates[thumbId] as? FileDownloadState.Local)?.path
     } else null
-    LaunchedEffect(thumbId) {
-        if (thumbId != null && thumbState == null) {
-            viewModel.ensureMediaFile(thumbId, priority = 16)
+    // Fallback: if the thumbnail still isn't local after THUMB_TIMEOUT_MS
+    // (download stalled / failed, or the message has no thumbnail at all),
+    // stop spinning and show a static type icon instead.
+    var thumbTimedOut by remember(item.messageId) { mutableStateOf(false) }
+    LaunchedEffect(thumbId, thumbState) {
+        thumbTimedOut = false
+        if (thumbId == null) {
+            thumbTimedOut = true // no thumbnail to fetch
+            return@LaunchedEffect
+        }
+        if (thumbState != null) return@LaunchedEffect // already local
+        viewModel.ensureMediaFile(thumbId, priority = 16)
+        delay(THUMB_TIMEOUT_MS)
+        // Re-read at the deadline — this effect is keyed on thumbState, so a
+        // mid-wait arrival restarts it and cancels the delay; reaching here
+        // means it's still null.
+        if (viewModel.fileStateFor(thumbId) !is FileDownloadState.Local) {
+            thumbTimedOut = true
         }
     }
     Card(
@@ -1080,6 +1108,21 @@ private fun SidebarMediaCard(
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize(),
                 )
+            } else if (thumbTimedOut) {
+                // Thumbnail never arrived (download stalled/failed, or the
+                // message has no thumbnail) — show a static type icon.
+                Box(
+                    modifier = Modifier.fillMaxSize().background(Color(0xFF202020)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = if (item.type == MediaType.Photo)
+                            Icons.Default.Image else Icons.Default.VideoFile,
+                        contentDescription = null,
+                        tint = Color.White.copy(alpha = 0.5f),
+                        modifier = Modifier.size(40.dp),
+                    )
+                }
             } else {
                 // Thumbnail not downloaded yet — show a centered spinner
                 // instead of the old "Photo"/"Video" placeholder.
