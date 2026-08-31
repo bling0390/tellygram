@@ -229,6 +229,15 @@ fun PlayerScreen(
     }
 
     var mediaPrepared by remember(current.fileId) { mutableStateOf(false) }
+    // True once the first video frame has actually rendered. The full-screen
+    // spinner stays until this fires (not merely until prepare() returns), so
+    // streaming videos don't flash black between prepare() and the first
+    // frame. MediaPane's hover preview already does this (previewReady).
+    var firstFrameRendered by remember(current.fileId) { mutableStateOf(false) }
+    // True while ExoPlayer is in STATE_BUFFERING during playback. Drives a
+    // lightweight spinner on top of the video — only reachable after the
+    // first frame (initial buffering is covered by the full-screen spinner).
+    var isBuffering by remember(current.fileId) { mutableStateOf(false) }
     // Keyed on currentPath too: when a non-streaming video needs a
     // (re)download, the path only appears AFTER the download completes —
     // keying on fileId alone meant the effect ran once with path == null and
@@ -276,6 +285,8 @@ fun PlayerScreen(
     val retryPlayback = {
         playerError = null
         mediaPrepared = false
+        firstFrameRendered = false
+        isBuffering = false
         retryTick++
     }
 
@@ -293,7 +304,11 @@ fun PlayerScreen(
                 Log.e(TAG, "playback error for file ${current.fileId}", error)
                 playerError = error.errorCodeName + ": " + (error.message ?: "")
             }
+            override fun onRenderedFirstFrame() {
+                firstFrameRendered = true
+            }
             override fun onPlaybackStateChanged(state: Int) {
+                isBuffering = state == Player.STATE_BUFFERING
                 if (state == Player.STATE_ENDED) {
                     viewModel.clearPlayerPosition(current.fileId)
                     val next = neighborVideo(+1)
@@ -487,7 +502,7 @@ fun PlayerScreen(
                     Spacer(Modifier.height(24.dp))
                 }
             }
-        } else if (!mediaPrepared) {
+        } else if (!mediaPrepared || !firstFrameRendered) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(color = Color.White)
             }
@@ -529,6 +544,21 @@ fun PlayerScreen(
                     update = { it.player = exo },
                     modifier = Modifier.fillMaxSize(),
                 )
+            }
+
+            // Lightweight buffering indicator — shown only during playback
+            // (reachable only after mediaPrepared && firstFrameRendered, so
+            // it never overlaps the initial full-screen spinner). The video
+            // keeps rendering underneath; this just signals the remote isn't
+            // dead while data catches up.
+            if (isBuffering) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(
+                        color = Color.White,
+                        strokeWidth = 3.dp,
+                        modifier = Modifier.size(44.dp),
+                    )
+                }
             }
         }
 
