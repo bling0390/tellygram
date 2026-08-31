@@ -502,7 +502,7 @@ fun PlayerScreen(
                     Spacer(Modifier.height(24.dp))
                 }
             }
-        } else if (!mediaPrepared || !firstFrameRendered) {
+        } else if (!mediaPrepared) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(color = Color.White)
             }
@@ -546,12 +546,21 @@ fun PlayerScreen(
                 )
             }
 
-            // Lightweight buffering indicator — shown only during playback
-            // (reachable only after mediaPrepared && firstFrameRendered, so
-            // it never overlaps the initial full-screen spinner). The video
-            // keeps rendering underneath; this just signals the remote isn't
-            // dead while data catches up.
-            if (isBuffering) {
+            // First-frame gate: the spinner OVERLAYS the surface rather than
+            // replacing it. The PlayerView must stay composed — if we swap it
+            // out for a spinner, ExoPlayer has no surface to render into,
+            // onRenderedFirstFrame never fires, and the spinner never clears
+            // (the black-screen deadlock). Same overlay pattern as the media
+            // grid's hover preview (thumbnail stays under until previewReady).
+            if (!firstFrameRendered) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = Color.White)
+                }
+            } else if (isBuffering) {
+                // Lightweight buffering indicator during playback (after the
+                // first frame — never overlaps the initial full-screen spinner).
+                // Video keeps rendering underneath; this just signals the
+                // remote isn't dead while data catches up.
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(
                         color = Color.White,
