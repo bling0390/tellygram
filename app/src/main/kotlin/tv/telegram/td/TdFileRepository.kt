@@ -345,6 +345,7 @@ class TdFileRepository(
                 activeStart = offset,
                 downloadedSize = offset,
                 completed = false,
+                failed = false,
                 ranges = frozen,
                 targetBytes = offset + windowBytes,
             )
@@ -435,11 +436,24 @@ class TdFileRepository(
     fun awaitStreamBytes(fileId: Int, minBytes: Long, timeoutMs: Long = 30_000): Boolean {
         val monitor = monitorFor(fileId)
         val deadline = System.currentTimeMillis() + timeoutMs
+        var failedSince = -1L
         synchronized(monitor) {
             while (true) {
                 val st = streamingStates[fileId] ?: return false
-                if (st.failed) return false
                 if (st.completed || st.downloadedSize >= minBytes) return true
+                if (st.failed) {
+                    // `failed` goes true transiently during a seek re-target:
+                    // TDLib emits UpdateFile with isDownloadingActive=false
+                    // (old download cancelled, new one not yet started) while
+                    // path is already set. Treating that instant as terminal
+                    // turns every seek into a spurious "download stalled".
+                    // Only fail once it has stayed failed for a grace period.
+                    val now = System.currentTimeMillis()
+                    if (failedSince < 0) failedSince = now
+                    else if (now - failedSince >= FAILED_GRACE_MS) return false
+                } else {
+                    failedSince = -1L
+                }
                 val remaining = deadline - System.currentTimeMillis()
                 if (remaining <= 0) return false
                 try {
@@ -552,5 +566,11 @@ class TdFileRepository(
         // If the TDLib files volume has less than this much free space,
         // start evicting inactive files, then reset the active stream window.
         private const val LOW_DISK_WATERMARK_BYTES = 800L * 1024 * 1024
+
+        // `failed` in StreamingState goes true transiently during a seek
+        // re-target (old download cancelled, new one not yet active).
+        // awaitStreamBytes only treats it as terminal after it has persisted
+        // this long, so a seek doesn't surface a spurious "download stalled".
+        private const val FAILED_GRACE_MS = 1_000L
     }
 }
