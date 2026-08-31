@@ -1,4 +1,4 @@
-@file:OptIn(androidx.tv.material3.ExperimentalTvMaterial3Api::class)
+@file:OptIn(androidx.tv.material3.ExperimentalTvMaterial3Api::class, androidx.compose.ui.ExperimentalComposeUiApi::class)
 
 package tv.telegram.ui.chats
 
@@ -58,6 +58,7 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
@@ -263,11 +264,6 @@ private fun ChatSidebar(
     modifier: Modifier = Modifier,
 ) {
     val firstFocus = remember { FocusRequester() }
-    // True while focus sits on the first focusable list item. When it does,
-    // DirectionUp is consumed so focus stays put instead of jumping to the
-    // NavRail (Compose's default directional focus search would find Search
-    // at top-left). Left key is the deliberate path back to the rail.
-    var firstItemFocused by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
 
     LaunchedEffect(viewingArchive) {
@@ -332,46 +328,27 @@ private fun ChatSidebar(
         LazyColumn(
             state = listState,
             verticalArrangement = Arrangement.spacedBy(6.dp),
-            modifier = Modifier.onKeyEvent { ev ->
-                if (ev.type != KeyEventType.KeyDown) return@onKeyEvent false
-                when {
-                    // At the top of the list — consume, stay put.
-                    ev.key == Key.DirectionUp && firstItemFocused -> true
-                    // Left from a chat row goes to the rail's Chats item.
-                    // Directional search would otherwise pick whichever
-                    // rail icon is vertically nearest — Search near the
-                    // top, Settings near the bottom — which reads as
-                    // random.
-                    ev.key == Key.DirectionLeft && railChatsFocus != null -> {
-                        try { railChatsFocus!!.requestFocus() }
-                        catch (_: IllegalStateException) {}
-                        true
-                    }
-                    else -> false
-                }
-            }.onFocusChanged { onFocusChange?.invoke(it.hasFocus) },
+            modifier = Modifier.onFocusChanged { onFocusChange?.invoke(it.hasFocus) },
         ) {
             if (viewingArchive) {
                 item(key = "back-to-main") {
-                    Box(Modifier.onFocusChanged { firstItemFocused = it.hasFocus }) {
-                        ArchiveEntry(
-                            label = "Back to Chats",
-                            icon = Icons.Default.NorthWest,
-                            onClick = onShowMain,
-                            fr = firstFocus,
-                        )
-                    }
+                    ArchiveEntry(
+                        label = "Back to Chats",
+                        icon = Icons.Default.NorthWest,
+                        onClick = onShowMain,
+                        fr = firstFocus,
+                        railChatsFocus = railChatsFocus,
+                    )
                 }
             } else if (archiveCount > 0) {
                 item(key = "show-archive") {
-                    Box(Modifier.onFocusChanged { firstItemFocused = it.hasFocus }) {
-                        ArchiveEntry(
-                            label = "Archived Chats ($archiveCount)",
-                            icon = Icons.Default.VisibilityOff,
-                            onClick = onShowArchive,
-                            fr = firstFocus,
-                        )
-                    }
+                    ArchiveEntry(
+                        label = "Archived Chats ($archiveCount)",
+                        icon = Icons.Default.VisibilityOff,
+                        onClick = onShowArchive,
+                        fr = firstFocus,
+                        railChatsFocus = railChatsFocus,
+                    )
                 }
             }
             items(chats, key = { it.id }) { chat ->
@@ -384,27 +361,19 @@ private fun ChatSidebar(
                 // extra (a node may carry several focus requesters).
                 val fr = if (isFirst) firstFocus else null
                 val extraFr = if (isSelected) selectedChatFocus else null
-                if (isFirst) {
-                    Box(Modifier.onFocusChanged { firstItemFocused = it.hasFocus }) {
-                        SidebarItem(
-                            chat = chat,
-                            selected = isSelected,
-                            onClick = { onSelect(chat.id) },
-                            fr = fr,
-                            extraFr = extraFr,
-                            viewModel = viewModel,
-                        )
-                    }
-                } else {
-                    SidebarItem(
-                        chat = chat,
-                        selected = isSelected,
-                        onClick = { onSelect(chat.id) },
-                        fr = fr,
-                        extraFr = extraFr,
-                        viewModel = viewModel,
-                    )
-                }
+                SidebarItem(
+                    chat = chat,
+                    selected = isSelected,
+                    onClick = { onSelect(chat.id) },
+                    fr = fr,
+                    extraFr = extraFr,
+                    viewModel = viewModel,
+                    railChatsFocus = railChatsFocus,
+                    // First chat row (no archive entry above it) is the top
+                    // of the list — Up stays put instead of escaping to the
+                    // rail.
+                    blockUp = isFirst,
+                )
             }
         }
     }
@@ -450,6 +419,9 @@ private fun ArchiveEntry(
     onClick: () -> Unit,
     icon: ImageVector? = null,
     fr: FocusRequester? = null,
+    // Left from the archive entry goes to the rail's Chats item (it's the
+    // top of the list, same boundary as the chat rows below it).
+    railChatsFocus: FocusRequester? = null,
 ) {
     Card(
         onClick = onClick,
@@ -466,6 +438,12 @@ private fun ArchiveEntry(
         modifier = Modifier
             .fillMaxWidth()
             .height(48.dp)
+            // Top of the list: Up stays put (no rail above the list's first
+            // item). Left is the deliberate path back to the rail.
+            .focusProperties {
+                up = FocusRequester.Cancel
+                railChatsFocus?.let { left = it }
+            }
             .let { if (fr != null) it.focusRequester(fr) else it },
     ) {
         Row(
@@ -499,6 +477,10 @@ private fun SidebarItem(
     fr: FocusRequester? = null,
     extraFr: FocusRequester? = null,
     viewModel: MainViewModel,
+    // Left from a chat row goes to the rail's Chats item.
+    railChatsFocus: FocusRequester? = null,
+    // First chat row (no archive entry above it): Up stays put.
+    blockUp: Boolean = false,
 ) {
     val ctx = LocalContext.current
     val containerColor = when {
@@ -525,6 +507,14 @@ private fun SidebarItem(
         modifier = Modifier
             .fillMaxWidth()
             .height(48.dp)
+            // Cross-zone boundaries declared declaratively instead of
+            // tracking first-row focus: Up at the top of the list stays put;
+            // Left always lands on the rail's Chats item (not whichever rail
+            // icon geometric search happens to pick).
+            .focusProperties {
+                if (blockUp) up = FocusRequester.Cancel
+                railChatsFocus?.let { left = it }
+            }
             .let { if (fr != null) it.focusRequester(fr) else it }
             .let { if (extraFr != null) it.focusRequester(extraFr) else it },
     ) {
@@ -717,15 +707,13 @@ private fun MediaPane(
     // to and focused the card.
     var photoReturnMessageId by remember { mutableStateOf<Long?>(null) }
     val photoCardFocus = remember { FocusRequester() }
-    // True while focus sits on a card in the grid's first row (index < 3).
-    // When it does, DirectionUp is consumed so focus stays in the media
-    // grid instead of jumping to the chats list (Compose's global focus
-    // search).
-    var firstRowFocused by remember { mutableStateOf(false) }
     // True while focus sits on a card in the grid's left column
     // (index % 3 == 0). Left here would make Compose's global focus search
     // jump to an arbitrary chat in the sidebar — instead we consume the key
-    // and hand focus explicitly to the currently selected chat.
+    // and hand focus explicitly to the currently selected chat. This one
+    // stays an explicit handler (not focusProperties) because the target
+    // (selected chat) may be scrolled off-screen and need bring-into-view
+    // first — a plain `left = FocusRequester` can't do that.
     var leftEdgeFocused by remember { mutableStateOf(false) }
 
     // Switch-chat focus: when a DIFFERENT chat's media actually arrives,
@@ -926,14 +914,13 @@ private fun MediaPane(
             modifier = Modifier
                 .fillMaxSize()
                 .onKeyEvent { ev ->
-                    // Only when focus is on a first-row card is there no
-                    // upward candidate; consume so focus stays put. Left on
-                    // the left column: consume and hand focus to the
+                    // Left on the left column: consume and hand focus to the
                     // selected chat in the sidebar (avoids Compose's global
-                    // search landing on some random chat).
+                    // search landing on some random chat). Up at the first
+                    // row is handled declaratively on the card itself (see
+                    // SidebarMediaCard blockUp).
                     if (ev.type == KeyEventType.KeyDown) {
                         when {
-                            ev.key == Key.DirectionUp && firstRowFocused -> true
                             ev.key == Key.DirectionLeft && leftEdgeFocused -> {
                                 onLeftToSelectedChat()
                                 true
@@ -968,7 +955,6 @@ private fun MediaPane(
                 // decides which card owns the initial grid focus requester.
                 Box(
                     Modifier.onFocusChanged { focused ->
-                        if (isFirstRow) firstRowFocused = focused.hasFocus
                         if (isLeftEdge) leftEdgeFocused = focused.hasFocus
                     },
                 ) {
@@ -987,6 +973,9 @@ private fun MediaPane(
                         previewReady = previewReady,
                         previewPlayer = previewPlayer,
                         onFocusChange = onFocusChange,
+                        // First row has no upward candidate — Up stays put
+                        // (declarative, no firstRowFocused tracking).
+                        blockUp = isFirstRow,
                         fr = when {
                             isPhotoReturnTarget -> photoCardFocus
                             isReturnTarget -> returnCardFocus
@@ -1011,6 +1000,9 @@ private fun SidebarMediaCard(
     previewPlayer: ExoPlayer? = null,
     onFocusChange: (Boolean) -> Unit = {},
     fr: FocusRequester? = null,
+    // First-row card: Up has no upward candidate, so it stays put
+    // (declarative boundary — no firstRowFocused state tracking).
+    blockUp: Boolean = false,
 ) {
     val ctx = LocalContext.current
     val thumbId = item.thumbnailFileId
@@ -1040,6 +1032,7 @@ private fun SidebarMediaCard(
         modifier = Modifier
             .fillMaxWidth()
             .aspectRatio(16f / 10f)
+            .focusProperties { if (blockUp) up = FocusRequester.Cancel }
             .onFocusChanged { onFocusChange(it.hasFocus) }
             .let { if (fr != null) it.focusRequester(fr) else it },
     ) {

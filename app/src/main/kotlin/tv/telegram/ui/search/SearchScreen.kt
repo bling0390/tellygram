@@ -1,4 +1,4 @@
-@file:OptIn(androidx.tv.material3.ExperimentalTvMaterial3Api::class)
+@file:OptIn(androidx.tv.material3.ExperimentalTvMaterial3Api::class, androidx.compose.ui.ExperimentalComposeUiApi::class)
 
 package tv.telegram.ui.search
 
@@ -31,6 +31,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
@@ -199,25 +200,12 @@ private fun SearchBar(
             .fillMaxWidth()
             .height(64.dp)
             .focusRequester(fr)
-            .onKeyEvent { ev ->
-                if (ev.type != KeyEventType.KeyDown) return@onKeyEvent false
-                when (ev.key) {
-                    // Top of the page — consume so focus stays put instead of
-                    // escaping to the rail (same pattern as the chats list's
-                    // first row). Left is the deliberate path back to the rail.
-                    Key.DirectionUp -> true
-                    Key.DirectionLeft -> {
-                        val target = railSearchFocus
-                        if (target != null) {
-                            try { target.requestFocus() }
-                            catch (_: IllegalStateException) {}
-                            true
-                        } else {
-                            false
-                        }
-                    }
-                    else -> false
-                }
+            // Top of the page: Up stays put (nothing above the bar); Left
+            // lands on the rail's Search item — declarative boundary, no
+            // onKeyEvent.
+            .focusProperties {
+                up = FocusRequester.Cancel
+                railSearchFocus?.let { left = it }
             },
     ) {
         Row(
@@ -250,58 +238,42 @@ private fun ResultsGrid(
     railSearchFocus: FocusRequester?,
     onSelect: (Long) -> Unit,
 ) {
-    // Grid-boundary focus traps (same pattern as MediaPane): first-row Up
-    // goes back to the search bar; left-column Left goes to the rail's
-    // Search item. Directional search from these edges would otherwise
-    // escape to whichever rail icon happens to be vertically nearest
-    // (Chats / Settings), which reads as random.
-    var firstRowFocused by remember { mutableStateOf(false) }
-    var leftEdgeFocused by remember { mutableStateOf(false) }
-
     LazyVerticalGrid(
         columns = GridCells.Fixed(4),
         horizontalArrangement = Arrangement.spacedBy(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
-        modifier = Modifier
-            .fillMaxSize()
-            .onKeyEvent { ev ->
-                if (ev.type != KeyEventType.KeyDown) return@onKeyEvent false
-                when {
-                    ev.key == Key.DirectionUp && firstRowFocused -> {
-                        try { searchBarFocus.requestFocus() }
-                        catch (_: IllegalStateException) {}
-                        true
-                    }
-                    ev.key == Key.DirectionLeft && leftEdgeFocused && railSearchFocus != null -> {
-                        try { railSearchFocus!!.requestFocus() }
-                        catch (_: IllegalStateException) {}
-                        true
-                    }
-                    else -> false
-                }
-            },
+        modifier = Modifier.fillMaxSize(),
     ) {
         itemsIndexed(items, key = { _, chat -> chat.id }) { index, chat ->
-            val isFirstRow = index < 4
-            val isLeftEdge = index % 4 == 0
-            Box(
-                Modifier.onFocusChanged { focused ->
-                    if (isFirstRow) firstRowFocused = focused.hasFocus
-                    if (isLeftEdge) leftEdgeFocused = focused.hasFocus
-                },
-            ) {
-                ResultCard(chat = chat, onClick = { onSelect(chat.id) })
-            }
+            ResultCard(
+                chat = chat,
+                onClick = { onSelect(chat.id) },
+                // First row: Up returns to the search bar. Left column:
+                // Left lands on the rail's Search item. Declarative
+                // boundaries — no firstRowFocused/leftEdgeFocused tracking.
+                upTarget = if (index < 4) searchBarFocus else null,
+                leftTarget = if (index % 4 == 0) railSearchFocus else null,
+            )
         }
     }
 }
 
 @Composable
-private fun ResultCard(chat: ChatItem, onClick: () -> Unit) {
+private fun ResultCard(
+    chat: ChatItem,
+    onClick: () -> Unit,
+    upTarget: FocusRequester? = null,
+    leftTarget: FocusRequester? = null,
+) {
     Card(
         onClick = onClick,
         scale = CardDefaults.scale(focusedScale = 1.05f),
-        modifier = Modifier.height(96.dp),
+        modifier = Modifier
+            .height(96.dp)
+            .focusProperties {
+                upTarget?.let { up = it }
+                leftTarget?.let { left = it }
+            },
     ) {
         Column(
             modifier = Modifier.fillMaxSize().padding(16.dp),
