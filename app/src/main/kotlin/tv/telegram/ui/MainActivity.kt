@@ -126,6 +126,10 @@ private fun AppNavHost(viewModel: MainViewModel, backController: BackController)
     // nearest — Search near the top, Settings near the bottom — which
     // reads as random.
     val chatsRailFocus = remember { FocusRequester() }
+    // Focus target the rail's Chats item hands Right to: the chat list's
+    // selected chat (or the first chat when nothing is selected). Right from
+    // the rail would otherwise land on a random row via spatial focus search.
+    val chatsListRightFocus = remember { FocusRequester() }
     // Focus target for the rail's search item. The search results grid
     // routes Left here explicitly (see ResultsGrid) for the same reason.
     val searchRailFocus = remember { FocusRequester() }
@@ -269,6 +273,7 @@ private fun AppNavHost(viewModel: MainViewModel, backController: BackController)
                     ChatsScreen(
                         viewModel = viewModel,
                         railChatsFocus = chatsRailFocus,
+                        chatsListRightFocus = chatsListRightFocus,
                         onOpenPlayer = { index -> navController.navigate(Routes.player(index)) },
                     )
                 }
@@ -312,6 +317,7 @@ private fun AppNavHost(viewModel: MainViewModel, backController: BackController)
                 settingsFocus = settingsRailFocus,
                 chatsFocus = chatsRailFocus,
                 searchFocus = searchRailFocus,
+                chatsRightFocus = chatsListRightFocus,
                 // While the settings drawer is open, the rail must not
                 // participate in focus search — otherwise pressing Up from
                 // the drawer's first row escapes to the rail's chats item.
@@ -378,6 +384,7 @@ private fun NavRail(
     settingsFocus: FocusRequester? = null,
     chatsFocus: FocusRequester? = null,
     searchFocus: FocusRequester? = null,
+    chatsRightFocus: FocusRequester? = null,
     enabled: Boolean = true,
     // Reports whether any rail item holds focus (hasFocus bubbles up from
     // the focused icon). AppNavHost uses it so Back on the rail — the
@@ -421,6 +428,9 @@ private fun NavRail(
                     2 -> settingsFocus
                     else -> null
                 },
+                // Chats item → Right enters the chat list at the selected /
+                // first chat instead of a random row.
+                rightTarget = if (idx == 1) chatsRightFocus else null,
                 enabled = enabled,
             )
         }
@@ -433,6 +443,7 @@ private fun RailItem(
     selected: Boolean,
     onClick: () -> Unit,
     fr: FocusRequester? = null,
+    rightTarget: FocusRequester? = null,
     enabled: Boolean = true,
 ) {
     var focused by remember { mutableStateOf(false) }
@@ -463,7 +474,10 @@ private fun RailItem(
             // While the settings drawer is open (enabled = false) the rail
             // item drops out of focus search — D-pad can't escape the drawer
             // into the rail. Visuals (selected chip) stay unchanged.
-            .focusProperties { canFocus = enabled }
+            .focusProperties {
+                canFocus = enabled
+                rightTarget?.let { right = it }
+            }
             .onFocusChanged { focused = it.hasFocus }
             .let { if (fr != null) it.focusRequester(fr) else it },
     ) {

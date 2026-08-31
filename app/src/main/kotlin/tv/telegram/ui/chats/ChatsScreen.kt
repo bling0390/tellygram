@@ -126,6 +126,10 @@ fun ChatsScreen(
     // here explicitly (see ChatSidebar), so Left never lands on the
     // rail's Search/Settings icon via directional search.
     railChatsFocus: FocusRequester? = null,
+    // Focus target the rail's Chats item hands Right to: the selected chat
+    // (or the first chat when nothing is selected). Attached to exactly one
+    // chat row in ChatSidebar.
+    chatsListRightFocus: FocusRequester? = null,
 ) {
     val chats by viewModel.chatList.collectAsStateWithLifecycle()
     val archiveChats by viewModel.archiveChats.collectAsStateWithLifecycle()
@@ -203,6 +207,8 @@ fun ChatsScreen(
             selectedChatFocus = selectedChatFocus,
             sidebarFocusTick = sidebarFocusTick,
             railChatsFocus = railChatsFocus,
+            // Rail Chats → Right lands on the selected / first chat row.
+            chatsListRightFocus = chatsListRightFocus,
             // Returning from the player: don't grab initial focus on the
             // first sidebar row ("Archived Chats") — the media grid takes
             // it instead (see MediaPane's returnFocus).
@@ -264,6 +270,9 @@ private fun ChatSidebar(
     // Left from a chat row lands on the rail's Chats item instead of
     // whichever rail icon directional search happens to pick.
     railChatsFocus: FocusRequester? = null,
+    // Rail Chats → Right lands here: the selected chat (if any), else the
+    // first chat in the list.
+    chatsListRightFocus: FocusRequester? = null,
     // True when returning from the player: skip the initial first-row
     // focus grab so the media grid can take focus (returnFocusMessageId).
     suppressInitialFocus: Boolean = false,
@@ -370,12 +379,19 @@ private fun ChatSidebar(
                 // extra (a node may carry several focus requesters).
                 val fr = if (isFirst) firstFocus else null
                 val extraFr = if (isSelected) selectedChatFocus else null
+                // Rail Chats → Right entry: the selected chat if any, else
+                // the first chat (firstFocus's row is the archive entry when
+                // an archive exists, so use chats.first() directly here).
+                val isRightEntry = if (selectedChatId != null) isSelected
+                    else chat.id == chats.firstOrNull()?.id
+                val listRightFr = if (isRightEntry) chatsListRightFocus else null
                 SidebarItem(
                     chat = chat,
                     selected = isSelected,
                     onClick = { onSelect(chat.id) },
                     fr = fr,
                     extraFr = extraFr,
+                    listRightFr = listRightFr,
                     viewModel = viewModel,
                     railChatsFocus = railChatsFocus,
                     // First chat row (no archive entry above it) is the top
@@ -485,6 +501,7 @@ private fun SidebarItem(
     onClick: () -> Unit,
     fr: FocusRequester? = null,
     extraFr: FocusRequester? = null,
+    listRightFr: FocusRequester? = null,
     viewModel: MainViewModel,
     // Left from a chat row goes to the rail's Chats item.
     railChatsFocus: FocusRequester? = null,
@@ -525,7 +542,8 @@ private fun SidebarItem(
                 railChatsFocus?.let { left = it }
             }
             .let { if (fr != null) it.focusRequester(fr) else it }
-            .let { if (extraFr != null) it.focusRequester(extraFr) else it },
+            .let { if (extraFr != null) it.focusRequester(extraFr) else it }
+            .let { if (listRightFr != null) it.focusRequester(listRightFr) else it },
     ) {
         Row(
             modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 4.dp),
@@ -761,9 +779,16 @@ private fun MediaPane(
         val target = returnFocusMessageId ?: return@LaunchedEffect
         val idx = items.indexOfFirst { it.messageId == target }
         if (idx >= 0) {
-            focusGridItem(gridState, idx, returnCardFocus)
-            // One-shot: clear so a later re-entry (e.g. via rail) starts
-            // with the normal initial focus instead of re-jumping here.
+            // Returning from the player removes the player's focused node, and
+            // Compose's default focus restoration can land on the rail's Search
+            // icon before this coroutine's request runs. Retry so the card
+            // reliably wins the race instead of leaving focus stranded.
+            var focused = false
+            for (attempt in 1..5) {
+                focused = focusGridItem(gridState, idx, returnCardFocus)
+                if (focused) break
+                delay(100)
+            }
             viewModel.consumePlayerReturnFocus()
         }
     }
