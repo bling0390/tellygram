@@ -97,6 +97,9 @@ import tv.telegram.td.FileDownloadState
 import tv.telegram.td.MediaItem
 import tv.telegram.td.MediaType
 import tv.telegram.ui.MainViewModel
+import tv.telegram.ui.focus.focusGridItem
+import tv.telegram.ui.focus.focusListItem
+import tv.telegram.ui.focus.isFullyVisible
 import androidx.tv.material3.Border
 import androidx.tv.material3.Card
 import androidx.tv.material3.CardDefaults
@@ -289,22 +292,18 @@ private fun ChatSidebar(
             val idx = chats.indexOfFirst { it.id == selectedChatId }
             if (idx >= 0) {
                 val targetIndex = idx + offset
-                val info = listState.layoutInfo
-                val fullyVisible = info.visibleItemsInfo.any { item ->
-                    item.index == targetIndex &&
-                        item.offset >= 0 &&
-                        item.offset + item.size <= info.viewportEndOffset
+                // Only scroll when the selected chat is NOT fully visible —
+                // an unconditional scrollToItem makes the list jump (the top
+                // "Archived Chats" entry slides out of view) and then the
+                // focus system's bringIntoView animates it back, which reads
+                // as a flicker. focusListItem awaits real placement instead
+                // of a fixed-frame guess.
+                if (listState.isFullyVisible(targetIndex)) {
+                    try { selectedChatFocus.requestFocus() }
+                    catch (_: IllegalStateException) {}
+                } else {
+                    focusListItem(listState, targetIndex, selectedChatFocus)
                 }
-                if (!fullyVisible) {
-                    listState.scrollToItem(targetIndex)
-                    // Let the scrolled item actually compose before
-                    // focusing; requestFocus on an uncomposed item silently
-                    // no-ops.
-                    withFrameNanos { }
-                    withFrameNanos { }
-                }
-                try { selectedChatFocus.requestFocus() }
-                catch (_: IllegalStateException) {}
             }
         }
     }
@@ -752,10 +751,7 @@ private fun MediaPane(
         val first = items.firstOrNull()
         if (first != null && first.chatId == selectedChatId && lastResetChatId != selectedChatId) {
             lastResetChatId = selectedChatId
-            gridState.scrollToItem(0)
-            withFrameNanos { }
-            try { firstCardFocus.requestFocus() }
-            catch (_: IllegalStateException) {}
+            focusGridItem(gridState, 0, firstCardFocus)
         }
     }
 
@@ -768,11 +764,7 @@ private fun MediaPane(
         val target = returnFocusMessageId ?: return@LaunchedEffect
         val idx = items.indexOfFirst { it.messageId == target }
         if (idx >= 0) {
-            gridState.scrollToItem(idx)
-            withFrameNanos { }
-            withFrameNanos { }
-            try { returnCardFocus.requestFocus() }
-            catch (_: IllegalStateException) {}
+            focusGridItem(gridState, idx, returnCardFocus)
             // One-shot: clear so a later re-entry (e.g. via rail) starts
             // with the normal initial focus instead of re-jumping here.
             viewModel.consumePlayerReturnFocus()
@@ -788,11 +780,7 @@ private fun MediaPane(
         if (openedIndex != null) return@LaunchedEffect // dialog still open
         val idx = items.indexOfFirst { it.messageId == target }
         if (idx >= 0) {
-            gridState.scrollToItem(idx)
-            withFrameNanos { }
-            withFrameNanos { }
-            try { photoCardFocus.requestFocus() }
-            catch (_: IllegalStateException) {}
+            focusGridItem(gridState, idx, photoCardFocus)
             photoReturnMessageId = null // one-shot
         }
     }
