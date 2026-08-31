@@ -18,6 +18,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import org.drinkless.td.libcore.telegram.Client
 import org.drinkless.td.libcore.telegram.TdApi
+import tv.telegram.BuildConfig
 import java.io.File
 
 object TdClient {
@@ -32,6 +33,18 @@ object TdClient {
         onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )
     val updates: SharedFlow<TdApi.Object> = _updates.asSharedFlow()
+
+    // UpdateFile is emitted on its own, much larger flow. During streaming
+    // playback UpdateFile fires at a very high rate (one per downloaded
+    // chunk), so keeping it on the shared `updates` flow would starve chat
+    // / media updates (DROP_OLDEST) AND risk dropping the terminal
+    // `isDownloadingCompleted` event that unblocks a waiting download.
+    private val _fileUpdates = MutableSharedFlow<TdApi.UpdateFile>(
+        replay = 0,
+        extraBufferCapacity = 8192,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
+    val fileUpdates: SharedFlow<TdApi.UpdateFile> = _fileUpdates.asSharedFlow()
 
     private val _cacheClearProgress = MutableStateFlow<Float?>(null)
     val cacheClearProgress: StateFlow<Float?> = _cacheClearProgress.asStateFlow()
@@ -71,7 +84,7 @@ object TdClient {
             systemLanguageCode = "en"
             deviceModel = "Tvgram TV"
             systemVersion = "Android TV"
-            applicationVersion = "0.9.0"
+            applicationVersion = BuildConfig.VERSION_NAME
             this.databaseDirectory = databaseDirectory
             this.filesDirectory = filesDirectory
             useFileDatabase = true
@@ -96,10 +109,11 @@ object TdClient {
             return
         }
         val proxyType: TdApi.ProxyType = when (type.lowercase()) {
-            "http"       -> TdApi.ProxyTypeHttp(username, password,  false)
-            "socks5", "" -> TdApi.ProxyTypeSocks5(username, password)
+            "http" -> TdApi.ProxyTypeHttp(username, password, false)
             else -> {
-                Log.w(TAG, "Unknown PROXY_TYPE='$type'; falling back to SOCKS5")
+                if (type.isNotBlank() && type.lowercase() != "socks5") {
+                    Log.w(TAG, "Unknown PROXY_TYPE='$type'; falling back to SOCKS5")
+                }
                 TdApi.ProxyTypeSocks5(username, password)
             }
         }
@@ -129,18 +143,25 @@ object TdClient {
         }
     }
 
-    suspend fun execute(query: TdApi.Function, timeoutMs: Long = 10_000L): TdApi.Object? {
+    suspend fun execute(query: TdApi.Function, timeoutMs: Long = 10_000L): TdResult {
         val c = client ?: run {
             Log.w(TAG, "execute() before start(); dropping ${query.javaClass.simpleName}")
-            return null
+            return TdResult.TransportError(IllegalStateException("TDLib client not started"))
         }
         val deferred = CompletableDeferred<TdApi.Object>()
         c.send(query, { obj -> deferred.complete(obj) }, { e ->
             Log.w(TAG, "execute() exception", e)
             deferred.completeExceptionally(e)
         })
-        return withTimeoutOrNull(timeoutMs) {
-            try { deferred.await() } catch (_: Throwable) { null }
+        val obj = try {
+            withTimeoutOrNull(timeoutMs) { deferred.await() }
+        } catch (e: Throwable) {
+            return TdResult.TransportError(e)
+        } ?: return TdResult.Timeout
+        return if (obj is TdApi.Error) {
+            TdResult.TdError(obj.code, obj.message)
+        } else {
+            TdResult.Ok(obj)
         }
     }
 
@@ -239,6 +260,13 @@ object TdClient {
     }
 
     private fun dispatchUpdate(obj: TdApi.Object) {
+        if (obj is TdApi.UpdateFile) {
+            val emitted = _fileUpdates.tryEmit(obj)
+            if (!emitted) {
+                Log.w(TAG, "File-update flow buffer overflow, dropped: ${obj.file.id}")
+            }
+            return
+        }
         val emitted = _updates.tryEmit(obj)
         if (!emitted) {
             Log.w(TAG, "Update flow buffer overflow, dropped: ${obj.javaClass.simpleName}")

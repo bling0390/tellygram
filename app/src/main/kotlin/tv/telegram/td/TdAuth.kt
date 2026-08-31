@@ -121,8 +121,7 @@ class TdAuth(
     }
 
     suspend fun getMe(timeoutMs: Long = 5_000L): TdUser? {
-        val resp = client.execute(TdApi.GetMe(), timeoutMs) ?: return null
-        if (resp !is TdApi.User) return null
+        val resp = client.execute(TdApi.GetMe(), timeoutMs).valueOrNull<TdApi.User>() ?: return null
         return TdUser(
             id          = resp.id,
             firstName   = resp.firstName,

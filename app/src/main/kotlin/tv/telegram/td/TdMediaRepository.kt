@@ -33,6 +33,10 @@ class TdMediaRepository(
     private val _exhausted = MutableStateFlow(false)
     val exhausted: StateFlow<Boolean> = _exhausted.asStateFlow()
 
+    // Set of messageIds currently in _items, so live-append dedup is O(1)
+    // instead of mapping the whole list on every new message.
+    private val knownMessageIds = HashSet<Long>()
+
     init {
         scope.launch {
             client.updates.collect { obj -> dispatch(obj) }
@@ -54,7 +58,7 @@ class TdMediaRepository(
         // into the open chat's media list.
         if (message.chatId != chatId) return
         val item = parseMessage(message, chatId) ?: return
-        if (item.messageId !in _items.value.map { it.messageId }) {
+        if (knownMessageIds.add(item.messageId)) {
             _items.value = listOf(item) + _items.value
         }
     }
@@ -63,6 +67,7 @@ class TdMediaRepository(
         Log.i(TAG, "openAndLoad(chatId=$chatId, limit=$limit)")
         _currentChatId.value = chatId
         _items.value = emptyList()
+        knownMessageIds.clear()
         _loaded.value = false
         _exhausted.value = false
         _error.value = null
@@ -72,23 +77,23 @@ class TdMediaRepository(
         // Pure media pagination: search returns photo/video messages only,
         // no need to pull full history and filter. fromMessageId=0 starts
         // from the newest message; each later page advances the cursor.
-        val resp = client.execute(
-            TdApi.SearchChatMessages(
-                chatId, "", null, 0L, 0, limit,
-                TdApi.SearchMessagesFilterPhotoAndVideo(), 0L,
-            ),
-            timeoutMs = 10_000L,
-        )
-        if (resp == null) {
-            Log.w(TAG, "searchChatMessages timed out")
-            _error.value = "Loading timed out. Press OK to retry."
-            _loaded.value = true
-            return
+        val resp = when (
+            val r = client.execute(
+                TdApi.SearchChatMessages(
+                    chatId, "", null, 0L, 0, limit,
+                    TdApi.SearchMessagesFilterPhotoAndVideo(), 0L,
+                ),
+                timeoutMs = 10_000L,
+            )
+        ) {
+            is TdResult.Ok -> r.value
+            is TdResult.TdError -> { _error.value = "Error: ${r.message}"; _loaded.value = true; return }
+            is TdResult.Timeout -> { _error.value = "Loading timed out. Press OK to retry."; _loaded.value = true; return }
+            is TdResult.TransportError -> { _error.value = "Error: ${r.cause.message}"; _loaded.value = true; return }
         }
         if (resp !is TdApi.Messages) {
-            val errMsg = (resp as? TdApi.Error)?.message ?: resp.javaClass.simpleName
-            Log.w(TAG, "searchChatMessages returned ${resp.javaClass.simpleName}: $errMsg")
-            _error.value = "Error: $errMsg"
+            Log.w(TAG, "searchChatMessages returned ${resp.javaClass.simpleName}")
+            _error.value = "Error: unexpected response ${resp.javaClass.simpleName}"
             _loaded.value = true
             return
         }
@@ -96,6 +101,7 @@ class TdMediaRepository(
             .mapNotNull { parseMessage(it, chatId) }
         Log.i(TAG, "Loaded ${items.size} media items from ${resp.messages.size} search results (page 1)")
         _items.value = items
+        knownMessageIds.addAll(items.map { it.messageId })
         _loaded.value = true
         if (items.isEmpty() || resp.messages.size < limit) {
             _exhausted.value = true
@@ -141,9 +147,9 @@ class TdMediaRepository(
                     chatId, "", null, oldestMessageId, 0, limit,
                     TdApi.SearchMessagesFilterPhotoAndVideo(), 0L,
                 ),
-            )
-            if (resp !is TdApi.Messages) {
-                Log.w(TAG, "loadMore: unexpected type ${resp?.javaClass?.simpleName}")
+            ).valueOrNull<TdApi.Messages>()
+            if (resp == null) {
+                Log.w(TAG, "loadMore: searchChatMessages failed")
                 return
             }
             val newItems = resp.messages.mapNotNull { parseMessage(it, chatId) }
@@ -151,6 +157,7 @@ class TdMediaRepository(
             val seen = current.map { it.messageId }.toHashSet()
             val merged = current + newItems.filter { it.messageId !in seen }
             _items.value = merged
+            knownMessageIds.addAll(newItems.map { it.messageId })
             if (newItems.isEmpty() || resp.messages.size < limit) {
                 _exhausted.value = true
             }
@@ -164,6 +171,7 @@ class TdMediaRepository(
         client.send(TdApi.CloseChat(chatId))
         _currentChatId.value = null
         _items.value = emptyList()
+        knownMessageIds.clear()
         _loaded.value = false
         _error.value = null
     }

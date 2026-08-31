@@ -4,10 +4,15 @@ import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import org.drinkless.td.libcore.telegram.TdApi
 
 class TdChatRepository(
@@ -128,16 +133,16 @@ class TdChatRepository(
 
         client.send(TdApi.LoadChats(TdApi.ChatListMain(), limit))
 
-        val chatsObj = client.execute(
-            TdApi.GetChats(TdApi.ChatListMain(), limit),
-            timeoutMs = 10_000L,
-        )
+        val chatsObj = when (
+            val r = client.execute(TdApi.GetChats(TdApi.ChatListMain(), limit), timeoutMs = 10_000L)
+        ) {
+            is TdResult.Ok -> r.value
+            is TdResult.TdError -> { _error.value = "${r.code}: ${r.message}"; return }
+            is TdResult.Timeout -> { _error.value = "Loading timed out. Press OK to retry."; return }
+            is TdResult.TransportError -> { _error.value = "Connection error: ${r.cause.message}"; return }
+        }
         if (chatsObj !is TdApi.Chats) {
-            val msg = when {
-                chatsObj == null -> "Loading timed out. Press OK to retry."
-                chatsObj is TdApi.Error -> "${chatsObj.code}: ${chatsObj.message}"
-                else -> "Unexpected response: ${chatsObj.javaClass.simpleName}"
-            }
+            val msg = "Unexpected response: ${chatsObj.javaClass.simpleName}"
             Log.w(TAG, "getChats failed: $msg")
             _error.value = msg
             return
@@ -149,7 +154,7 @@ class TdChatRepository(
             return
         }
         Log.i(TAG, "getChats returned ${ids.size} chat IDs; fetching each")
-        val items: List<ChatItem> = ids.toList().mapNotNull { id: Long -> fetchChatItem(id) }
+        val items: List<ChatItem> = fetchChatItems(ids)
         Log.i(TAG, "Projected to ${items.size} ChatItems")
         _allChats.value = items
         _loaded.value = true
@@ -167,13 +172,13 @@ class TdChatRepository(
             val chatsObj = client.execute(
                 TdApi.GetChats(TdApi.ChatListArchive(), limit),
                 timeoutMs = 10_000L,
-            )
-            if (chatsObj !is TdApi.Chats) {
-                Log.w(TAG, "getChats(archive) returned ${chatsObj?.javaClass?.simpleName ?: "null"}")
+            ).valueOrNull<TdApi.Chats>()
+            if (chatsObj == null) {
+                Log.w(TAG, "getChats(archive) failed or returned unexpected type")
                 return
             }
             val ids = chatsObj.chatIds
-            val items: List<ChatItem> = ids.toList().mapNotNull { id: Long -> fetchChatItem(id) }
+            val items: List<ChatItem> = fetchChatItems(ids)
             _archiveChats.value = items
             _archiveCount.value = items.size
             Log.i(TAG, "Loaded ${items.size} archived chats")
@@ -199,9 +204,9 @@ class TdChatRepository(
             val resp = client.execute(
                 TdApi.SearchChats(query, 50),
                 timeoutMs = 3_000L,
-            )
-            if (resp !is TdApi.Chats) {
-                Log.w(TAG, "searchChats($query) returned ${resp?.javaClass?.simpleName}; falling back")
+            ).valueOrNull<TdApi.Chats>()
+            if (resp == null) {
+                Log.w(TAG, "searchChats($query) failed; falling back")
                 applyFilter(query)
                 return
             }
@@ -237,12 +242,8 @@ class TdChatRepository(
     }
 
     private suspend fun fetchChatItem(chatId: Long): ChatItem? {
-        val resp = client.execute(TdApi.GetChat(chatId), timeoutMs = 5_000L) ?: run {
-            Log.w(TAG, "getChat($chatId) timed out")
-            return null
-        }
-        if (resp !is TdApi.Chat) {
-            Log.w(TAG, "getChat($chatId) returned ${resp.javaClass.simpleName}")
+        val resp = client.execute(TdApi.GetChat(chatId), timeoutMs = 5_000L).valueOrNull<TdApi.Chat>() ?: run {
+            Log.w(TAG, "getChat($chatId) failed or timed out")
             return null
         }
         val title = resp.title.ifEmpty { "Unnamed chat" }
@@ -264,11 +265,11 @@ class TdChatRepository(
         // not on Chat — fetch it per chat type (both hit local DB first).
         val verified = when (val t = resp.type) {
             is TdApi.ChatTypePrivate ->
-                (client.execute(TdApi.GetUser(t.userId), timeoutMs = 3_000L) as? TdApi.User)?.isVerified ?: false
+                client.execute(TdApi.GetUser(t.userId), timeoutMs = 3_000L).valueOrNull<TdApi.User>()?.isVerified ?: false
             is TdApi.ChatTypeSecret ->
-                (client.execute(TdApi.GetUser(t.userId), timeoutMs = 3_000L) as? TdApi.User)?.isVerified ?: false
+                client.execute(TdApi.GetUser(t.userId), timeoutMs = 3_000L).valueOrNull<TdApi.User>()?.isVerified ?: false
             is TdApi.ChatTypeSupergroup ->
-                (client.execute(TdApi.GetSupergroup(t.supergroupId), timeoutMs = 3_000L) as? TdApi.Supergroup)?.isVerified ?: false
+                client.execute(TdApi.GetSupergroup(t.supergroupId), timeoutMs = 3_000L).valueOrNull<TdApi.Supergroup>()?.isVerified ?: false
             else -> false
         }
 
@@ -309,7 +310,23 @@ class TdChatRepository(
         else -> null
     }
 
+    /**
+     * Fetch ChatItems for many ids with bounded concurrency. Serial GetChat +
+     * GetUser/GetSupergroup over a 200-chat list is the cold-start bottleneck
+     * (worst case 400–600 round trips); a semaphore-capped fan-out turns it
+     * into a handful of parallel waves without flooding TDLib.
+     */
+    private suspend fun fetchChatItems(ids: LongArray): List<ChatItem> {
+        val semaphore = Semaphore(MAX_CONCURRENT_FETCHES)
+        return coroutineScope {
+            ids.toList().map { id ->
+                async { semaphore.withPermit { fetchChatItem(id) } }
+            }.awaitAll()
+        }.mapNotNull { it }
+    }
+
     companion object {
         private const val TAG = "TdChatRepo"
+        private const val MAX_CONCURRENT_FETCHES = 16
     }
 }

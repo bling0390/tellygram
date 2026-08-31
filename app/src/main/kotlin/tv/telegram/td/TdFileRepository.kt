@@ -91,6 +91,20 @@ class TdFileRepository(
     // being played while still downloading.
     private val streamingStates = ConcurrentHashMap<Int, StreamingState>()
 
+    // Per-file monitors so the loader thread can block on Object.wait()
+    // instead of busy-polling Thread.sleep(50) in awaitStreamPath / awaitStreamBytes.
+    private val streamMonitors = ConcurrentHashMap<Int, Any>()
+
+    private fun monitorFor(fileId: Int): Any =
+        streamMonitors.computeIfAbsent(fileId) { Any() }
+
+    /** Wake any thread blocked in awaitStreamPath/awaitStreamBytes for [fileId]. */
+    private fun wakeStreamWaiters(fileId: Int) {
+        streamMonitors[fileId]?.let { m ->
+            synchronized(m) { (m as java.lang.Object).notifyAll() }
+        }
+    }
+
     private data class PreviewRequest(
         val deferred: CompletableDeferred<String>,
         val limitBytes: Int,
@@ -98,14 +112,9 @@ class TdFileRepository(
 
     init {
         scope.launch {
-            client.updates.collect { obj -> dispatch(obj) }
-        }
-    }
-
-    private fun dispatch(obj: TdApi.Object) {
-        when (obj) {
-            is TdApi.UpdateFile -> handleUpdateFile(obj.file)
-            else -> {  }
+            // UpdateFile has its own high-capacity channel (see TdClient), so
+            // stream progress can't be starved by chat/media updates.
+            client.fileUpdates.collect { update -> handleUpdateFile(update.file) }
         }
     }
 
@@ -143,6 +152,7 @@ class TdFileRepository(
                 completed = local.isDownloadingCompleted,
                 failed = failed,
             )
+            wakeStreamWaiters(fileId)
         }
     }
 
@@ -153,9 +163,9 @@ class TdFileRepository(
         _states.value = _states.value + (fileId to FileDownloadState.Pending())
 
         return try {
-            val fileObj = client.execute(TdApi.GetFile(fileId), timeoutMs = 5_000L)
-            if (fileObj !is TdApi.File) {
-                Log.w(TAG, "ensureLocal($fileId): getFile returned ${fileObj?.javaClass?.simpleName ?: "null"}")
+            val fileObj = client.execute(TdApi.GetFile(fileId), timeoutMs = 5_000L).valueOrNull<TdApi.File>()
+            if (fileObj == null) {
+                Log.w(TAG, "ensureLocal($fileId): getFile failed")
                 _states.value = _states.value + (fileId to FileDownloadState.Failed("getFile failed"))
                 return null
             }
@@ -201,8 +211,8 @@ class TdFileRepository(
         if (current is FileDownloadState.Local) return current.path
 
         // Already have enough bytes on disk? Use them.
-        val fileObj = client.execute(TdApi.GetFile(fileId), timeoutMs = 5_000L)
-        if (fileObj is TdApi.File) {
+        val fileObj = client.execute(TdApi.GetFile(fileId), timeoutMs = 5_000L).valueOrNull<TdApi.File>()
+        if (fileObj != null) {
             val local = fileObj.local
             if (local.path.isNotEmpty() &&
                 (local.isDownloadingCompleted || local.downloadedSize >= limitBytes)
@@ -238,6 +248,7 @@ class TdFileRepository(
      */
     fun deleteLocalFile(fileId: Int) {
         streamingStates.remove(fileId)
+        wakeStreamWaiters(fileId)
         pendingDownloads.remove(fileId)?.cancel()
         previewDownloads.remove(fileId)
         lastAccess.remove(fileId)
@@ -286,7 +297,7 @@ class TdFileRepository(
      * TDLib. Returns null if the query fails or times out.
      */
     suspend fun fileInfo(fileId: Int): TdApi.File? =
-        client.execute(TdApi.GetFile(fileId), timeoutMs = 5_000L) as? TdApi.File
+        client.execute(TdApi.GetFile(fileId), timeoutMs = 5_000L).valueOrNull<TdApi.File>()
 
     // ── Progressive / streaming playback ────────────────────────────────────
 
@@ -316,7 +327,7 @@ class TdFileRepository(
             fileId = fileId,
             targetBytes = windowBytes,
         )
-        client.send(TdApi.DownloadFile(fileId, priority, 0, windowBytes.toInt(), false))
+        client.send(TdApi.DownloadFile(fileId, priority, 0, windowBytes.toIntOffset(), false))
         Log.d(TAG, "startStreaming(fileId=$fileId, priority=$priority, window=${windowBytes / 1024 / 1024}MB)")
     }
 
@@ -338,7 +349,7 @@ class TdFileRepository(
                 targetBytes = offset + windowBytes,
             )
         }
-        client.send(TdApi.DownloadFile(fileId, priority, offset.toInt(), windowBytes.toInt(), false))
+        client.send(TdApi.DownloadFile(fileId, priority, offset.toIntOffset(), windowBytes.toIntOffset(), false))
         Log.d(TAG, "seekStream(fileId=$fileId, offset=$offset, window=${windowBytes / 1024 / 1024}MB)")
     }
 
@@ -352,9 +363,9 @@ class TdFileRepository(
         streamingStates[fileId]?.let { cur ->
             if (cur.completed) return
             if (targetBytes <= cur.targetBytes) return
-            val limit = (targetBytes - cur.downloadedSize).toInt().coerceAtLeast(1)
+            val limit = (targetBytes - cur.downloadedSize).toIntOffset().coerceAtLeast(1)
             streamingStates[fileId] = cur.copy(targetBytes = targetBytes)
-            client.send(TdApi.DownloadFile(fileId, priority, cur.downloadedSize.toInt(), limit, false))
+            client.send(TdApi.DownloadFile(fileId, priority, cur.downloadedSize.toIntOffset(), limit, false))
             Log.d(TAG, "extendStream(fileId=$fileId, to=$targetBytes)")
         }
     }
@@ -374,6 +385,11 @@ class TdFileRepository(
 
     /** Current window size used for windowed streaming (bytes). */
     val streamWindowBytes: Long get() = windowBytes
+
+    // TDLib's DownloadFile offset/limit are int32. windowBytes is clamped to
+    // ≤256MB, but seek offsets / downloaded sizes are Longs and could exceed
+    // Int.MAX_VALUE for >2GB files — clamp instead of wrapping negative.
+    private fun Long.toIntOffset(): Int = coerceIn(0L, Int.MAX_VALUE.toLong()).toInt()
 
     private fun addRange(ranges: List<LongRange>, segment: LongRange): List<LongRange> {
         val merged = ranges.toMutableList()
@@ -399,6 +415,7 @@ class TdFileRepository(
      */
     fun cancelDownload(fileId: Int) {
         streamingStates.remove(fileId)
+        wakeStreamWaiters(fileId)
         // Unblock a waiting ensureLocal() coroutine immediately (its
         // await returns null → the pending entry is dropped, not marked
         // Local). The next open of this file re-downloads from scratch.
@@ -416,31 +433,49 @@ class TdFileRepository(
      * timeout or failure.
      */
     fun awaitStreamBytes(fileId: Int, minBytes: Long, timeoutMs: Long = 30_000): Boolean {
+        val monitor = monitorFor(fileId)
         val deadline = System.currentTimeMillis() + timeoutMs
-        while (System.currentTimeMillis() < deadline) {
-            val st = streamingStates[fileId] ?: return false
-            if (st.failed) return false
-            if (st.completed || st.downloadedSize >= minBytes) return true
-            Thread.sleep(50)
+        synchronized(monitor) {
+            while (true) {
+                val st = streamingStates[fileId] ?: return false
+                if (st.failed) return false
+                if (st.completed || st.downloadedSize >= minBytes) return true
+                val remaining = deadline - System.currentTimeMillis()
+                if (remaining <= 0) return false
+                try {
+                    (monitor as java.lang.Object).wait(remaining)
+                } catch (e: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    return false
+                }
+            }
         }
-        val st = streamingStates[fileId]
-        return st != null && (st.completed || st.downloadedSize >= minBytes)
     }
 
     /** Block until TDLib has assigned a local path for the streaming file. */
     fun awaitStreamPath(fileId: Int, timeoutMs: Long = 15_000): String? {
+        val monitor = monitorFor(fileId)
         val deadline = System.currentTimeMillis() + timeoutMs
-        while (System.currentTimeMillis() < deadline) {
-            val st = streamingStates[fileId] ?: return null
-            if (st.path != null) return st.path
-            Thread.sleep(50)
+        synchronized(monitor) {
+            while (true) {
+                val st = streamingStates[fileId] ?: return null
+                if (st.path != null) return st.path
+                val remaining = deadline - System.currentTimeMillis()
+                if (remaining <= 0) return null
+                try {
+                    (monitor as java.lang.Object).wait(remaining)
+                } catch (e: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    return null
+                }
+            }
         }
-        return streamingStates[fileId]?.path
     }
 
     /** Drop the streaming state (called when leaving the player). */
     fun stopStreaming(fileId: Int) {
         streamingStates.remove(fileId)
+        wakeStreamWaiters(fileId)
     }
 
     // ── Disk water-mark emergency ───────────────────────────────────────────
@@ -494,7 +529,8 @@ class TdFileRepository(
             targetBytes = pos + windowBytes,
             epoch = (cur?.epoch ?: 0) + 1,
         )
-        client.send(TdApi.DownloadFile(fileId, priority, pos.toInt(), windowBytes.toInt(), false))
+        wakeStreamWaiters(fileId)
+        client.send(TdApi.DownloadFile(fileId, priority, pos.toIntOffset(), windowBytes.toIntOffset(), false))
         _states.value = _states.value + (fileId to FileDownloadState.Pending())
         Log.i(TAG, "resetStreamWindow(fileId=$fileId, pos=$pos, epoch=${(cur?.epoch ?: 0) + 1})")
     }
