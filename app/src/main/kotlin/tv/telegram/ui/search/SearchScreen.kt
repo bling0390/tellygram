@@ -2,7 +2,6 @@
 
 package tv.telegram.ui.search
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -52,6 +51,8 @@ import androidx.tv.material3.Text
 import tv.telegram.R
 import tv.telegram.td.ChatItem
 import tv.telegram.ui.MainViewModel
+import tv.telegram.ui.focus.BackPriority
+import tv.telegram.ui.focus.BackRegistration
 import kotlinx.coroutines.delay
 
 @Composable
@@ -98,7 +99,7 @@ fun SearchScreen(
     // Back closes the keyboard first (rather than leaving the search page
     // back to Chats — this handler is deeper in the tree than the one in
     // MainActivity, so it wins while the keyboard is open).
-    BackHandler(enabled = keyboardOpen) { keyboardOpen = false }
+    BackRegistration(BackPriority.KEYBOARD, enabled = keyboardOpen) { keyboardOpen = false }
 
     Box(
         modifier = Modifier

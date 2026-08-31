@@ -3,7 +3,6 @@
 package tv.telegram.ui.player
 
 import android.util.Log
-import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -89,6 +88,8 @@ import tv.telegram.td.TdDataSource
 import tv.telegram.td.TdDataSourceFactory
 import tv.telegram.ui.MainViewModel
 import tv.telegram.ui.components.RightDrawer
+import tv.telegram.ui.focus.BackPriority
+import tv.telegram.ui.focus.BackRegistration
 import org.drinkless.td.libcore.telegram.TdApi
 import androidx.tv.material3.Icon
 import androidx.tv.material3.MaterialTheme
@@ -377,7 +378,7 @@ fun PlayerScreen(
 
     // Back hides the controller first; a second Back leaves the player.
     // Info drawer takes priority when open.
-    BackHandler(enabled = true) {
+    BackRegistration(BackPriority.PLAYER) {
         when {
             showInfo -> showInfo = false
             showController -> showController = false

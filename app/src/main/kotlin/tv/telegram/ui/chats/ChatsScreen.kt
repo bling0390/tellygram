@@ -98,6 +98,8 @@ import tv.telegram.td.FileDownloadState
 import tv.telegram.td.MediaItem
 import tv.telegram.td.MediaType
 import tv.telegram.ui.MainViewModel
+import tv.telegram.ui.focus.BackPriority
+import tv.telegram.ui.focus.BackRegistration
 import tv.telegram.ui.focus.focusGridItem
 import tv.telegram.ui.focus.focusListItem
 import tv.telegram.ui.focus.isFullyVisible
@@ -162,7 +164,7 @@ fun ChatsScreen(
     // focused row / card).
     var sidebarFocused by remember { mutableStateOf(false) }
     var mediaFocused by remember { mutableStateOf(false) }
-    BackHandler(enabled = mediaFocused || sidebarFocused) {
+    BackRegistration(BackPriority.CHATS, enabled = mediaFocused || sidebarFocused) {
         when {
             // Media grid → selected chat in the sidebar (same path as the
             // grid's left-edge Left key: bump the tick, ChatSidebar scrolls

@@ -2,7 +2,6 @@
 
 package tv.telegram.ui.components
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -33,6 +32,8 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
+import tv.telegram.ui.focus.BackPriority
+import tv.telegram.ui.focus.BackRegistration
 
 /**
  * Right-side drawer overlay: slides in from the right edge over whatever
@@ -115,7 +116,7 @@ fun RightDrawer(
     }
 
     // Back closes the drawer regardless of where focus sits inside it.
-    BackHandler(enabled = visible) { onClose() }
+    BackRegistration(BackPriority.DRAWER, enabled = visible) { onClose() }
 
     if (visible || drawerX < offscreen) {
         Box(

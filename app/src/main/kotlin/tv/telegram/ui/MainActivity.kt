@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -71,6 +72,10 @@ import tv.telegram.ui.search.SearchScreen
 import tv.telegram.ui.settings.SettingsScreen
 import tv.telegram.ui.nav.Routes
 import tv.telegram.ui.components.RightDrawer
+import tv.telegram.ui.focus.BackController
+import tv.telegram.ui.focus.BackPriority
+import tv.telegram.ui.focus.BackRegistration
+import tv.telegram.ui.focus.LocalBackController
 import tv.telegram.ui.theme.TvgramTheme
 import androidx.tv.material3.Border
 import androidx.tv.material3.Card
@@ -89,14 +94,17 @@ class MainActivity : ComponentActivity() {
         setContent {
             val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
             TvgramTheme(themeMode = themeMode) {
-                AppNavHost(viewModel = viewModel)
+                val backController = remember { BackController() }
+                CompositionLocalProvider(LocalBackController provides backController) {
+                    AppNavHost(viewModel = viewModel, backController = backController)
+                }
             }
         }
     }
 }
 
 @Composable
-private fun AppNavHost(viewModel: MainViewModel) {
+private fun AppNavHost(viewModel: MainViewModel, backController: BackController) {
     val authState by viewModel.authState.collectAsStateWithLifecycle()
 
     val navController = rememberNavController()
@@ -179,22 +187,24 @@ private fun AppNavHost(viewModel: MainViewModel) {
         }
     }
 
-    BackHandler(
-        enabled = currentRoute == Routes.HOME_SEARCH || settingsOpen || (inHome && railFocused),
-    ) {
-        when {
-            settingsOpen -> settingsOpen = false
-            // Back on the rail (outermost layer): ask for confirmation
-            // before quitting.
-            inHome && railFocused -> {
-                exitDialogWasShown = true
-                showExitConfirm = true
-            }
-            else -> navController.navigate(Routes.HOME_CHATS) {
-                popUpTo(Routes.HOME) { saveState = true }
-                launchSingleTop = true
-                restoreState = true
-            }
+    // Root Back dispatcher: exactly one BackHandler, priority resolved by
+    // the controller. Layers register their own action (BackRegistration)
+    // instead of relying on "deepest composed BackHandler wins".
+    BackHandler(enabled = backController.hasActive) {
+        backController.dispatch()
+    }
+
+    // Rail focus (outermost layer): Back asks for exit confirmation.
+    BackRegistration(BackPriority.RAIL_EXIT, enabled = inHome && railFocused) {
+        exitDialogWasShown = true
+        showExitConfirm = true
+    }
+    // Search route: Back returns to the chat list.
+    BackRegistration(BackPriority.SEARCH_NAV, enabled = currentRoute == Routes.HOME_SEARCH) {
+        navController.navigate(Routes.HOME_CHATS) {
+            popUpTo(Routes.HOME) { saveState = true }
+            launchSingleTop = true
+            restoreState = true
         }
     }
 
