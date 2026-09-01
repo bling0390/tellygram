@@ -15,4 +15,7 @@ data class MediaItem(
     val date: Int = 0,
     val chatId: Long = 0,
     val supportsStreaming: Boolean = false,
+    // Video duration in seconds (0 for non-video / unknown). Displayed as a
+    // badge on video cards only.
+    val duration: Int = 0,
 )

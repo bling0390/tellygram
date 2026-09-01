@@ -691,6 +691,19 @@ private fun ChatType.typeIcon(): ImageVector? = when (this) {
     else -> null
 }
 
+/** Seconds → "m:ss", or "h:mm:ss" once the duration reaches an hour. */
+private fun formatDuration(totalSeconds: Int): String {
+    val s = totalSeconds.coerceAtLeast(0)
+    val h = s / 3600
+    val m = (s % 3600) / 60
+    val sec = s % 60
+    return if (h > 0) {
+        "%d:%02d:%02d".format(h, m, sec)
+    } else {
+        "%d:%02d".format(m, sec)
+    }
+}
+
 @Composable
 private fun EmptyMediaPane(modifier: Modifier = Modifier) {
     Box(modifier = modifier, contentAlignment = Alignment.Center) {
@@ -1159,6 +1172,27 @@ private fun SidebarMediaCard(
                         modifier = Modifier.size(28.dp),
                         strokeWidth = 3.dp,
                         color = Color.White.copy(alpha = 0.7f),
+                    )
+                }
+            }
+            // Duration badge (top-left) — Video only. The ▶ play chip owns
+            // the bottom-right corner, so duration sits top-left where it
+            // won't collide with the preview spinner. Always visible while
+            // the thumbnail is shown (even during hover preview — the surface
+            // is letterboxed, the badge sits over it harmlessly).
+            if (item.type == MediaType.Video && item.duration > 0) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(6.dp)
+                        .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(4.dp))
+                        .padding(horizontal = 6.dp, vertical = 2.dp),
+                ) {
+                    Text(
+                        formatDuration(item.duration),
+                        color = Color.White,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
                     )
                 }
             }
