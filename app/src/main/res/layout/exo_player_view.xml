@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  PlayerView configured for Compose. The default surface type is SurfaceView,
+  whose content is composited as a separate native layer: inside a Compose
+  AndroidView (wrapped by a graphicsLayer for user rotation) it ignores the
+  AspectRatioFrameLayout letterboxing until a forced relayout — so portrait
+  videos render stretched full-screen and only snap to the correct aspect
+  ratio when the controller appears (a recomposition). TextureView renders
+  through the normal View pipeline, so it respects both the aspect-ratio
+  letterboxing AND the graphicsLayer rotation immediately.
+-->
+<androidx.media3.ui.PlayerView
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/exo_player_view"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    app:surface_type="texture_view"
+    app:resize_mode="fit"
+    app:use_controller="false" />

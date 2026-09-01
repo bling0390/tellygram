@@ -3,6 +3,7 @@
 package tv.telegram.ui.player
 
 import android.util.Log
+import android.view.LayoutInflater
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -535,7 +536,17 @@ fun PlayerScreen(
             ) {
                 AndroidView(
                     factory = { ctx ->
-                        PlayerView(ctx).apply {
+                        // Inflate the TextureView-configured PlayerView. The
+                        // default SurfaceView is composited outside the View
+                        // pipeline, so inside this graphicsLayer (user rotation)
+                        // it ignores the AspectRatioFrameLayout letterboxing
+                        // until a forced relayout — portrait videos render
+                        // stretched and only snap correct when the controller
+                        // appears. TextureView respects both letterboxing and
+                        // rotation immediately.
+                        (LayoutInflater.from(ctx).inflate(
+                            R.layout.exo_player_view, null,
+                        ) as PlayerView).apply {
                             useController = false // custom compose controller below
                             resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
                             player = exo
