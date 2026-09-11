@@ -107,4 +107,19 @@
     <string name="exit_confirm_text">Are you sure you want to exit Tvgram?</string>
     <string name="exit_confirm_confirm">Exit</string>
     <string name="exit_confirm_cancel">Cancel</string>
+
+    <!-- Chat context menu (long-press on a chat row) -->
+    <string name="chat_menu_delete">Delete</string>
+    <string name="chat_menu_mute">Mute</string>
+    <string name="chat_menu_unmute">Unmute</string>
+    <string name="chat_menu_archive">Archive</string>
+    <string name="chat_menu_unarchive">Unarchive</string>
+    <string name="chat_menu_pin">Pin</string>
+    <string name="chat_menu_unpin">Unpin</string>
+    <string name="chat_menu_delete_confirm_title">Delete chat?</string>
+    <string name="chat_menu_delete_confirm_text">This removes the chat and its message history from this device.</string>
+    <string name="chat_menu_archive_confirm_title">Archive chat?</string>
+    <string name="chat_menu_archive_confirm_text">This chat will be moved to the archive.</string>
+    <string name="chat_menu_confirm">Confirm</string>
+    <string name="chat_menu_cancel">Cancel</string>
 </resources>

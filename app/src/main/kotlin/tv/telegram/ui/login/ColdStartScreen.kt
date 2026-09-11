@@ -53,14 +53,14 @@ fun ColdStartScreen(viewModel: MainViewModel) {
             Text(
                 text = stringResource(R.string.app_name),
                 color = MaterialTheme.colorScheme.onBackground,
-                fontSize = 56.sp,
+                style = MaterialTheme.typography.displayLarge,
             )
             if (error != null) {
                 Spacer(Modifier.height(16.dp))
                 Text(
                     text = error,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 22.sp,
+                    style = MaterialTheme.typography.titleLarge,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.width(720.dp),
                 )

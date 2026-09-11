@@ -17,6 +17,7 @@ import android.util.Log
 import tv.telegram.BuildConfig
 import tv.telegram.TgTvApp
 import tv.telegram.td.AuthState
+import tv.telegram.td.ChatItem
 import tv.telegram.td.FileDownloadState
 import tv.telegram.td.MediaItem
 import tv.telegram.td.TdAuth
@@ -64,6 +65,28 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setViewingArchive(value: Boolean) {
         chatRepo.setViewingArchive(value)
+    }
+
+    fun toggleChatMute(chatId: Long, muted: Boolean) {
+        viewModelScope.launch { chatRepo.setChatMuted(chatId, muted) }
+    }
+
+    fun toggleChatPin(chatId: Long, inArchive: Boolean, pinned: Boolean) {
+        viewModelScope.launch { chatRepo.setChatPinned(chatId, inArchive, pinned) }
+    }
+
+    fun toggleChatArchive(chatId: Long, archived: Boolean) {
+        viewModelScope.launch { chatRepo.setChatArchived(chatId, archived) }
+    }
+
+    fun deleteChat(chat: ChatItem) {
+        viewModelScope.launch {
+            chatRepo.deleteChat(chat)
+            // If the deleted chat was selected, clear the media pane.
+            if (_sidebarSelectedChatId.value == chat.id) {
+                selectSidebarChat(null)
+            }
+        }
     }
 
     private val _navEvents = MutableSharedFlow<NavEvent>()

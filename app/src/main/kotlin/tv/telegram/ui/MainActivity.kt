@@ -408,7 +408,7 @@ private fun NavRail(
 
     Column(
         modifier = modifier
-            .background(Color(0xFF141414))
+            .background(MaterialTheme.colorScheme.background)
             .padding(vertical = 24.dp, horizontal = 8.dp)
             .onFocusChanged { onFocusChange?.invoke(it.hasFocus) },
         verticalArrangement = Arrangement.spacedBy(16.dp),
@@ -450,13 +450,13 @@ private fun RailItem(
     // Selected and focused items get a true CIRCLE background (CircleShape,
     // not RoundedCornerShape percent — the old 26 was 26% which renders a
     // rounded-rect on a 52dp card). Focus feedback = circle chip + brighter icon.
-    val containerColor = if (selected) Color(0xFF2E3A48) else Color.Transparent
+    val containerColor = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
     Card(
         onClick = onClick,
         scale = CardDefaults.scale(focusedScale = 1f),
         colors = CardDefaults.colors(
             containerColor = containerColor,
-            focusedContainerColor = Color(0xFF3A4A5C),
+            focusedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
         ),
         shape = CardDefaults.shape(
             CircleShape,
@@ -489,9 +489,9 @@ private fun RailItem(
                 imageVector = entry.icon,
                 contentDescription = null,
                 tint = when {
-                    selected -> Color(0xFF9BDCFE)
-                    focused -> Color.White
-                    else -> Color(0xFFB0B0B0)
+                    selected -> MaterialTheme.colorScheme.primary
+                    focused -> MaterialTheme.colorScheme.onSurface
+                    else -> MaterialTheme.colorScheme.onSurfaceVariant
                 },
                 modifier = Modifier.size(24.dp),
             )

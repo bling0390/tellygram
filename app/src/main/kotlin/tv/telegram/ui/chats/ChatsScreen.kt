@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.size
@@ -29,8 +30,11 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.Campaign
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.VideoFile
@@ -39,12 +43,15 @@ import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.NorthWest
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.VolumeOff
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -53,6 +60,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -70,6 +78,7 @@ import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -91,6 +100,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
 import tv.telegram.R
@@ -217,7 +227,7 @@ fun ChatsScreen(
             modifier = Modifier
                 .width(296.dp)
                 .fillMaxHeight()
-                .background(Color(0xFF161616))
+                .background(MaterialTheme.colorScheme.surface)
                 .padding(vertical = 16.dp, horizontal = 8.dp),
         )
 
@@ -283,6 +293,33 @@ private fun ChatSidebar(
 ) {
     val firstFocus = remember { FocusRequester() }
     val listState = rememberLazyListState()
+
+    // ── Long-press context menu ──
+    // menuChat != null → context menu dialog is showing for that chat.
+    // confirm != null → destructive-action confirmation dialog is showing.
+    var menuChat by remember { mutableStateOf<ChatItem?>(null) }
+    var confirm by remember { mutableStateOf<ChatConfirmAction?>(null) }
+    // The row that was long-pressed; its requester is re-requested once the
+    // menu / confirm dialogs are fully closed so the D-pad lands back on it
+    // (a Dialog is a separate window — focus is otherwise lost).
+    val menuReturnFocus = remember { FocusRequester() }
+    var menuReturnChatId by remember { mutableStateOf<Long?>(null) }
+
+    // Return focus to the long-pressed row once every dialog is closed.
+    LaunchedEffect(menuChat, confirm) {
+        if (menuChat == null && confirm == null) {
+            val id = menuReturnChatId ?: return@LaunchedEffect
+            menuReturnChatId = null
+            delay(150)
+            val restored = try {
+                menuReturnFocus.requestFocus(); true
+            } catch (_: IllegalStateException) { false }
+            if (!restored) {
+                // Row was removed (delete/archive); land on the first row.
+                try { firstFocus.requestFocus() } catch (_: IllegalStateException) {}
+            }
+        }
+    }
 
     LaunchedEffect(viewingArchive) {
         if (suppressInitialFocus) return@LaunchedEffect
@@ -385,13 +422,21 @@ private fun ChatSidebar(
                 val isRightEntry = if (selectedChatId != null) isSelected
                     else chat.id == chats.firstOrNull()?.id
                 val listRightFr = if (isRightEntry) chatsListRightFocus else null
+                // The long-pressed row carries menuReturnFocus so focus can
+                // come back to it after the menu closes.
+                val menuReturnFr = if (chat.id == menuReturnChatId) menuReturnFocus else null
                 SidebarItem(
                     chat = chat,
                     selected = isSelected,
                     onClick = { onSelect(chat.id) },
+                    onLongClick = {
+                        menuReturnChatId = chat.id
+                        menuChat = chat
+                    },
                     fr = fr,
                     extraFr = extraFr,
                     listRightFr = listRightFr,
+                    menuReturnFr = menuReturnFr,
                     viewModel = viewModel,
                     railChatsFocus = railChatsFocus,
                     // First chat row (no archive entry above it) is the top
@@ -401,6 +446,52 @@ private fun ChatSidebar(
                 )
             }
         }
+    }
+
+    // Long-press context menu.
+    menuChat?.let { chat ->
+        ChatContextMenu(
+            chat = chat,
+            viewingArchive = viewingArchive,
+            onDismiss = { menuChat = null },
+            onDelete = { menuChat = null; confirm = ChatConfirmAction.Delete(chat) },
+            onToggleMute = {
+                menuChat = null
+                viewModel.toggleChatMute(chat.id, muted = !chat.isMuted)
+            },
+            onToggleArchive = {
+                menuChat = null
+                val targetArchived = !viewingArchive
+                if (targetArchived) {
+                    // Archiving (hiding the chat) — ask for confirmation.
+                    confirm = ChatConfirmAction.Archive(chat, archived = true)
+                } else {
+                    // Unarchiving (restoring it to the main list) — reversible
+                    // and harmless, apply directly without a confirm step.
+                    viewModel.toggleChatArchive(chat.id, archived = false)
+                }
+            },
+            onTogglePin = {
+                menuChat = null
+                viewModel.toggleChatPin(chat.id, inArchive = viewingArchive, pinned = !chat.isPinned)
+            },
+        )
+    }
+
+    // Destructive-action confirmation dialog.
+    confirm?.let { action ->
+        ChatConfirmDialog(
+            action = action,
+            onConfirm = {
+                when (action) {
+                    is ChatConfirmAction.Delete -> viewModel.deleteChat(action.chat)
+                    is ChatConfirmAction.Archive ->
+                        viewModel.toggleChatArchive(action.chat.id, archived = action.archived)
+                }
+                confirm = null
+            },
+            onCancel = { confirm = null },
+        )
     }
 }
 
@@ -423,14 +514,14 @@ private fun ChatListError(
             Card(
                 onClick = onRetry,
                 colors = CardDefaults.colors(
-                    containerColor = Color(0xFF2A2A2A),
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
                     focusedContainerColor = MaterialTheme.colorScheme.secondary,
                 ),
             ) {
                 Text(
                     text = "Retry",
-                    color = Color.White,
-                    fontSize = 14.sp,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    style = MaterialTheme.typography.bodyMedium,
                     modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp),
                 )
             }
@@ -451,7 +542,7 @@ private fun ArchiveEntry(
     Card(
         onClick = onClick,
         colors = CardDefaults.colors(
-            containerColor = Color(0xFF2A2A2A),
+            containerColor = MaterialTheme.colorScheme.surfaceVariant,
             focusedContainerColor = MaterialTheme.colorScheme.secondary,
         ),
         scale = CardDefaults.scale(focusedScale = 1f),
@@ -479,16 +570,15 @@ private fun ArchiveEntry(
                 Icon(
                     imageVector = icon,
                     contentDescription = null,
-                    tint = Color.White.copy(alpha = 0.85f),
+                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f),
                     modifier = Modifier.size(20.dp),
                 )
                 Spacer(Modifier.width(10.dp))
             }
             Text(
                 label,
-                color = Color.White,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+                style = MaterialTheme.typography.bodyMedium,
             )
         }
     }
@@ -499,9 +589,11 @@ private fun SidebarItem(
     chat: ChatItem,
     selected: Boolean,
     onClick: () -> Unit,
+    onLongClick: () -> Unit = {},
     fr: FocusRequester? = null,
     extraFr: FocusRequester? = null,
     listRightFr: FocusRequester? = null,
+    menuReturnFr: FocusRequester? = null,
     viewModel: MainViewModel,
     // Left from a chat row goes to the rail's Chats item.
     railChatsFocus: FocusRequester? = null,
@@ -510,20 +602,23 @@ private fun SidebarItem(
 ) {
     val ctx = LocalContext.current
     val containerColor = when {
-        selected -> Color(0xFF2E3A48) // 胶囊高亮（与侧边栏一致）
+        selected -> MaterialTheme.colorScheme.primaryContainer // 胶囊高亮（与侧边栏一致）
+        // 置顶会话空闲态浅底色，仅用于区分；聚焦/选中时被覆盖。
+        chat.isPinned -> MaterialTheme.colorScheme.surface
         else -> Color.Transparent
     }
     Card(
         onClick = onClick,
+        onLongClick = onLongClick,
         colors = CardDefaults.colors(
             containerColor = containerColor,
-            focusedContainerColor = Color(0xFF3A4A5C),
+            focusedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
         ),
         scale = CardDefaults.scale(focusedScale = 1f),
         shape = CardDefaults.shape(
-            RoundedCornerShape(50),
-            RoundedCornerShape(50),
-            RoundedCornerShape(50),
+            RoundedCornerShape(4.dp),
+            RoundedCornerShape(4.dp),
+            RoundedCornerShape(4.dp),
         ),
         border = CardDefaults.border(
             Border.None,
@@ -543,21 +638,31 @@ private fun SidebarItem(
             }
             .let { if (fr != null) it.focusRequester(fr) else it }
             .let { if (extraFr != null) it.focusRequester(extraFr) else it }
-            .let { if (listRightFr != null) it.focusRequester(listRightFr) else it },
+            .let { if (listRightFr != null) it.focusRequester(listRightFr) else it }
+            .let { if (menuReturnFr != null) it.focusRequester(menuReturnFr) else it },
     ) {
         Row(
             modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            AvatarPlaceholder(chat = chat, viewModel = viewModel)
+            // Avatar + unread badge overlaid on its top-start corner.
+            Box {
+                AvatarPlaceholder(chat = chat, viewModel = viewModel)
+                if (chat.unreadCount > 0) {
+                    UnreadDot(
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .offset(x = 1.5.dp, y = 1.5.dp),
+                    )
+                }
+            }
             Spacer(Modifier.width(10.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         chat.title,
-                        color = if (selected) Color(0xFF9BDCFE) else Color(0xFFD0D0D0),
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.SemiBold,
+                        color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                        style = MaterialTheme.typography.bodyMedium,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f, fill = false),
@@ -567,7 +672,7 @@ private fun SidebarItem(
                         Icon(
                             imageVector = Icons.Default.Verified,
                             contentDescription = null,
-                            tint = Color(0xFF4A9EF5),
+                            tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(12.dp),
                         )
                     }
@@ -577,7 +682,7 @@ private fun SidebarItem(
                         Icon(
                             imageVector = typeIcon,
                             contentDescription = null,
-                            tint = if (selected) Color(0xFF9BDCFE) else Color(0xFF909090),
+                            tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(11.dp),
                         )
                     }
@@ -586,7 +691,7 @@ private fun SidebarItem(
                         Icon(
                             imageVector = Icons.Default.VolumeOff,
                             contentDescription = null,
-                            tint = if (selected) Color(0xFF9BDCFE) else Color(0xFF808080),
+                            tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(10.dp),
                         )
                     }
@@ -609,7 +714,7 @@ private fun SidebarItem(
                             contentScale = ContentScale.Crop,
                             modifier = Modifier
                                 .size(14.dp)
-                                .clip(RoundedCornerShape(3.dp)),
+                                .clip(RoundedCornerShape(4.dp)),
                         )
                         Spacer(Modifier.width(5.dp))
                     }
@@ -617,14 +722,21 @@ private fun SidebarItem(
                         // Empty string keeps the row height stable when the last
                         // message is not photo/video, so the title never shifts.
                         text = chat.lastMessageText ?: "",
-                        color = if (selected) Color(0xFF9BDCFE).copy(alpha = 0.85f) else Color(0xFF909090),
-                        fontSize = 11.sp,
+                        color = if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.85f) else MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.labelSmall,
                         maxLines = 1,
                     )
                 }
             }
-            if (chat.unreadCount > 0) {
-                UnreadDot()
+            // Pinned indicator sits at the row's far end, vertically centered
+            // across both title and subtitle lines.
+            if (chat.isPinned) {
+                Icon(
+                    imageVector = Icons.Default.PushPin,
+                    contentDescription = null,
+                    tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(12.dp),
+                )
             }
         }
     }
@@ -653,7 +765,7 @@ private fun AvatarPlaceholder(chat: ChatItem, viewModel: MainViewModel) {
     Box(
         modifier = Modifier
             .size(32.dp)
-            .background(color, RoundedCornerShape(16.dp))
+            .background(color, CircleShape)
             .padding(0.dp),
         contentAlignment = Alignment.Center,
     ) {
@@ -665,8 +777,8 @@ private fun AvatarPlaceholder(chat: ChatItem, viewModel: MainViewModel) {
                 onError = { imageFailed = true },
                 modifier = Modifier
                     .size(32.dp)
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(color, RoundedCornerShape(16.dp)),
+                    .clip(CircleShape)
+                    .background(color, CircleShape),
             )
         } else {
             Text(initial, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
@@ -675,11 +787,11 @@ private fun AvatarPlaceholder(chat: ChatItem, viewModel: MainViewModel) {
 }
 
 @Composable
-private fun UnreadDot() {
+private fun UnreadDot(modifier: Modifier = Modifier) {
     Box(
-        modifier = Modifier
-            .size(10.dp)
-            .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(5.dp)),
+        modifier = modifier
+            .size(6.dp)
+            .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(4.dp)),
     )
 }
 
@@ -711,13 +823,13 @@ private fun EmptyMediaPane(modifier: Modifier = Modifier) {
             Text(
                 stringResource(R.string.chats_select_prompt),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 22.sp,
+                style = MaterialTheme.typography.titleLarge,
             )
             Spacer(Modifier.height(8.dp))
             Text(
                 stringResource(R.string.chats_select_detail),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 14.sp,
+                style = MaterialTheme.typography.bodyMedium,
             )
         }
     }
@@ -1150,14 +1262,14 @@ private fun SidebarMediaCard(
                 // Thumbnail never arrived (download stalled/failed, or the
                 // message has no thumbnail) — show a static type icon.
                 Box(
-                    modifier = Modifier.fillMaxSize().background(Color(0xFF202020)),
+                    modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface),
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
                         imageVector = if (item.type == MediaType.Photo)
                             Icons.Default.Image else Icons.Default.VideoFile,
                         contentDescription = null,
-                        tint = Color.White.copy(alpha = 0.5f),
+                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
                         modifier = Modifier.size(40.dp),
                     )
                 }
@@ -1165,13 +1277,13 @@ private fun SidebarMediaCard(
                 // Thumbnail not downloaded yet — show a centered spinner
                 // instead of the old "Photo"/"Video" placeholder.
                 Box(
-                    modifier = Modifier.fillMaxSize().background(Color(0xFF202020)),
+                    modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface),
                     contentAlignment = Alignment.Center,
                 ) {
                     CircularProgressIndicator(
                         modifier = Modifier.size(28.dp),
                         strokeWidth = 3.dp,
-                        color = Color.White.copy(alpha = 0.7f),
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                     )
                 }
             }
@@ -1190,9 +1302,8 @@ private fun SidebarMediaCard(
                 ) {
                     Text(
                         formatDuration(item.duration),
-                        color = Color.White,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        style = MaterialTheme.typography.labelMedium,
                     )
                 }
             }
@@ -1223,7 +1334,7 @@ private fun SidebarMediaCard(
                         Icon(
                             Icons.Default.PlayArrow,
                             contentDescription = null,
-                            tint = Color.White,
+                            tint = MaterialTheme.colorScheme.onSurface,
                             modifier = Modifier.size(14.dp),
                         )
                     }
@@ -1289,7 +1400,7 @@ private fun PhotoFullscreen(
             when {
                 error != null -> Text(
                     stringResource(R.string.error_prefix, error ?: ""),
-                    color = Color.White,
+                    color = MaterialTheme.colorScheme.onSurface,
                 )
                 localPath == null -> CircularProgressIndicator(
                     color = Color.White,
@@ -1308,7 +1419,7 @@ private fun PhotoFullscreen(
             Icon(
                 imageVector = Icons.Default.KeyboardArrowLeft,
                 contentDescription = null,
-                tint = Color.White.copy(alpha = 0.6f),
+                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                 modifier = Modifier
                     .align(Alignment.CenterStart)
                     .padding(start = 32.dp)
@@ -1319,7 +1430,7 @@ private fun PhotoFullscreen(
             Icon(
                 imageVector = Icons.Default.KeyboardArrowRight,
                 contentDescription = null,
-                tint = Color.White.copy(alpha = 0.6f),
+                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                 modifier = Modifier
                     .align(Alignment.CenterEnd)
                     .padding(end = 32.dp)
@@ -1327,4 +1438,228 @@ private fun PhotoFullscreen(
             )
         }
     }
+}
+
+/** A destructive chat action that needs a second confirmation before running. */
+private sealed interface ChatConfirmAction {
+    data class Delete(val chat: ChatItem) : ChatConfirmAction
+    data class Archive(val chat: ChatItem, val archived: Boolean) : ChatConfirmAction
+}
+
+/** The D-pad / keyboard keys that fire a click on a focused item (the "OK" button). */
+private fun Key.isConfirmKey(): Boolean =
+    this == Key.DirectionCenter || this == Key.Enter || this == Key.NumPadEnter
+
+/**
+ * Long-press context menu for a chat row. A centered Dialog listing the four
+ * chat actions (delete / mute / archive / pin), each a focusable Card so the
+ * D-pad moves up/down and OK fires it. Back or OK on a dimmed backdrop closes
+ * the menu; the caller restores focus to the long-pressed row.
+ */
+@Composable
+private fun ChatContextMenu(
+    chat: ChatItem,
+    viewingArchive: Boolean,
+    onDismiss: () -> Unit,
+    onDelete: () -> Unit,
+    onToggleMute: () -> Unit,
+    onToggleArchive: () -> Unit,
+    onTogglePin: () -> Unit,
+) {
+    BackHandler(enabled = true) { onDismiss() }
+    val firstFocus = remember { FocusRequester() }
+    // The long-press that opened this menu is still held when the dialog
+    // appears; its release (KeyUp) would otherwise land on the freshly
+    // focused first item and fire it immediately (auto-pinning on open).
+    //
+    // tv-material3 fires onLongClick on the FIRST key repeat (repeatCount==1)
+    // rather than a timer, so the opening press keeps emitting repeats
+    // (repeatCount>=2) into the menu for as long as the key is held. We must
+    // therefore only arm on a *fresh* press (repeatCount==0); swallow every
+    // repeat and the opening release, then let a fresh press's KeyUp through.
+    var confirmArmed by remember { mutableStateOf(false) }
+    // Retry a few frames: the Dialog is a separate window, so the first
+    // request can land before its node is attached (same pattern as
+    // PhotoFullscreen).
+    LaunchedEffect(chat.id) {
+        withFrameNanos { }
+        repeat(5) {
+            try { firstFocus.requestFocus() } catch (_: IllegalStateException) {}
+            delay(60)
+        }
+    }
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .onPreviewKeyEvent { ev ->
+                    if (!ev.key.isConfirmKey()) return@onPreviewKeyEvent false
+                    when (ev.type) {
+                        KeyEventType.KeyDown -> {
+                            if (ev.nativeKeyEvent.repeatCount == 0) {
+                                // A genuinely new press — arm the menu and
+                                // let it reach the focused item.
+                                confirmArmed = true
+                                false
+                            } else {
+                                // Key-repeat leftover from the opening
+                                // long-press — swallow it.
+                                true
+                            }
+                        }
+                        KeyEventType.KeyUp -> {
+                            if (confirmArmed) { confirmArmed = false; false } else true
+                        }
+                        else -> false
+                    }
+                },
+            contentAlignment = Alignment.Center,
+        ) {
+            Column(
+                modifier = Modifier
+                    .width(260.dp)
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(MaterialTheme.colorScheme.surface)
+                    .padding(8.dp),
+            ) {
+                ChatMenuRow(
+                    icon = Icons.Default.PushPin,
+                    label = stringResource(
+                        if (chat.isPinned) R.string.chat_menu_unpin else R.string.chat_menu_pin
+                    ),
+                    focusRequester = firstFocus,
+                    onClick = onTogglePin,
+                )
+                ChatMenuRow(
+                    icon = Icons.Default.VolumeOff,
+                    label = stringResource(
+                        if (chat.isMuted) R.string.chat_menu_unmute else R.string.chat_menu_mute
+                    ),
+                    onClick = onToggleMute,
+                )
+                ChatMenuRow(
+                    icon = Icons.Default.Archive,
+                    label = stringResource(
+                        if (viewingArchive) R.string.chat_menu_unarchive else R.string.chat_menu_archive
+                    ),
+                    onClick = onToggleArchive,
+                )
+                ChatMenuRow(
+                    icon = Icons.Default.Delete,
+                    label = stringResource(R.string.chat_menu_delete),
+                    destructive = true,
+                    onClick = onDelete,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ChatMenuRow(
+    icon: ImageVector? = null,
+    label: String,
+    destructive: Boolean = false,
+    focusRequester: FocusRequester? = null,
+    onClick: () -> Unit,
+) {
+    Card(
+        onClick = onClick,
+        colors = CardDefaults.colors(
+            containerColor = Color.Transparent,
+            focusedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+        ),
+        scale = CardDefaults.scale(focusedScale = 1f),
+        shape = CardDefaults.shape(
+            RoundedCornerShape(4.dp),
+            RoundedCornerShape(4.dp),
+            RoundedCornerShape(4.dp),
+        ),
+        border = CardDefaults.border(
+            Border.None,
+            Border.None,
+            Border.None,
+        ),
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(44.dp)
+            .let { if (focusRequester != null) it.focusRequester(focusRequester) else it },
+    ) {
+        Row(
+            modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (icon != null) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = if (destructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.size(16.dp),
+                )
+                Spacer(Modifier.width(10.dp))
+            }
+            Text(
+                text = label,
+                color = if (destructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
+    }
+}
+
+/**
+ * Confirmation dialog for destructive actions (delete / archive). Default
+ * focus lands on Cancel so an accidental OK doesn't run the action; OK on
+ * Confirm runs it.
+ */
+@Composable
+private fun ChatConfirmDialog(
+    action: ChatConfirmAction,
+    onConfirm: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    val isDelete = action is ChatConfirmAction.Delete
+    val cancelFocus = remember { FocusRequester() }
+    LaunchedEffect(action) {
+        withFrameNanos { }
+        repeat(5) {
+            try { cancelFocus.requestFocus() } catch (_: IllegalStateException) {}
+            delay(60)
+        }
+    }
+    AlertDialog(
+        onDismissRequest = onCancel,
+        title = {
+            Text(
+                stringResource(
+                    if (isDelete) R.string.chat_menu_delete_confirm_title
+                    else R.string.chat_menu_archive_confirm_title
+                )
+            )
+        },
+        text = {
+            Text(
+                stringResource(
+                    if (isDelete) R.string.chat_menu_delete_confirm_text
+                    else R.string.chat_menu_archive_confirm_text
+                )
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text(stringResource(R.string.chat_menu_confirm))
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = onCancel,
+                modifier = Modifier.focusRequester(cancelFocus),
+            ) {
+                Text(stringResource(R.string.chat_menu_cancel))
+            }
+        },
+    )
 }

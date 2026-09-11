@@ -274,6 +274,7 @@ class TdChatRepository(
         }
 
         val photoSmallFileId: Int? = resp.photo?.small?.id
+        val pinned = resp.positions.any { it.isPinned }
 
         return ChatItem(
             id = chatId,
@@ -281,6 +282,7 @@ class TdChatRepository(
             type = type,
             unreadCount = unread,
             isMuted = muted,
+            isPinned = pinned,
             isVerified = verified,
             lastMessageText = lastMessageText,
             lastMessageDate = lastMessageDate,
@@ -323,6 +325,77 @@ class TdChatRepository(
                 async { semaphore.withPermit { fetchChatItem(id) } }
             }.awaitAll()
         }.mapNotNull { it }
+    }
+
+    /**
+     * Mute or unmute a chat, preserving its other notification settings
+     * (sound / preview / mentions). Muting sets muteFor to the TDLib
+     * "forever" sentinel (muteFor > 1 week is treated as permanent);
+     * unmuting sets it back to 0. The local list is patched immediately
+     * (same path as UpdateChatNotificationSettings) so the menu label and
+     * the mute icon reflect the change without a full reload.
+     */
+    suspend fun setChatMuted(chatId: Long, muted: Boolean) {
+        val chat = client.execute(TdApi.GetChat(chatId), timeoutMs = 5_000L).valueOrNull<TdApi.Chat>()
+        val current = chat?.notificationSettings ?: TdApi.ChatNotificationSettings()
+        val settings = TdApi.ChatNotificationSettings()
+        settings.useDefaultMuteFor = false
+        settings.muteFor = if (muted) Int.MAX_VALUE else 0
+        settings.useDefaultSound = current.useDefaultSound
+        settings.sound = current.sound
+        settings.useDefaultShowPreview = current.useDefaultShowPreview
+        settings.showPreview = current.showPreview
+        settings.useDefaultDisablePinnedMessageNotifications = current.useDefaultDisablePinnedMessageNotifications
+        settings.disablePinnedMessageNotifications = current.disablePinnedMessageNotifications
+        settings.useDefaultDisableMentionNotifications = current.useDefaultDisableMentionNotifications
+        settings.disableMentionNotifications = current.disableMentionNotifications
+        client.execute(TdApi.SetChatNotificationSettings(chatId, settings), timeoutMs = 5_000L)
+        applyMuted(chatId, settings)
+    }
+
+    /**
+     * Pin or unpin a chat in its current list (main or archive). The
+     * [inArchive] flag selects which ChatList TDLib should operate on —
+     * a chat lives in exactly one of Main/Archive, and pinning is scoped
+     * per list.
+     */
+    suspend fun setChatPinned(chatId: Long, inArchive: Boolean, pinned: Boolean) {
+        val list: TdApi.ChatList = if (inArchive) TdApi.ChatListArchive() else TdApi.ChatListMain()
+        client.execute(TdApi.ToggleChatIsPinned(list, chatId, pinned), timeoutMs = 5_000L)
+        refreshLists()
+    }
+
+    /**
+     * Archive or unarchive a chat. AddChatToList moves it between the Main
+     * and Archive lists (TDLib removes it from the other list automatically),
+     * so one call covers both directions.
+     */
+    suspend fun setChatArchived(chatId: Long, archived: Boolean) {
+        val list: TdApi.ChatList = if (archived) TdApi.ChatListArchive() else TdApi.ChatListMain()
+        client.execute(TdApi.AddChatToList(chatId, list), timeoutMs = 5_000L)
+        refreshLists()
+    }
+
+    /**
+     * Remove a chat from the user's list. Private chats have no "leave" —
+     * delete history for self and drop it from the list; groups and channels
+     * are left. Both fire live-update events, but we reload explicitly for
+     * determinism.
+     */
+    suspend fun deleteChat(chat: ChatItem) {
+        when (chat.type) {
+            ChatType.Private -> client.execute(
+                TdApi.DeleteChatHistory(chat.id, true, false),
+                timeoutMs = 5_000L,
+            )
+            else -> client.execute(TdApi.LeaveChat(chat.id), timeoutMs = 5_000L)
+        }
+        refreshLists()
+    }
+
+    private suspend fun refreshLists() {
+        loadAllChats(force = true)
+        loadArchiveChats()
     }
 
     companion object {

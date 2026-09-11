@@ -93,4 +93,19 @@
     <string name="exit_confirm_text">确定要退出 Tvgram 吗？</string>
     <string name="exit_confirm_confirm">退出</string>
     <string name="exit_confirm_cancel">取消</string>
+
+    <!-- Chat context menu (long-press on a chat row) -->
+    <string name="chat_menu_delete">删除</string>
+    <string name="chat_menu_mute">静音</string>
+    <string name="chat_menu_unmute">取消静音</string>
+    <string name="chat_menu_archive">归档</string>
+    <string name="chat_menu_unarchive">取消归档</string>
+    <string name="chat_menu_pin">置顶</string>
+    <string name="chat_menu_unpin">取消置顶</string>
+    <string name="chat_menu_delete_confirm_title">删除会话？</string>
+    <string name="chat_menu_delete_confirm_text">将从本机移除该会话及其消息记录。</string>
+    <string name="chat_menu_archive_confirm_title">归档会话？</string>
+    <string name="chat_menu_archive_confirm_text">该会话将被移入归档。</string>
+    <string name="chat_menu_confirm">确认</string>
+    <string name="chat_menu_cancel">取消</string>
 </resources>
