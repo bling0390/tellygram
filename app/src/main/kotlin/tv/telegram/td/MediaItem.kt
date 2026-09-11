@@ -9,6 +9,10 @@ data class MediaItem(
     val thumbnailFileId: Int? = null,
     val localPath: String? = null,
     val thumbnailLocalPath: String? = null,
+    // Raw JPEG bytes of TDLib's embedded minithumbnail. It ships inside the
+    // message, so the player can paint a poster with zero latency and no
+    // download.
+    val minithumbnail: ByteArray? = null,
     val width: Int = 0,
     val height: Int = 0,
     val caption: String? = null,

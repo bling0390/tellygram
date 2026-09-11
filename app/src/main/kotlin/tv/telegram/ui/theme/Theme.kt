@@ -6,9 +6,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import tv.telegram.R
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Shapes
 import androidx.tv.material3.Typography
@@ -17,9 +20,12 @@ import androidx.tv.material3.lightColorScheme
 
 // JetStream design tokens (Figma: 📺 JetStream - Streaming App).
 //   Dark palette = node 76:671 ("Dark"); type scale = node 76:599; shape = 76:807.
-// Sizes/weights match JetStream's Inter scale, but the app keeps the system
-// font (decision 2026-09-08). JetStream ships no light palette, so the light
-// scheme below is kept from the original tvgram theme.
+// Sizes/weights AND the family match JetStream's Inter scale: Inter is bundled
+// in res/font (SIL OFL 1.1, see res/raw/inter_ofl.txt). Inter carries no CJK
+// glyphs, so Chinese copy falls back to the system CJK font automatically —
+// the latin/汉字 mix is expected and accepted (decision 2026-09-11). JetStream
+// ships no light palette, so the light scheme below is kept from the original
+// tvgram theme.
 
 private val JetStreamDarkColors = darkColorScheme(
     primary = Color(0xFFA8C8FF),
@@ -67,23 +73,33 @@ private val TvgramLightColors = lightColorScheme(
     onSurfaceVariant = Color(0xFF555555),
 )
 
-// JetStream type scale — Inter sizes/weights mapped onto the system font.
+// Inter (SIL OFL 1.1) — static instances bundled in res/font so every API level
+// gets real weights (a variable font collapses to Regular below API 26, and this
+// app's minSdk is 21). Only the weights the type scale and call sites use ship.
+private val InterFamily = FontFamily(
+    Font(R.font.inter_regular, weight = FontWeight.Normal),
+    Font(R.font.inter_medium, weight = FontWeight.Medium),
+    Font(R.font.inter_semibold, weight = FontWeight.SemiBold),
+    Font(R.font.inter_bold, weight = FontWeight.Bold),
+)
+
+// JetStream type scale — Inter sizes/weights, rendered in Inter.
 private val JetStreamTypography = Typography(
-    displayLarge = TextStyle(fontWeight = FontWeight.SemiBold, fontSize = 57.sp, lineHeight = 64.sp),
-    displayMedium = TextStyle(fontWeight = FontWeight.Normal, fontSize = 45.sp, lineHeight = 52.sp),
-    displaySmall = TextStyle(fontWeight = FontWeight.Medium, fontSize = 36.sp, lineHeight = 44.sp),
-    headlineLarge = TextStyle(fontWeight = FontWeight.Normal, fontSize = 32.sp, lineHeight = 40.sp),
-    headlineMedium = TextStyle(fontWeight = FontWeight.Normal, fontSize = 28.sp, lineHeight = 36.sp),
-    headlineSmall = TextStyle(fontWeight = FontWeight.Normal, fontSize = 24.sp, lineHeight = 32.sp),
-    titleLarge = TextStyle(fontWeight = FontWeight.Normal, fontSize = 22.sp, lineHeight = 28.sp),
-    titleMedium = TextStyle(fontWeight = FontWeight.Medium, fontSize = 16.sp, lineHeight = 24.sp),
-    titleSmall = TextStyle(fontWeight = FontWeight.Normal, fontSize = 12.sp, lineHeight = 16.sp),
-    bodyLarge = TextStyle(fontWeight = FontWeight.Normal, fontSize = 16.sp, lineHeight = 24.sp),
-    bodyMedium = TextStyle(fontWeight = FontWeight.Normal, fontSize = 14.sp, lineHeight = 20.sp),
-    bodySmall = TextStyle(fontWeight = FontWeight.Normal, fontSize = 12.sp, lineHeight = 16.sp),
-    labelLarge = TextStyle(fontWeight = FontWeight.Medium, fontSize = 14.sp, lineHeight = 20.sp),
-    labelMedium = TextStyle(fontWeight = FontWeight.Medium, fontSize = 12.sp, lineHeight = 16.sp),
-    labelSmall = TextStyle(fontWeight = FontWeight.Medium, fontSize = 11.sp, lineHeight = 16.sp),
+    displayLarge = TextStyle(fontFamily = InterFamily, fontWeight = FontWeight.SemiBold, fontSize = 57.sp, lineHeight = 64.sp),
+    displayMedium = TextStyle(fontFamily = InterFamily, fontWeight = FontWeight.Normal, fontSize = 45.sp, lineHeight = 52.sp),
+    displaySmall = TextStyle(fontFamily = InterFamily, fontWeight = FontWeight.Medium, fontSize = 36.sp, lineHeight = 44.sp),
+    headlineLarge = TextStyle(fontFamily = InterFamily, fontWeight = FontWeight.Normal, fontSize = 32.sp, lineHeight = 40.sp),
+    headlineMedium = TextStyle(fontFamily = InterFamily, fontWeight = FontWeight.Normal, fontSize = 28.sp, lineHeight = 36.sp),
+    headlineSmall = TextStyle(fontFamily = InterFamily, fontWeight = FontWeight.Normal, fontSize = 24.sp, lineHeight = 32.sp),
+    titleLarge = TextStyle(fontFamily = InterFamily, fontWeight = FontWeight.Normal, fontSize = 22.sp, lineHeight = 28.sp),
+    titleMedium = TextStyle(fontFamily = InterFamily, fontWeight = FontWeight.Medium, fontSize = 16.sp, lineHeight = 24.sp),
+    titleSmall = TextStyle(fontFamily = InterFamily, fontWeight = FontWeight.Normal, fontSize = 12.sp, lineHeight = 16.sp),
+    bodyLarge = TextStyle(fontFamily = InterFamily, fontWeight = FontWeight.Normal, fontSize = 16.sp, lineHeight = 24.sp),
+    bodyMedium = TextStyle(fontFamily = InterFamily, fontWeight = FontWeight.Normal, fontSize = 14.sp, lineHeight = 20.sp),
+    bodySmall = TextStyle(fontFamily = InterFamily, fontWeight = FontWeight.Normal, fontSize = 12.sp, lineHeight = 16.sp),
+    labelLarge = TextStyle(fontFamily = InterFamily, fontWeight = FontWeight.Medium, fontSize = 14.sp, lineHeight = 20.sp),
+    labelMedium = TextStyle(fontFamily = InterFamily, fontWeight = FontWeight.Medium, fontSize = 12.sp, lineHeight = 16.sp),
+    labelSmall = TextStyle(fontFamily = InterFamily, fontWeight = FontWeight.Medium, fontSize = 11.sp, lineHeight = 16.sp),
 )
 
 // JetStream shape scale: buttons + cards are 4dp. Circular icon buttons are

@@ -2,11 +2,15 @@
 
 package tv.telegram.ui.player
 
+import android.graphics.BitmapFactory
 import android.util.Log
 import android.view.LayoutInflater
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
@@ -23,6 +27,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -54,6 +59,8 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.Key
@@ -62,6 +69,7 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.viewinterop.AndroidView
@@ -78,8 +86,11 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.io.File
 import tv.telegram.R
 import tv.telegram.td.FileDownloadState
 import tv.telegram.td.MediaItem
@@ -96,6 +107,10 @@ import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 
 private const val TAG = "PlayerScreen"
+
+// JetStream seeker handle colour (Figma dark-palette "Outline" tone). Lives
+// here because tv-material3 exposes no slot for it in the colour scheme.
+private val SeekHandleColor = Color(0xFF938F99)
 
 private fun mediaTypeLabel(type: MediaType): String = when (type) {
     MediaType.Video -> "Video"
@@ -505,6 +520,53 @@ fun PlayerScreen(
         val downloadError = (currentFileState as? FileDownloadState.Failed)?.reason
         val errorMsg = playerError
             ?: downloadError?.let { stringResource(R.string.player_download_failed, it) }
+
+        // ── CinematicBackground poster (Figma 1117:8996) ────────────────────
+        // The design layers a Poster under a Scrim. We fill that poster with
+        // the message thumbnail so entering the player never starts on a black
+        // frame: the embedded minithumbnail needs no download and paints
+        // instantly, and the larger thumbnail swaps in once its file is Local.
+        // It fades out on the first rendered frame and comes back while an
+        // error is on screen, so failures sit on artwork instead of black.
+        // Deliberately NOT rotated with the surface: by the time a user rotates
+        // (a deliberate button press) the poster is long faded out.
+        val posterPath = current.thumbnailFileId?.let {
+            (fileStates[it] as? FileDownloadState.Local)?.path
+        }
+        val posterBitmap = remember(current.messageId, current.minithumbnail) {
+            decodeMinithumbnail(current.minithumbnail)
+        }
+        LaunchedEffect(current.messageId, current.thumbnailFileId) {
+            val thumbId = current.thumbnailFileId ?: return@LaunchedEffect
+            if (viewModel.fileStateFor(thumbId) !is FileDownloadState.Local) {
+                viewModel.ensureMediaFile(thumbId, priority = 24)
+            }
+        }
+        val posterAlpha by animateFloatAsState(
+            targetValue = if (firstFrameRendered && errorMsg == null) 0f else 1f,
+            animationSpec = tween(durationMillis = 300),
+            label = "posterAlpha",
+        )
+        if (posterAlpha > 0.01f) {
+            val posterModifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer { alpha = posterAlpha }
+            when {
+                posterPath != null -> AsyncImage(
+                    model = ImageRequest.Builder(context).data(File(posterPath)).build(),
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = posterModifier,
+                )
+                posterBitmap != null -> Image(
+                    bitmap = posterBitmap,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = posterModifier,
+                )
+            }
+        }
+
         if (errorMsg != null) {
             // Error overlay — replaces the silent black screen: shows what
             // failed, OK retries (re-download / re-prepare), Back exits.
@@ -762,29 +824,42 @@ private fun PlayerController(
     // JetStream-style controller: a dark scrim gradient over the poster, a
     // title block on the left, circular action buttons on the right, and a
     // slim seeker (current time + bar + end time) underneath.
+    // JetStream (Figma 685:1449): the Scrim is a FULL-FRAME gradient —
+    // rgba(0,0,0,0.1) at the top deepening to 0.8 at the bottom — rather than
+    // a band behind the block, so the content sits on it exactly like the
+    // design. Content is inset 58dp ((960 - 844) / 2) each side and the block
+    // is anchored 48px above the frame's bottom edge.
     Column(
         modifier = Modifier
-            .fillMaxWidth()
+            .fillMaxSize()
             .background(
                 Brush.verticalGradient(
                     listOf(
-                        MaterialTheme.colorScheme.scrim.copy(alpha = 0.65f),
-                        MaterialTheme.colorScheme.background.copy(alpha = 0.92f),
+                        Color.Black.copy(alpha = 0.1f),
+                        Color.Black.copy(alpha = 0.8f),
                     ),
                 ),
             )
-            .padding(horizontal = 24.dp, vertical = 20.dp),
+            .padding(start = 58.dp, end = 58.dp, bottom = 48.dp),
+        verticalArrangement = Arrangement.Bottom,
     ) {
+        // Figma: align-items flex-end, and the Label column is a fixed 484px
+        // inside the 844px content width.
         Row(
             modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
+            verticalAlignment = Alignment.Bottom,
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            Column(modifier = Modifier.weight(1f)) {
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .widthIn(max = 484.dp),
+            ) {
                 Text(
                     text = title,
                     color = MaterialTheme.colorScheme.onSurface,
-                    style = MaterialTheme.typography.titleLarge,
+                    // Figma headline/medium = Inter 400 / 28sp / 36.
+                    style = MaterialTheme.typography.headlineMedium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -792,7 +867,8 @@ private fun PlayerController(
                 Text(
                     text = subtitle,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodyMedium,
+                    // 16sp line (JetStream's "2011 • Action/Fantasy").
+                    style = MaterialTheme.typography.bodyLarge,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -824,7 +900,7 @@ private fun PlayerController(
                         onClick = onPrev,
                         modifier = Modifier.focusRequester(prevFocus),
                     )
-                    Spacer(Modifier.width(10.dp))
+                    Spacer(Modifier.width(12.dp))
                 }
                 ControllerButton(
                     icon = Icons.Default.Replay10,
@@ -832,7 +908,7 @@ private fun PlayerController(
                     onClick = onSeekBack,
                     modifier = Modifier.focusRequester(seekBackFocus),
                 )
-                Spacer(Modifier.width(10.dp))
+                Spacer(Modifier.width(12.dp))
                 ControllerButton(
                     icon = if (playing) Icons.Default.Pause else Icons.Default.PlayArrow,
                     contentDescription = stringResource(
@@ -841,7 +917,7 @@ private fun PlayerController(
                     onClick = onPlayPause,
                     modifier = Modifier.focusRequester(playFocus),
                 )
-                Spacer(Modifier.width(10.dp))
+                Spacer(Modifier.width(12.dp))
                 ControllerButton(
                     icon = Icons.Default.Forward10,
                     contentDescription = stringResource(R.string.player_btn_seek_fwd),
@@ -849,7 +925,7 @@ private fun PlayerController(
                     modifier = Modifier.focusRequester(seekFwdFocus),
                 )
                 if (onNext != null) {
-                    Spacer(Modifier.width(10.dp))
+                    Spacer(Modifier.width(12.dp))
                     ControllerButton(
                         icon = Icons.Default.SkipNext,
                         contentDescription = stringResource(R.string.player_btn_next),
@@ -857,21 +933,21 @@ private fun PlayerController(
                         modifier = Modifier.focusRequester(nextFocus),
                     )
                 }
-                Spacer(Modifier.width(10.dp))
+                Spacer(Modifier.width(12.dp))
                 ControllerButton(
                     icon = Icons.Default.Speed,
                     contentDescription = stringResource(R.string.player_btn_speed),
                     onClick = onSpeedCycle,
                     modifier = Modifier.focusRequester(speedFocus),
                 )
-                Spacer(Modifier.width(10.dp))
+                Spacer(Modifier.width(12.dp))
                 ControllerButton(
                     icon = Icons.Default.ScreenRotation,
                     contentDescription = stringResource(R.string.player_btn_rotate),
                     onClick = onRotate,
                     modifier = Modifier.focusRequester(rotateFocus),
                 )
-                Spacer(Modifier.width(10.dp))
+                Spacer(Modifier.width(12.dp))
                 ControllerButton(
                     icon = Icons.Default.Info,
                     contentDescription = stringResource(R.string.player_btn_info),
@@ -880,7 +956,7 @@ private fun PlayerController(
                 )
             }
         }
-        Spacer(Modifier.height(14.dp))
+        Spacer(Modifier.height(16.dp))
         Seeker(
             positionMs = nowPos,
             durationMs = nowDur,
@@ -918,7 +994,8 @@ private fun Seeker(
     val interactionSource = remember { MutableInteractionSource() }
     val isFocused by interactionSource.collectIsFocusedAsState()
     // Focus feedback via height: 4dp idle -> 6dp focused (no glow).
-    val barHeight = if (isFocused) 6.dp else 4.dp
+    // Figma's bar is 5px; focus still thickens it as a TV affordance.
+    val barHeight = if (isFocused) 6.dp else 5.dp
     // Report focus state for auto-hide logic.
     LaunchedEffect(isFocused) {
         onProgressFocusChange(isFocused)
@@ -932,10 +1009,11 @@ private fun Seeker(
     ) {
         Text(
             text = formatMs(positionMs),
-            color = Color.White,
+            // Figma: #FFFFFF at 80% opacity.
+            color = Color.White.copy(alpha = 0.8f),
             style = MaterialTheme.typography.labelMedium,
         )
-        Spacer(Modifier.width(12.dp))
+        Spacer(Modifier.width(8.dp))
         // Fixed-height wrapper: bar grows inside without shifting the row.
         Box(
             modifier = Modifier
@@ -994,17 +1072,18 @@ private fun Seeker(
                 Box(
                     modifier = Modifier
                         .size(if (isFocused) 14.dp else 10.dp)
-                        .background(Color(0xFF938F99), CircleShape),
+                        .background(SeekHandleColor, CircleShape),
                 )
             }
         }
-        Spacer(Modifier.width(12.dp))
+        Spacer(Modifier.width(8.dp))
         Text(
             text = formatMs(durationMs),
-            color = Color.White,
+            // Figma: #FFFFFF at 80% opacity.
+            color = Color.White.copy(alpha = 0.8f),
             style = MaterialTheme.typography.bodySmall,
         )
-        Spacer(Modifier.width(10.dp))
+        Spacer(Modifier.width(8.dp))
         Text(
             text = "${speed}x",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1026,8 +1105,19 @@ private fun ControllerButton(
     // JetStream circular button: Surface Variant base + On Surface icon.
     // Focus swaps to the Primary accent so the focused control reads clearly
     // on a 10-foot UI.
-    val bg = if (isFocused) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant
-    val iconTint = if (isFocused) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
+    // Figma: Surface Variant at 80% opacity with an On Surface icon at 80%.
+    // Focus keeps the Primary accent fully opaque so the focused control still
+    // reads clearly on a 10-foot UI.
+    val bg = if (isFocused) {
+        MaterialTheme.colorScheme.primary
+    } else {
+        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f)
+    }
+    val iconTint = if (isFocused) {
+        MaterialTheme.colorScheme.onPrimary
+    } else {
+        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
+    }
 
     Box(
         modifier = modifier
@@ -1047,6 +1137,17 @@ private fun ControllerButton(
             tint = iconTint,
             modifier = Modifier.size(20.dp),
         )
+    }
+}
+
+// Decode TDLib's embedded minithumbnail (raw JPEG bytes — it ships inside the
+// message, so nothing is downloaded) into something Compose can draw.
+private fun decodeMinithumbnail(bytes: ByteArray?): ImageBitmap? {
+    if (bytes == null || bytes.isEmpty()) return null
+    return try {
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+    } catch (_: IllegalArgumentException) {
+        null
     }
 }
 
