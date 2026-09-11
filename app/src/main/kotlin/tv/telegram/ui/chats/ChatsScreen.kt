@@ -940,7 +940,17 @@ private fun MediaPane(
         ExoPlayer.Builder(context).build().apply { volume = 0f }
     }
     DisposableEffect(Unit) {
-        onDispose { previewPlayer.release() }
+        onDispose {
+            // Releasing an ExoPlayer is main-thread work, and releasing it inline
+            // put a full release in the same frame window as PlayerScreen's own
+            // player construction (press OK on a video card → visible stutter).
+            // Hand the release to the main looper one page-transition later so
+            // that window stays clear.
+            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(
+                { previewPlayer.release() },
+                600L,
+            )
+        }
     }
     var focusedMessageId by remember { mutableStateOf<Long?>(null) }
     var previewingMessageId by remember { mutableStateOf<Long?>(null) }

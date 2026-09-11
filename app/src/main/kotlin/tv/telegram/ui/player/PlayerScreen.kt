@@ -49,6 +49,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -88,8 +89,10 @@ import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import tv.telegram.R
 import tv.telegram.td.FileDownloadState
@@ -111,6 +114,11 @@ private const val TAG = "PlayerScreen"
 // JetStream seeker handle colour (Figma dark-palette "Outline" tone). Lives
 // here because tv-material3 exposes no slot for it in the colour scheme.
 private val SeekHandleColor = Color(0xFF938F99)
+
+// How long PlayerScreen waits before letting the heavy player composition run.
+// Covers the page-transition window so ExoPlayer construction never lands in the
+// middle of the enter/exit animation.
+private const val PLAYER_INIT_DELAY_MS = 250L
 
 private fun mediaTypeLabel(type: MediaType): String = when (type) {
     MediaType.Video -> "Video"
@@ -219,6 +227,42 @@ fun PlayerScreen(
         onDispose {
             viewModel.fileRepo.cancelDownload(current.fileId)
         }
+    }
+
+    // Poster sources (Figma CinematicBackground). Built before the player so the
+    // deferred first composition below has artwork to show: the embedded
+    // minithumbnail is available with zero latency, and the downloaded thumbnail
+    // is sharper and takes over as soon as its file is Local.
+    val posterPath = current.thumbnailFileId?.let {
+        (fileStates[it] as? FileDownloadState.Local)?.path
+    }
+    val posterBitmap by produceState<ImageBitmap?>(null, current.messageId, current.minithumbnail) {
+        // Keep the decode off the UI thread — the poster is built inside the
+        // navigation window.
+        value = withContext(Dispatchers.Default) { decodeMinithumbnail(current.minithumbnail) }
+    }
+
+    // Everything below (ExoPlayer build, PlayerView inflation, renderer and
+    // MediaCodec warm-up) is main-thread work, and it used to run while the page
+    // transition was still animating — which dropped frames when opening a video
+    // from the media grid. Compose a poster-only shell first and let the player
+    // in once that window has passed.
+    var playerReady by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        delay(PLAYER_INIT_DELAY_MS)
+        playerReady = true
+    }
+    if (!playerReady) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background),
+            contentAlignment = Alignment.Center,
+        ) {
+            PosterLayer(posterPath = posterPath, posterBitmap = posterBitmap, alpha = 1f)
+            CircularProgressIndicator(color = Color.White)
+        }
+        return
     }
 
     val exo = remember(current.fileId) {
@@ -522,20 +566,11 @@ fun PlayerScreen(
             ?: downloadError?.let { stringResource(R.string.player_download_failed, it) }
 
         // ── CinematicBackground poster (Figma 1117:8996) ────────────────────
-        // The design layers a Poster under a Scrim. We fill that poster with
-        // the message thumbnail so entering the player never starts on a black
-        // frame: the embedded minithumbnail needs no download and paints
-        // instantly, and the larger thumbnail swaps in once its file is Local.
-        // It fades out on the first rendered frame and comes back while an
-        // error is on screen, so failures sit on artwork instead of black.
-        // Deliberately NOT rotated with the surface: by the time a user rotates
-        // (a deliberate button press) the poster is long faded out.
-        val posterPath = current.thumbnailFileId?.let {
-            (fileStates[it] as? FileDownloadState.Local)?.path
-        }
-        val posterBitmap = remember(current.messageId, current.minithumbnail) {
-            decodeMinithumbnail(current.minithumbnail)
-        }
+        // The design layers a Poster under a Scrim. It fades out on the first
+        // rendered frame and comes back while an error is on screen, so
+        // failures sit on artwork instead of black. Deliberately NOT rotated
+        // with the surface: by the time a user rotates (a deliberate button
+        // press) the poster is long faded out.
         LaunchedEffect(current.messageId, current.thumbnailFileId) {
             val thumbId = current.thumbnailFileId ?: return@LaunchedEffect
             if (viewModel.fileStateFor(thumbId) !is FileDownloadState.Local) {
@@ -548,23 +583,7 @@ fun PlayerScreen(
             label = "posterAlpha",
         )
         if (posterAlpha > 0.01f) {
-            val posterModifier = Modifier
-                .fillMaxSize()
-                .graphicsLayer { alpha = posterAlpha }
-            when {
-                posterPath != null -> AsyncImage(
-                    model = ImageRequest.Builder(context).data(File(posterPath)).build(),
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = posterModifier,
-                )
-                posterBitmap != null -> Image(
-                    bitmap = posterBitmap,
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = posterModifier,
-                )
-            }
+            PosterLayer(posterPath = posterPath, posterBitmap = posterBitmap, alpha = posterAlpha)
         }
 
         if (errorMsg != null) {
@@ -1148,6 +1167,29 @@ private fun decodeMinithumbnail(bytes: ByteArray?): ImageBitmap? {
         BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
     } catch (_: IllegalArgumentException) {
         null
+    }
+}
+
+// Full-bleed poster for the player's CinematicBackground: prefers the real
+// (downloaded) thumbnail and falls back to the message's embedded minithumbnail.
+@Composable
+private fun PosterLayer(posterPath: String?, posterBitmap: ImageBitmap?, alpha: Float) {
+    val modifier = Modifier
+        .fillMaxSize()
+        .graphicsLayer { this.alpha = alpha }
+    when {
+        posterPath != null -> AsyncImage(
+            model = ImageRequest.Builder(LocalContext.current).data(File(posterPath)).build(),
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = modifier,
+        )
+        posterBitmap != null -> Image(
+            bitmap = posterBitmap,
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = modifier,
+        )
     }
 }
 

@@ -12,6 +12,8 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
@@ -282,6 +284,14 @@ private fun AppNavHost(viewModel: MainViewModel, backController: BackController)
             composable(
                 route = Routes.PLAYER,
                 arguments = listOf(navArgument("index") { type = NavType.IntType }),
+                // A full-screen video player should cut in, not animate. The
+                // NavHost default is a long cross-fade, and PlayerScreen has to
+                // build an ExoPlayer (plus inflate a PlayerView) as it enters;
+                // running both at once dropped frames on TV hardware.
+                enterTransition = { EnterTransition.None },
+                exitTransition = { ExitTransition.None },
+                popEnterTransition = { EnterTransition.None },
+                popExitTransition = { ExitTransition.None },
             ) { entry ->
                 val index = entry.arguments?.getInt("index") ?: 0
                 PlayerScreen(
