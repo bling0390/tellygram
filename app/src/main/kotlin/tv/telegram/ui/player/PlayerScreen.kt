@@ -1160,11 +1160,11 @@ private fun ControllerButton(
 
     // JetStream circular button: Surface Variant base + On Surface icon, both
     // at the design's 80% node opacity.
-    // Focus swaps to Secondary Container + On Secondary (design spec
-    // 2026-09-12), kept fully opaque so the focused control still reads on a
-    // 10-foot UI.
+    // Focus swaps to the light On Secondary Container fill (#D9E3F8) with an On
+    // Secondary icon (#273141) — spec 2026-09-12. Kept fully opaque so the
+    // focused control reads on a 10-foot UI.
     val bg = if (isFocused) {
-        MaterialTheme.colorScheme.secondaryContainer
+        MaterialTheme.colorScheme.onSecondaryContainer
     } else {
         MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f)
     }
