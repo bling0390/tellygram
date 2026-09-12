@@ -12,8 +12,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -24,20 +22,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.DarkMode
-import androidx.compose.material.icons.filled.DeleteSweep
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Logout
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Translate
-import androidx.compose.material3.Icon
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -56,7 +44,6 @@ import tv.telegram.td.TdUser
 import tv.telegram.ui.Language
 import tv.telegram.ui.MainViewModel
 import tv.telegram.ui.ThemeMode
-import androidx.tv.material3.Border
 import androidx.tv.material3.Card
 import androidx.tv.material3.CardDefaults
 import androidx.tv.material3.MaterialTheme
@@ -105,7 +92,8 @@ fun SettingsScreen(viewModel: MainViewModel) {
             Text(
                 text = stringResource(R.string.settings_title),
                 color = MaterialTheme.colorScheme.onBackground,
-                style = MaterialTheme.typography.headlineMedium,
+                fontSize = 28.sp,
+                fontWeight = FontWeight.Bold,
             )
             Spacer(Modifier.height(24.dp))
             LazyColumn(
@@ -124,7 +112,6 @@ fun SettingsScreen(viewModel: MainViewModel) {
             ) {
                 item {
                     SettingsRow(
-                        icon = Icons.Default.Person,
                         title = stringResource(R.string.settings_account),
                         value = accountValue(authState, user),
                         onClick = {  },
@@ -134,7 +121,6 @@ fun SettingsScreen(viewModel: MainViewModel) {
                 }
                 item {
                     SettingsRow(
-                        icon = Icons.Default.Translate,
                         title = stringResource(R.string.settings_language),
                         value = languageLabel(lang),
                         onClick = { viewModel.setLanguage(lang.next()) },
@@ -142,7 +128,6 @@ fun SettingsScreen(viewModel: MainViewModel) {
                 }
                 item {
                     SettingsRow(
-                        icon = Icons.Default.DarkMode,
                         title = stringResource(R.string.settings_theme),
                         value = themeLabel(theme),
                         onClick = { viewModel.setTheme(theme.next()) },
@@ -150,7 +135,6 @@ fun SettingsScreen(viewModel: MainViewModel) {
                 }
                 item {
                     SettingsRow(
-                        icon = Icons.Default.Info,
                         title = stringResource(R.string.settings_about),
                         value = stringResource(R.string.settings_about_value, BuildConfig.VERSION_NAME),
                         onClick = { showAbout = true },
@@ -158,7 +142,6 @@ fun SettingsScreen(viewModel: MainViewModel) {
                 }
                 item {
                     SettingsRow(
-                        icon = Icons.Default.DeleteSweep,
                         title = stringResource(R.string.settings_clear_cache),
                         value = formatCacheSize(cacheSizeBytes),
                         onClick = { showClearCacheConfirm = true },
@@ -166,7 +149,6 @@ fun SettingsScreen(viewModel: MainViewModel) {
                 }
                 item {
                     SettingsRow(
-                        icon = Icons.Default.Logout,
                         title = stringResource(R.string.settings_signout),
                         value = stringResource(R.string.settings_signout_value),
                         onClick = { showLogoutConfirm = true },
@@ -304,7 +286,6 @@ private fun formatCacheSize(bytes: Long): String = when {
 
 @Composable
 private fun SettingsRow(
-    icon: ImageVector? = null,
     title: String,
     value: String,
     onClick: () -> Unit,
@@ -314,21 +295,10 @@ private fun SettingsRow(
 ) {
     Card(
         onClick = onClick,
-        // 聚焦效果与侧边栏一致：无缩放、无边框，仅背景色变化（胶囊形填充）。
-        scale = CardDefaults.scale(focusedScale = 1f),
-        shape = CardDefaults.shape(
-            RoundedCornerShape(4.dp),
-            RoundedCornerShape(4.dp),
-            RoundedCornerShape(4.dp),
-        ),
+        scale = CardDefaults.scale(focusedScale = 1.02f),
         colors = CardDefaults.colors(
-            containerColor = Color.Transparent,
-            focusedContainerColor = if (danger) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.secondaryContainer,
-        ),
-        border = CardDefaults.border(
-            Border.None,
-            Border.None,
-            Border.None,
+            containerColor = Color(0xFF1F1F1F),
+            focusedContainerColor = if (danger) Color(0xFF7E2A2A) else MaterialTheme.colorScheme.secondary,
         ),
         modifier = Modifier
             .fillMaxWidth()
@@ -340,25 +310,17 @@ private fun SettingsRow(
             modifier = Modifier.fillMaxSize().padding(horizontal = 20.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            if (icon != null) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    tint = if (danger) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f),
-                    modifier = Modifier.size(20.dp),
-                )
-                Spacer(Modifier.width(12.dp))
-            }
             Text(
                 title,
-                color = if (danger) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
-                style = MaterialTheme.typography.bodyLarge,
+                color = if (danger) Color(0xFFEF5350) else Color.White,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.weight(1f),
             )
             Text(
                 value,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                style = MaterialTheme.typography.bodyMedium,
+                color = Color.White.copy(alpha = 0.7f),
+                fontSize = 14.sp,
             )
         }
     }
@@ -369,13 +331,13 @@ private fun AboutDialog(onDismiss: () -> Unit) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.7f)),
+            .background(Color.Black.copy(alpha = 0.7f)),
         contentAlignment = Alignment.Center,
     ) {
         Card(
             onClick = onDismiss,
             modifier = Modifier.fillMaxWidth(0.6f).height(300.dp),
-            colors = CardDefaults.colors(containerColor = MaterialTheme.colorScheme.surface),
+            colors = CardDefaults.colors(containerColor = Color(0xFF1E1E1E)),
         ) {
             Column(
                 modifier = Modifier.fillMaxSize().padding(32.dp),
@@ -383,34 +345,35 @@ private fun AboutDialog(onDismiss: () -> Unit) {
             ) {
                 Text(
                     stringResource(R.string.about_title),
-                    color = MaterialTheme.colorScheme.onSurface,
-                    style = MaterialTheme.typography.titleLarge,
+                    color = Color.White,
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.Bold,
                 )
                 Text(
                     stringResource(R.string.app_full_name),
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color.White.copy(alpha = 0.7f),
+                    fontSize = 14.sp,
                 )
                 Text(
                     stringResource(R.string.about_version, BuildConfig.VERSION_NAME),
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f),
-                    style = MaterialTheme.typography.bodyLarge,
+                    color = Color.White.copy(alpha = 0.85f),
+                    fontSize = 16.sp,
                 )
                 Text(
                     stringResource(R.string.about_body),
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color.White.copy(alpha = 0.7f),
+                    fontSize = 14.sp,
                 )
                 Text(
                     stringResource(R.string.about_repo),
                     color = MaterialTheme.colorScheme.secondary,
-                    style = MaterialTheme.typography.bodyMedium,
+                    fontSize = 14.sp,
                 )
                 Spacer(Modifier.weight(1f))
                 Text(
                     stringResource(R.string.about_close_hint),
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
-                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.White.copy(alpha = 0.5f),
+                    fontSize = 12.sp,
                 )
             }
         }

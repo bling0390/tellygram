@@ -8,10 +8,12 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -66,7 +68,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -97,13 +98,6 @@ import androidx.tv.material3.Text
 
 private const val TAG = "PlayerScreen"
 
-private fun mediaTypeLabel(type: MediaType): String = when (type) {
-    MediaType.Video -> "Video"
-    MediaType.Photo -> "Photo"
-    MediaType.Animation -> "Animation"
-    MediaType.Unknown -> "Media"
-}
-
 @Composable
 fun PlayerScreen(
     viewModel: MainViewModel,
@@ -133,23 +127,6 @@ fun PlayerScreen(
     }
 
     val current = mediaItems[index]
-
-    // JetStream-style info header: title = first caption line (fallback to
-    // media type), subtitle = "year • type" (mirrors "2011 • Action/Fantasy").
-    val playerTitle = remember(current.messageId, current.caption) {
-        current.caption?.lineSequence()?.firstOrNull { it.isNotBlank() }?.trim()
-            ?: mediaTypeLabel(current.type)
-    }
-    val playerSubtitle = remember(current.messageId, current.date, current.type) {
-        val year = if (current.date > 0) {
-            java.text.SimpleDateFormat("yyyy", java.util.Locale.getDefault())
-                .format(java.util.Date(current.date * 1000L))
-        } else null
-        buildString {
-            if (year != null) { append(year); append(" • ") }
-            append(mediaTypeLabel(current.type))
-        }
-    }
 
     // Exit hook: record the messageId being played so the chats screen can
     // hand focus back to this exact media card on return (instead of the
@@ -428,7 +405,7 @@ fun PlayerScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
+            .background(Color.Black)
             .focusRequester(focusRequester)
             .focusable()
             // Capture-phase Back: intercept BEFORE the focused button/progress
@@ -512,14 +489,15 @@ fun PlayerScreen(
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
                         text = stringResource(R.string.player_error_title),
-                        color = MaterialTheme.colorScheme.onSurface,
-                        style = MaterialTheme.typography.titleLarge,
+                        color = Color.White,
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold,
                     )
                     Spacer(Modifier.height(12.dp))
                     Text(
                         text = errorMsg,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color.White.copy(alpha = 0.85f),
+                        fontSize = 15.sp,
                         modifier = Modifier.padding(horizontal = 40.dp),
                     )
                     Spacer(Modifier.height(24.dp))
@@ -567,7 +545,7 @@ fun PlayerScreen(
                         // appears. TextureView respects both letterboxing and
                         // rotation immediately.
                         (LayoutInflater.from(ctx).inflate(
-                            R.layout.tvgram_player_view, null,
+                            R.layout.exo_player_view, null,
                         ) as PlayerView).apply {
                             useController = false // custom compose controller below
                             resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
@@ -611,8 +589,6 @@ fun PlayerScreen(
             modifier = Modifier.align(Alignment.BottomCenter),
         ) {
             PlayerController(
-                title = playerTitle,
-                subtitle = playerSubtitle,
                 positionMs = { exo.currentPosition },
                 durationMs = { exo.duration.coerceAtLeast(0L) },
                 bufferedMs = { exo.bufferedPosition.coerceAtLeast(0L) },
@@ -678,8 +654,6 @@ fun PlayerScreen(
 
 @Composable
 private fun PlayerController(
-    title: String,
-    subtitle: String,
     positionMs: () -> Long,
     durationMs: () -> Long,
     bufferedMs: () -> Long,
@@ -718,7 +692,8 @@ private fun PlayerController(
 
     // Explicit button-row navigation: one FocusRequester per visible button
     // + selectedIndex. Left/right move between buttons via the row's
-    // onKeyEvent; Down returns to the seeker below.
+    // onKeyEvent (works whether or not the native focus search consumes the
+    // key); Up returns to the progress bar.
     val prevFocus = remember { FocusRequester() }
     val seekBackFocus = remember { FocusRequester() }
     val playFocus = remember { FocusRequester() }
@@ -752,265 +727,235 @@ private fun PlayerController(
             buttonFocuses[next].requestFocus()
         }
     }
-    // Hand focus to the play button (used when moving up from the seeker).
-    fun focusPlay() {
-        onInteraction()
-        selectedIndex = playIndex
-        playFocus.requestFocus()
-    }
 
-    // JetStream-style controller: a dark scrim gradient over the poster, a
-    // title block on the left, circular action buttons on the right, and a
-    // slim seeker (current time + bar + end time) underneath.
+    // White translucent backdrop with a brighter top edge (a low intensity
+    // white shadow/glow at the top of the controller).
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .background(
                 Brush.verticalGradient(
                     listOf(
-                        MaterialTheme.colorScheme.scrim.copy(alpha = 0.65f),
-                        MaterialTheme.colorScheme.background.copy(alpha = 0.92f),
+                        Color.Black.copy(alpha = 0.5f),
+                        Color.Black.copy(alpha = 0.1f),
                     ),
                 ),
             )
-            .padding(horizontal = 24.dp, vertical = 20.dp),
+            .padding(horizontal = 24.dp, vertical = 16.dp),
     ) {
+
+        ProgressBar(
+            positionMs = nowPos,
+            durationMs = nowDur,
+            bufferedMs = nowBuffered,
+            focusRequester = progressFocusRequester,
+            onProgressFocusChange = onProgressFocusChange,
+            onSeekBack = onSeekBack,
+            onSeekFwd = onSeekFwd,
+            onMoveDown = {
+                onInteraction()
+                selectedIndex = playIndex
+                playFocus.requestFocus()
+            },
+            onHide = onHideController,
+            onInteraction = onInteraction,
+        )
+        Spacer(Modifier.size(12.dp))
+
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = title,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    style = MaterialTheme.typography.titleLarge,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    text = subtitle,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodyMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            Spacer(Modifier.width(12.dp))
-            Row(
-                modifier = Modifier.onKeyEvent { ev ->
+            Text(
+                text = stringResource(R.string.player_position, formatMs(nowPos), formatMs(nowDur)),
+                color = Color.White,
+                fontSize = 14.sp,
+            )
+            Text(
+                text = "${speed}x",
+                color = Color.White,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
+        Spacer(Modifier.size(12.dp))
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .onKeyEvent { ev ->
                     if (ev.type != KeyEventType.KeyDown) return@onKeyEvent false
                     when (ev.key) {
                         Key.DirectionLeft -> { select(-1); true }
                         Key.DirectionRight -> { select(+1); true }
-                        Key.DirectionDown -> {
+                        Key.DirectionUp -> {
                             onInteraction()
                             try { progressFocusRequester.requestFocus() }
                             catch (_: IllegalStateException) {}
                             true
                         }
-                        // Buttons sit above the seeker; Up leaves the controller.
-                        Key.DirectionUp -> { onInteraction(); onHideController(); true }
+                        // Bottom row: Down is a no-op but still an interaction.
+                        Key.DirectionDown -> { onInteraction(); true }
                         else -> false
                     }
                 },
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                if (onPrev != null) {
-                    ControllerButton(
-                        icon = Icons.Default.SkipPrevious,
-                        contentDescription = stringResource(R.string.player_btn_prev),
-                        onClick = onPrev,
-                        modifier = Modifier.focusRequester(prevFocus),
-                    )
-                    Spacer(Modifier.width(10.dp))
-                }
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center,
+        ) {
+            if (onPrev != null) {
                 ControllerButton(
-                    icon = Icons.Default.Replay10,
-                    contentDescription = stringResource(R.string.player_btn_seek_back),
-                    onClick = onSeekBack,
-                    modifier = Modifier.focusRequester(seekBackFocus),
+                    icon = Icons.Default.SkipPrevious,
+                    contentDescription = stringResource(R.string.player_btn_prev),
+                    onClick = onPrev,
+                    modifier = Modifier.focusRequester(prevFocus),
                 )
-                Spacer(Modifier.width(10.dp))
+                Spacer(Modifier.width(24.dp))
+            }
+            ControllerButton(
+                icon = Icons.Default.Replay10,
+                contentDescription = stringResource(R.string.player_btn_seek_back),
+                onClick = onSeekBack,
+                modifier = Modifier.focusRequester(seekBackFocus),
+            )
+            Spacer(Modifier.width(24.dp))
+            ControllerButton(
+                icon = if (playing) Icons.Default.Pause else Icons.Default.PlayArrow,
+                contentDescription = stringResource(
+                    if (playing) R.string.player_btn_pause else R.string.player_btn_play,
+                ),
+                onClick = onPlayPause,
+                modifier = Modifier.focusRequester(playFocus),
+            )
+            Spacer(Modifier.width(24.dp))
+            ControllerButton(
+                icon = Icons.Default.Forward10,
+                contentDescription = stringResource(R.string.player_btn_seek_fwd),
+                onClick = onSeekFwd,
+                modifier = Modifier.focusRequester(seekFwdFocus),
+            )
+            if (onNext != null) {
+                Spacer(Modifier.width(24.dp))
                 ControllerButton(
-                    icon = if (playing) Icons.Default.Pause else Icons.Default.PlayArrow,
-                    contentDescription = stringResource(
-                        if (playing) R.string.player_btn_pause else R.string.player_btn_play,
-                    ),
-                    onClick = onPlayPause,
-                    modifier = Modifier.focusRequester(playFocus),
-                )
-                Spacer(Modifier.width(10.dp))
-                ControllerButton(
-                    icon = Icons.Default.Forward10,
-                    contentDescription = stringResource(R.string.player_btn_seek_fwd),
-                    onClick = onSeekFwd,
-                    modifier = Modifier.focusRequester(seekFwdFocus),
-                )
-                if (onNext != null) {
-                    Spacer(Modifier.width(10.dp))
-                    ControllerButton(
-                        icon = Icons.Default.SkipNext,
-                        contentDescription = stringResource(R.string.player_btn_next),
-                        onClick = onNext,
-                        modifier = Modifier.focusRequester(nextFocus),
-                    )
-                }
-                Spacer(Modifier.width(10.dp))
-                ControllerButton(
-                    icon = Icons.Default.Speed,
-                    contentDescription = stringResource(R.string.player_btn_speed),
-                    onClick = onSpeedCycle,
-                    modifier = Modifier.focusRequester(speedFocus),
-                )
-                Spacer(Modifier.width(10.dp))
-                ControllerButton(
-                    icon = Icons.Default.ScreenRotation,
-                    contentDescription = stringResource(R.string.player_btn_rotate),
-                    onClick = onRotate,
-                    modifier = Modifier.focusRequester(rotateFocus),
-                )
-                Spacer(Modifier.width(10.dp))
-                ControllerButton(
-                    icon = Icons.Default.Info,
-                    contentDescription = stringResource(R.string.player_btn_info),
-                    onClick = onInfo,
-                    modifier = Modifier.focusRequester(infoFocus),
+                    icon = Icons.Default.SkipNext,
+                    contentDescription = stringResource(R.string.player_btn_next),
+                    onClick = onNext,
+                    modifier = Modifier.focusRequester(nextFocus),
                 )
             }
+            Spacer(Modifier.width(24.dp))
+            ControllerButton(
+                icon = Icons.Default.Speed,
+                contentDescription = stringResource(R.string.player_btn_speed),
+                onClick = onSpeedCycle,
+                modifier = Modifier.focusRequester(speedFocus),
+            )
+            Spacer(Modifier.width(24.dp))
+            ControllerButton(
+                icon = Icons.Default.ScreenRotation,
+                contentDescription = stringResource(R.string.player_btn_rotate),
+                onClick = onRotate,
+                modifier = Modifier.focusRequester(rotateFocus),
+            )
+            Spacer(Modifier.width(24.dp))
+            ControllerButton(
+                icon = Icons.Default.Info,
+                contentDescription = stringResource(R.string.player_btn_info),
+                onClick = onInfo,
+                modifier = Modifier.focusRequester(infoFocus),
+            )
         }
-        Spacer(Modifier.height(14.dp))
-        Seeker(
-            positionMs = nowPos,
-            durationMs = nowDur,
-            bufferedMs = nowBuffered,
-            speed = speed,
-            focusRequester = progressFocusRequester,
-            onProgressFocusChange = onProgressFocusChange,
-            onSeekBack = onSeekBack,
-            onSeekFwd = onSeekFwd,
-            onMoveUp = { focusPlay() },
-            onHide = onHideController,
-            onInteraction = onInteraction,
-        )
     }
 }
 
 @Composable
-private fun Seeker(
+private fun ProgressBar(
     positionMs: Long,
     durationMs: Long,
     bufferedMs: Long,
-    speed: Float,
     focusRequester: FocusRequester,
     onProgressFocusChange: (Boolean) -> Unit,
     onSeekBack: () -> Unit,
     onSeekFwd: () -> Unit,
-    onMoveUp: () -> Unit,
+    onMoveDown: () -> Unit,
     onHide: () -> Unit,
     onInteraction: () -> Unit,
 ) {
     val pct = if (durationMs > 0L) (positionMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
-    // Buffered frontier (what ExoPlayer can play up to without stalling),
-    // rendered as a dim layer under the white playhead.
+    // Buffered frontier (what ExoPlayer can play up to without stalling):
+    // a dimmer bar under the white playhead. During progressive streaming
+    // this tracks how far the TDLib download has caught up.
     val bufferedPct = if (durationMs > 0L) (bufferedMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
     val interactionSource = remember { MutableInteractionSource() }
     val isFocused by interactionSource.collectIsFocusedAsState()
-    // Focus feedback via height: 4dp idle -> 6dp focused (no glow).
-    val barHeight = if (isFocused) 6.dp else 4.dp
+    // Focus feedback via height: 6dp idle -> 10dp focused (no glow). The bar
+    // lives in a fixed-height wrapper so the controller's overall height
+    // stays constant regardless of focus state.
+    val barHeight = if (isFocused) 10.dp else 6.dp
     // Report focus state for auto-hide logic.
     LaunchedEffect(isFocused) {
         onProgressFocusChange(isFocused)
     }
-
-    // JetStream seeker: current time on the left, end time on the right,
-    // slim bar + dot handle in between.
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
+    // Fixed-height wrapper: progress bar grows inside without shifting the
+    // controller layout (time row / button row stay put).
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(12.dp),
+        contentAlignment = Alignment.Center,
     ) {
-        Text(
-            text = formatMs(positionMs),
-            color = Color.White,
-            style = MaterialTheme.typography.labelMedium,
-        )
-        Spacer(Modifier.width(12.dp))
-        // Fixed-height wrapper: bar grows inside without shifting the row.
         Box(
             modifier = Modifier
-                .weight(1f)
-                .height(16.dp),
-            contentAlignment = Alignment.Center,
+                .fillMaxWidth()
+                .height(barHeight)
+                .focusRequester(focusRequester)
+                .focusable(interactionSource = interactionSource)
+                .onKeyEvent { ev ->
+                if (ev.type != KeyEventType.KeyDown) return@onKeyEvent false
+                when (ev.key) {
+                    Key.DirectionLeft -> { onInteraction(); onSeekBack(); true }
+                    Key.DirectionRight -> { onInteraction(); onSeekFwd(); true }
+                    Key.DirectionDown -> { onInteraction(); onMoveDown(); true }
+                    Key.DirectionUp -> { onInteraction(); onHide(); true }
+                    // OK on the progress bar: no-op by design (consume it so
+                    // it doesn't bubble up to the page-level handler), but it
+                    // still counts as interaction for the auto-hide timer.
+                    Key.DirectionCenter, Key.Enter -> { onInteraction(); true }
+                    else -> false
+                }
+            },
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(barHeight)
+                .border(
+                    width = if (isFocused) 2.dp else 0.dp,
+                    color = Color.White.copy(alpha = 0.9f),
+                    shape = RoundedCornerShape(50),
+                )
+                .background(
+                    if (isFocused) Color.White.copy(alpha = 0.35f) else Color.White.copy(alpha = 0.2f),
+                    RoundedCornerShape(50),
+                ),
         ) {
+            // Buffered layer: dim white, under the playhead. Clamped so it
+            // never visually exceeds the playhead position.
             Box(
                 modifier = Modifier
-                    .fillMaxWidth()
+                    .fillMaxWidth(bufferedPct.coerceAtLeast(pct))
                     .height(barHeight)
-                    .focusRequester(focusRequester)
-                    .focusable(interactionSource = interactionSource)
-                    .onKeyEvent { ev ->
-                        if (ev.type != KeyEventType.KeyDown) return@onKeyEvent false
-                        when (ev.key) {
-                            Key.DirectionLeft -> { onInteraction(); onSeekBack(); true }
-                            Key.DirectionRight -> { onInteraction(); onSeekFwd(); true }
-                            Key.DirectionUp -> { onInteraction(); onMoveUp(); true }
-                            Key.DirectionDown -> { onInteraction(); onHide(); true }
-                            // OK on the seeker: no-op by design (consume it so
-                            // it doesn't bubble to the page-level handler).
-                            Key.DirectionCenter, Key.Enter -> { onInteraction(); true }
-                            else -> false
-                        }
-                    },
-            ) {
-                // Track (dim) -> buffered (brighter) -> playhead (solid white).
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(barHeight)
-                        .background(Color.White.copy(alpha = 0.22f), RoundedCornerShape(50)),
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth(bufferedPct.coerceAtLeast(pct))
-                            .height(barHeight)
-                            .background(Color.White.copy(alpha = 0.45f), RoundedCornerShape(50)),
-                    )
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth(pct)
-                            .height(barHeight)
-                            .background(Color.White, RoundedCornerShape(50)),
-                    )
-                }
-            }
-            // Handle dot at the playhead edge (JetStream #938F99).
+                    .background(Color.White.copy(alpha = 0.35f), RoundedCornerShape(50)),
+            )
             Box(
                 modifier = Modifier
                     .fillMaxWidth(pct)
-                    .height(16.dp),
-                contentAlignment = Alignment.CenterEnd,
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(if (isFocused) 14.dp else 10.dp)
-                        .background(Color(0xFF938F99), CircleShape),
-                )
-            }
+                    .height(barHeight)
+                    .background(Color.White.copy(alpha = 0.8f), RoundedCornerShape(50)),
+            )
         }
-        Spacer(Modifier.width(12.dp))
-        Text(
-            text = formatMs(durationMs),
-            color = Color.White,
-            style = MaterialTheme.typography.bodySmall,
-        )
-        Spacer(Modifier.width(10.dp))
-        Text(
-            text = "${speed}x",
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            style = MaterialTheme.typography.labelMedium,
-        )
     }
+}
 }
 
 @Composable
@@ -1022,17 +967,16 @@ private fun ControllerButton(
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isFocused by interactionSource.collectIsFocusedAsState()
+    val isPressed by interactionSource.collectIsPressedAsState()
 
-    // JetStream circular button: Surface Variant base + On Surface icon.
-    // Focus swaps to the Primary accent so the focused control reads clearly
-    // on a 10-foot UI.
-    val bg = if (isFocused) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant
-    val iconTint = if (isFocused) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
+    // Two-state background: transparent default, white 60% focused. Pressing
+    // keeps the same 60% (no extra darkening). No glow.
+    val bgAlpha = if (isFocused) 0.6f else 0f
 
     Box(
         modifier = modifier
-            .size(40.dp)
-            .background(bg, CircleShape)
+            .size(48.dp)
+            .background(Color.White.copy(alpha = bgAlpha), CircleShape)
             .focusable(interactionSource = interactionSource)
             .clickable(
                 interactionSource = interactionSource,
@@ -1044,8 +988,8 @@ private fun ControllerButton(
         Icon(
             imageVector = icon,
             contentDescription = contentDescription,
-            tint = iconTint,
-            modifier = Modifier.size(20.dp),
+            tint = Color.White,
+            modifier = Modifier.size(28.dp),
         )
     }
 }
@@ -1088,8 +1032,9 @@ private fun MediaInfoDrawer(
         Column(modifier = Modifier.fillMaxSize()) {
             Text(
                 text = stringResource(R.string.player_info_title),
-                color = MaterialTheme.colorScheme.onSurface,
-                style = MaterialTheme.typography.titleLarge,
+                color = Color.White,
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold,
             )
             Spacer(Modifier.height(20.dp))
 
@@ -1113,8 +1058,8 @@ private fun MediaInfoDrawer(
                 Spacer(Modifier.height(16.dp))
                 Text(
                     text = item.caption!!,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f),
-                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color.White.copy(alpha = 0.85f),
+                    fontSize = 14.sp,
                 )
             }
         }
@@ -1129,14 +1074,15 @@ private fun InfoRow(label: String, value: String) {
     ) {
         Text(
             text = label,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            style = MaterialTheme.typography.bodyMedium,
+            color = Color.White.copy(alpha = 0.55f),
+            fontSize = 14.sp,
             modifier = Modifier.width(110.dp),
         )
         Text(
             text = value,
-            color = MaterialTheme.colorScheme.onSurface,
-            style = MaterialTheme.typography.bodyMedium,
+            color = Color.White,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Medium,
         )
     }
 }

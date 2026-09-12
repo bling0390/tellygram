@@ -111,20 +111,21 @@ private fun QrContent(
             Text(
                 text = title,
                 color = MaterialTheme.colorScheme.onBackground,
+                fontSize = 48.sp,
                 style = MaterialTheme.typography.displayLarge,
             )
             Spacer(Modifier.height(16.dp))
             Text(
                 text = subtitle,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodyLarge,
+                fontSize = 18.sp,
             )
             if (error != null) {
                 Spacer(Modifier.height(24.dp))
                 Text(
                     text = error,
                     color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.bodyLarge,
+                    fontSize = 16.sp,
                 )
             }
         }

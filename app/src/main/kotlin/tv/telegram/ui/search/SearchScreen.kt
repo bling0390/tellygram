@@ -112,7 +112,8 @@ fun SearchScreen(
             Text(
                 stringResource(R.string.search_title),
                 color = MaterialTheme.colorScheme.onBackground,
-                style = MaterialTheme.typography.headlineMedium,
+                fontSize = 28.sp,
+                fontWeight = FontWeight.Bold,
             )
             Spacer(Modifier.height(16.dp))
             SearchBar(
@@ -135,7 +136,7 @@ fun SearchScreen(
             Text(
                 stats,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodyMedium,
+                fontSize = 14.sp,
             )
             Spacer(Modifier.height(16.dp))
             if (!loaded) {
@@ -150,7 +151,7 @@ fun SearchScreen(
                         Text(
                             stringResource(R.string.search_no_match, searchQuery),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            style = MaterialTheme.typography.titleLarge,
+                            fontSize = 20.sp,
                         )
                     }
                 } else {
@@ -220,11 +221,12 @@ private fun SearchBar(
                     MaterialTheme.colorScheme.onSurfaceVariant
                 else
                     MaterialTheme.colorScheme.onSurface,
-                style = MaterialTheme.typography.titleLarge,
+                fontSize = 22.sp,
+                fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.weight(1f),
             )
             if (searching) {
-                Text("…", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
+                Text("…", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
             }
         }
     }
@@ -280,15 +282,16 @@ private fun ResultCard(
         ) {
             Text(
                 text = chat.title,
-                color = MaterialTheme.colorScheme.onSurface,
-                style = MaterialTheme.typography.bodyLarge,
+                color = Color.White,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.SemiBold,
                 maxLines = 2,
             )
             Spacer(Modifier.height(4.dp))
             Text(
                 text = chat.type.name,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodySmall,
+                fontSize = 12.sp,
             )
         }
     }
@@ -319,7 +322,7 @@ private fun DpadKeyboard(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.6f))
+            .background(Color.Black.copy(alpha = 0.6f))
             // Focus trap for the keyboard: consume direction keys only at
             // the grid edges (top row Up, bottom row Down, first column
             // Left, last column Right); everywhere else let the focus
@@ -351,16 +354,17 @@ private fun DpadKeyboard(
             modifier = Modifier
                 .fillMaxWidth(0.8f)
                 .height(380.dp)
-                .clip(RoundedCornerShape(4.dp))
-                .background(MaterialTheme.colorScheme.surface),
+                .clip(RoundedCornerShape(28.dp))
+                .background(Color(0xFF1E1E1E)),
         ) {
             Column(
                 modifier = Modifier.fillMaxSize().padding(24.dp),
             ) {
                 Text(
                     stringResource(R.string.search_type_to_search),
-                    color = MaterialTheme.colorScheme.onSurface,
-                    style = MaterialTheme.typography.bodyLarge,
+                    color = Color.White,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.SemiBold,
                 )
                 Spacer(Modifier.height(16.dp))
                 val rows = listOf(
@@ -415,7 +419,7 @@ private fun KeyButton(
         onClick = onClick,
         scale = CardDefaults.scale(focusedScale = 1.10f),
         colors = CardDefaults.colors(
-            containerColor = if (accent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+            containerColor = if (accent) MaterialTheme.colorScheme.primary else Color(0xFF2C2C2C),
         ),
         modifier = modifier
             .height(48.dp)
@@ -428,7 +432,7 @@ private fun KeyButton(
         ) {
             Text(
                 label,
-                color = if (accent) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+                color = Color.White,
                 fontSize = if (label.length > 1) 12.sp else 18.sp,
                 fontWeight = if (accent) FontWeight.Bold else FontWeight.SemiBold,
             )
