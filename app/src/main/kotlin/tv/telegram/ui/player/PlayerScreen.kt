@@ -12,6 +12,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -24,7 +25,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -76,6 +76,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -114,11 +115,18 @@ private const val TAG = "PlayerScreen"
 
 // JetStream seeker handle colour (Figma dark-palette "Outline" tone). Lives
 // here because tv-material3 exposes no slot for it in the colour scheme.
-private val SeekHandleColor = Color(0xFF938F99)
+// Playhead handle geometry: a 16dp disc with a 4dp white ring, filled with the
+// theme's outline colour (JetStream dark/outline = #8E9099). Drawn only while
+// the seek bar has focus — see Seeker().
+private val SeekHandleSize = 16.dp
+private val SeekHandleBorder = 4.dp
 
-// Figma's handle diameter (14 design px). Drawn only while the seek bar has
-// focus — see Seeker().
-private val SeekHandleSize = 14.dp
+// Figma 685:1449 -> Seeker (4157:25985) is a fixed 844dp band: 48dp time slot,
+// 8dp gap, the bar, 8dp gap, 48dp time slot. Pinning the bar to the leftover
+// 732dp (and both time slots to 48dp) keeps the track from re-measuring while
+// the time strings grow — 0:00 -> 1:08:24 used to stretch it mid-playback.
+private val SeekBarWidth = 732.dp
+private val SeekTimeSlotWidth = 48.dp
 
 // How long PlayerScreen waits before letting the heavy player composition run.
 // Covers the page-transition window so ExoPlayer construction never lands in the
@@ -985,7 +993,6 @@ private fun PlayerController(
             positionMs = nowPos,
             durationMs = nowDur,
             bufferedMs = nowBuffered,
-            speed = speed,
             focusRequester = progressFocusRequester,
             onProgressFocusChange = onProgressFocusChange,
             onSeekBack = onSeekBack,
@@ -1002,7 +1009,6 @@ private fun Seeker(
     positionMs: Long,
     durationMs: Long,
     bufferedMs: Long,
-    speed: Float,
     focusRequester: FocusRequester,
     onProgressFocusChange: (Boolean) -> Unit,
     onSeekBack: () -> Unit,
@@ -1029,6 +1035,7 @@ private fun Seeker(
     // slim bar + dot handle in between.
     Row(
         modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
@@ -1036,12 +1043,19 @@ private fun Seeker(
             // Figma: #FFFFFF at 80% opacity.
             color = Color.White.copy(alpha = 0.8f),
             style = MaterialTheme.typography.labelMedium,
+            // Fixed slot (Figma layout_ca3ac11c = 48dp wide), so a longer time
+            // string never pushes the bar sideways. Left-aligned per the design.
+            modifier = Modifier.width(SeekTimeSlotWidth),
+            textAlign = TextAlign.Start,
+            maxLines = 1,
+            softWrap = false,
         )
         Spacer(Modifier.width(8.dp))
-        // Fixed-height wrapper: bar grows inside without shifting the row.
+        // Fixed-size wrapper: bar grows inside without shifting the row, and a
+        // fixed width keeps the track from stretching as the labels change.
         Box(
             modifier = Modifier
-                .weight(1f)
+                .width(SeekBarWidth)
                 .height(16.dp),
             contentAlignment = Alignment.Center,
         ) {
@@ -1090,20 +1104,28 @@ private fun Seeker(
             // Playhead handle: drawn only while the bar itself has focus — it is
             // a focus affordance, not a permanent marker (the controller's own
             // visibility already gates it, since the seeker only composes inside
-            // PlayerController). Figma centres it on the played edge, so it
-            // straddles the boundary half and half.
+            // PlayerController). Sits inside the played portion, flush with its
+            // right end.
             if (isFocused) {
                 Box(
                     modifier = Modifier
+                        // The parent centres its children, so a pct-wide box would
+                        // be centred too: the handle then tracked from the MIDDLE
+                        // of the bar (0%) to its right end (100%) instead of
+                        // following the playhead. Pin it to the start.
+                        // widthIn keeps it at least as wide as the handle so the
+                        // dot never hangs off the bar's left edge at pct ~ 0.
+                        .align(Alignment.CenterStart)
+                        .widthIn(min = SeekHandleSize)
                         .fillMaxWidth(pct)
-                        .height(16.dp),
+                        .height(SeekHandleSize),
                     contentAlignment = Alignment.CenterEnd,
                 ) {
                     Box(
                         modifier = Modifier
-                            .offset(x = SeekHandleSize / 2)
                             .size(SeekHandleSize)
-                            .background(SeekHandleColor, CircleShape),
+                            .background(MaterialTheme.colorScheme.border, CircleShape)
+                            .border(SeekHandleBorder, Color.White, CircleShape),
                     )
                 }
             }
@@ -1113,13 +1135,15 @@ private fun Seeker(
             text = formatMs(durationMs),
             // Figma: #FFFFFF at 80% opacity.
             color = Color.White.copy(alpha = 0.8f),
+            // Figma: right slot is body/small (Inter Regular 400), not
+            // label/medium — keep the design's weight difference.
             style = MaterialTheme.typography.bodySmall,
-        )
-        Spacer(Modifier.width(8.dp))
-        Text(
-            text = "${speed}x",
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            style = MaterialTheme.typography.labelMedium,
+            // Same fixed 48dp slot as the position label, text right-aligned
+            // inside it per the design.
+            modifier = Modifier.width(SeekTimeSlotWidth),
+            textAlign = TextAlign.End,
+            maxLines = 1,
+            softWrap = false,
         )
     }
 }
@@ -1134,19 +1158,18 @@ private fun ControllerButton(
     val interactionSource = remember { MutableInteractionSource() }
     val isFocused by interactionSource.collectIsFocusedAsState()
 
-    // JetStream circular button: Surface Variant base + On Surface icon.
-    // Focus swaps to the Primary accent so the focused control reads clearly
-    // on a 10-foot UI.
-    // Figma: Surface Variant at 80% opacity with an On Surface icon at 80%.
-    // Focus keeps the Primary accent fully opaque so the focused control still
-    // reads clearly on a 10-foot UI.
+    // JetStream circular button: Surface Variant base + On Surface icon, both
+    // at the design's 80% node opacity.
+    // Focus swaps to Secondary Container + On Secondary (design spec
+    // 2026-09-12), kept fully opaque so the focused control still reads on a
+    // 10-foot UI.
     val bg = if (isFocused) {
-        MaterialTheme.colorScheme.primary
+        MaterialTheme.colorScheme.secondaryContainer
     } else {
         MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f)
     }
     val iconTint = if (isFocused) {
-        MaterialTheme.colorScheme.onPrimary
+        MaterialTheme.colorScheme.onSecondary
     } else {
         MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
     }
