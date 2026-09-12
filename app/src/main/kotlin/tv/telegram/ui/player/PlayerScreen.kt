@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -114,6 +115,10 @@ private const val TAG = "PlayerScreen"
 // JetStream seeker handle colour (Figma dark-palette "Outline" tone). Lives
 // here because tv-material3 exposes no slot for it in the colour scheme.
 private val SeekHandleColor = Color(0xFF938F99)
+
+// Figma's handle diameter (14 design px). Drawn only while the seek bar has
+// focus — see Seeker().
+private val SeekHandleSize = 14.dp
 
 // How long PlayerScreen waits before letting the heavy player composition run.
 // Covers the page-transition window so ExoPlayer construction never lands in the
@@ -1012,9 +1017,9 @@ private fun Seeker(
     val bufferedPct = if (durationMs > 0L) (bufferedMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
     val interactionSource = remember { MutableInteractionSource() }
     val isFocused by interactionSource.collectIsFocusedAsState()
-    // Focus feedback via height: 4dp idle -> 6dp focused (no glow).
-    // Figma's bar is 5px; focus still thickens it as a TV affordance.
-    val barHeight = if (isFocused) 6.dp else 5.dp
+    // Figma 685:1449: bar 3dp at rest, thickening to 5dp on focus as the TV
+    // focus affordance (the design itself defines no focus state).
+    val barHeight = if (isFocused) 5.dp else 3.dp
     // Report focus state for auto-hide logic.
     LaunchedEffect(isFocused) {
         onProgressFocusChange(isFocused)
@@ -1060,39 +1065,47 @@ private fun Seeker(
                         }
                     },
             ) {
-                // Track (dim) -> buffered (brighter) -> playhead (solid white).
+                // Figma 685:1449: track 20% white, buffered 45% white, played
+                // solid white — all sharing the bar height and a 2dp radius.
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(barHeight)
-                        .background(Color.White.copy(alpha = 0.22f), RoundedCornerShape(50)),
+                        .background(Color.White.copy(alpha = 0.20f), RoundedCornerShape(2.dp)),
                 ) {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth(bufferedPct.coerceAtLeast(pct))
                             .height(barHeight)
-                            .background(Color.White.copy(alpha = 0.45f), RoundedCornerShape(50)),
+                            .background(Color.White.copy(alpha = 0.45f), RoundedCornerShape(2.dp)),
                     )
                     Box(
                         modifier = Modifier
                             .fillMaxWidth(pct)
                             .height(barHeight)
-                            .background(Color.White, RoundedCornerShape(50)),
+                            .background(Color.White, RoundedCornerShape(2.dp)),
                     )
                 }
             }
-            // Handle dot at the playhead edge (JetStream #938F99).
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth(pct)
-                    .height(16.dp),
-                contentAlignment = Alignment.CenterEnd,
-            ) {
+            // Playhead handle: drawn only while the bar itself has focus — it is
+            // a focus affordance, not a permanent marker (the controller's own
+            // visibility already gates it, since the seeker only composes inside
+            // PlayerController). Figma centres it on the played edge, so it
+            // straddles the boundary half and half.
+            if (isFocused) {
                 Box(
                     modifier = Modifier
-                        .size(if (isFocused) 14.dp else 10.dp)
-                        .background(SeekHandleColor, CircleShape),
-                )
+                        .fillMaxWidth(pct)
+                        .height(16.dp),
+                    contentAlignment = Alignment.CenterEnd,
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .offset(x = SeekHandleSize / 2)
+                            .size(SeekHandleSize)
+                            .background(SeekHandleColor, CircleShape),
+                    )
+                }
             }
         }
         Spacer(Modifier.width(8.dp))
