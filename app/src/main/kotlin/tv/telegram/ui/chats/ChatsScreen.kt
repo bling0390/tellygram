@@ -707,9 +707,15 @@ private fun SidebarItem(
                             viewModel.ensureMediaFile(thumbId, priority = 8)
                         }
                     }
-                    if (thumbState != null) {
+                    // One request per path. Rebuilding it inline handed Coil a
+                    // brand-new (non-equal) request on every recomposition, which
+                    // restarted the load and made the thumbnail blink.
+                    val thumbRequest = remember(thumbState) {
+                        thumbState?.let { ImageRequest.Builder(ctx).data(File(it)).build() }
+                    }
+                    if (thumbRequest != null) {
                         AsyncImage(
-                            model = ImageRequest.Builder(ctx).data(File(thumbState)).build(),
+                            model = thumbRequest,
                             contentDescription = null,
                             contentScale = ContentScale.Crop,
                             modifier = Modifier
@@ -746,9 +752,15 @@ private fun SidebarItem(
 private fun AvatarPlaceholder(chat: ChatItem, viewModel: MainViewModel) {
     val ctx = LocalContext.current
     val photoId = chat.photoSmallFileId
-    val localPath = if (photoId != null) {
-        (viewModel.fileStateFor(photoId) as? FileDownloadState.Local)?.path
-    } else null
+    // Reactive avatar state: subscribe to the repo's state map so the avatar
+    // swaps in the moment its file lands. The old one-shot fileStateFor() read
+    // never recomposed, so a freshly downloaded avatar only appeared when some
+    // unrelated change (a focus move in the list) happened to recompose the row
+    // — which read as the list "flashing" during focus navigation.
+    val fileStates by viewModel.fileRepo.states.collectAsStateWithLifecycle()
+    val localPath = photoId?.let {
+        (fileStates[it] as? FileDownloadState.Local)?.path
+    }
     var imageFailed by remember(photoId, localPath) { mutableStateOf(false) }
     LaunchedEffect(photoId) {
         if (photoId != null && localPath == null) {
@@ -769,9 +781,14 @@ private fun AvatarPlaceholder(chat: ChatItem, viewModel: MainViewModel) {
             .padding(0.dp),
         contentAlignment = Alignment.Center,
     ) {
-        if (localPath != null && !imageFailed) {
+        // Memoised on the path: a fresh ImageRequest is never equal to the
+        // previous one, so Coil restarted the load and the avatar blinked.
+        val avatarRequest = remember(localPath) {
+            localPath?.let { ImageRequest.Builder(ctx).data(File(it)).build() }
+        }
+        if (avatarRequest != null && !imageFailed) {
             AsyncImage(
-                model = ImageRequest.Builder(ctx).data(File(localPath)).build(),
+                model = avatarRequest,
                 contentDescription = chat.title,
                 contentScale = ContentScale.Crop,
                 onError = { imageFailed = true },
@@ -1184,6 +1201,14 @@ private fun SidebarMediaCard(
     val thumbState = if (thumbId != null) {
         (fileStates[thumbId] as? FileDownloadState.Local)?.path
     } else null
+    // Memoised on the path: rebuilding the request inline made every
+    // recomposition hand Coil a non-equal request, which restarted the load
+    // and blinked the card.
+    val thumbRequest = remember(thumbState) {
+        thumbState?.let {
+            ImageRequest.Builder(ctx).data(File(it)).crossfade(true).build()
+        }
+    }
     // Fallback: if the thumbnail still isn't local after THUMB_TIMEOUT_MS
     // (download stalled / failed, or the message has no thumbnail at all),
     // stop spinning and show a static type icon instead.
@@ -1249,10 +1274,7 @@ private fun SidebarMediaCard(
                 // actually something to show.
                 if (!previewReady && thumbState != null) {
                     AsyncImage(
-                        model = ImageRequest.Builder(ctx)
-                            .data(File(thumbState))
-                            .crossfade(true)
-                            .build(),
+                        model = thumbRequest,
                         contentDescription = item.caption ?: "Media",
                         contentScale = ContentScale.Crop,
                         modifier = Modifier.fillMaxSize(),
@@ -1260,10 +1282,7 @@ private fun SidebarMediaCard(
                 }
             } else if (thumbState != null) {
                 AsyncImage(
-                    model = ImageRequest.Builder(ctx)
-                        .data(File(thumbState))
-                        .crossfade(true)
-                        .build(),
+                    model = thumbRequest,
                     contentDescription = item.caption ?: "Media",
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize(),
@@ -1417,7 +1436,9 @@ private fun PhotoFullscreen(
                     strokeWidth = 3.dp,
                 )
                 else -> AsyncImage(
-                    model = ImageRequest.Builder(ctx).data(File(localPath!!)).build(),
+                    model = remember(localPath) {
+                        localPath?.let { ImageRequest.Builder(ctx).data(File(it)).build() }
+                    },
                     contentDescription = item.caption,
                     contentScale = ContentScale.Fit,
                     modifier = Modifier.fillMaxSize(),

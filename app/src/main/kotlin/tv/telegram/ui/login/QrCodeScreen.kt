@@ -111,7 +111,10 @@ private fun QrContent(
             Text(
                 text = title,
                 color = MaterialTheme.colorScheme.onBackground,
-                style = MaterialTheme.typography.displayLarge,
+                // displayMedium (45sp): displayLarge (57sp) is JetStream's
+                // Top-10 rank-number tier, which read far too large for a login
+                // heading.
+                style = MaterialTheme.typography.displayMedium,
             )
             Spacer(Modifier.height(16.dp))
             Text(

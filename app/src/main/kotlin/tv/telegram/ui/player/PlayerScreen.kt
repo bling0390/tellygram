@@ -1177,9 +1177,16 @@ private fun PosterLayer(posterPath: String?, posterBitmap: ImageBitmap?, alpha: 
     val modifier = Modifier
         .fillMaxSize()
         .graphicsLayer { this.alpha = alpha }
+    val ctx = LocalContext.current
+    // Memoised on the path: a fresh ImageRequest is never equal to the previous
+    // one, so Coil restarted the load on every recomposition and the poster
+    // blinked.
+    val posterRequest = remember(posterPath) {
+        posterPath?.let { ImageRequest.Builder(ctx).data(File(it)).build() }
+    }
     when {
-        posterPath != null -> AsyncImage(
-            model = ImageRequest.Builder(LocalContext.current).data(File(posterPath)).build(),
+        posterRequest != null -> AsyncImage(
+            model = posterRequest,
             contentDescription = null,
             contentScale = ContentScale.Crop,
             modifier = modifier,

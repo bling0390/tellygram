@@ -4,7 +4,9 @@ package tv.telegram.ui.theme
 
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalFontFamilyResolver
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
@@ -117,6 +119,14 @@ fun TvgramTheme(
     themeMode: tv.telegram.ui.ThemeMode = tv.telegram.ui.ThemeMode.Dark,
     content: @Composable () -> Unit,
 ) {
+    // Compose loads res/font faces asynchronously: the first use of a weight
+    // paints with the system fallback and then swaps to Inter, which reads as a
+    // brief text flash. Warm the family up front so navigating never hits a cold
+    // font face. (This Compose version's preload() takes the family only.)
+    val fontResolver = LocalFontFamilyResolver.current
+    LaunchedEffect(fontResolver) {
+        fontResolver.preload(InterFamily)
+    }
     val scheme = when (themeMode) {
         tv.telegram.ui.ThemeMode.Dark -> JetStreamDarkColors
         tv.telegram.ui.ThemeMode.Light -> TvgramLightColors

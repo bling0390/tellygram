@@ -2,7 +2,11 @@
 
 package tv.telegram.ui.search
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,6 +17,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -40,10 +46,12 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.tv.material3.Border
 import androidx.tv.material3.Card
 import androidx.tv.material3.CardDefaults
 import androidx.tv.material3.MaterialTheme
@@ -107,14 +115,13 @@ fun SearchScreen(
             .background(MaterialTheme.colorScheme.background),
     ) {
         Column(
-            modifier = Modifier.fillMaxSize().padding(32.dp),
+            // Figma (3:293 / 665:1686): the search page has no page heading —
+            // the field IS the top of the page — and content is inset 58dp
+            // ((960 - 844) / 2), the same margin the player controller uses.
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(start = 58.dp, end = 58.dp, top = 40.dp, bottom = 40.dp),
         ) {
-            Text(
-                stringResource(R.string.search_title),
-                color = MaterialTheme.colorScheme.onBackground,
-                style = MaterialTheme.typography.headlineMedium,
-            )
-            Spacer(Modifier.height(16.dp))
             SearchBar(
                 query = editBuffer,
                 searching = searchSearching,
@@ -193,36 +200,64 @@ private fun SearchBar(
     railSearchFocus: FocusRequester? = null,
     onClick: () -> Unit,
 ) {
-    Card(
-        onClick = onClick,
-        scale = CardDefaults.scale(focusedScale = 1.02f),
+    val interactionSource = remember { MutableInteractionSource() }
+    val focused by interactionSource.collectIsFocusedAsState()
+    Box(
         modifier = Modifier
             .fillMaxWidth()
             .height(64.dp)
+            .clip(RoundedCornerShape(4.dp))
+            .background(MaterialTheme.colorScheme.background)
+            // Figma Text field: 1px Outline hairline at rest, 2px Primary
+            // stroke while focused — the focus cue is the border, not a scale.
+            .border(
+                width = if (focused) 2.dp else 1.dp,
+                color = if (focused) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.border,
+                shape = RoundedCornerShape(4.dp),
+            )
             .focusRequester(fr)
+            .focusable(interactionSource = interactionSource)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick,
+            )
             // Top of the page: Up stays put (nothing above the bar); Left
-            // lands on the rail's Search item — declarative boundary, no
-            // onKeyEvent.
+            // lands on the rail's Search item — declarative boundary.
             .focusProperties {
                 up = FocusRequester.Cancel
                 railSearchFocus?.let { left = it }
             },
     ) {
         Row(
-            modifier = Modifier.fillMaxSize().padding(horizontal = 20.dp),
+            // Figma: 20px / 28px padding (focused state).
+            modifier = Modifier.fillMaxSize().padding(horizontal = 28.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text("", fontSize = 24.sp)
-            Spacer(Modifier.width(12.dp))
             Text(
-                text = if (query.isEmpty()) stringResource(R.string.search_placeholder) else query + "_",
-                color = if (query.isEmpty())
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                else
-                    MaterialTheme.colorScheme.onSurface,
-                style = MaterialTheme.typography.titleLarge,
-                modifier = Modifier.weight(1f),
+                text = if (query.isEmpty()) stringResource(R.string.search_placeholder) else query,
+                // Placeholder sits at 60% opacity; typed text is full strength.
+                color = if (query.isEmpty()) {
+                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                } else {
+                    MaterialTheme.colorScheme.onSurface
+                },
+                // Figma uses Inter 500 14px here (our titleSmall).
+                style = MaterialTheme.typography.titleSmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
+            if (focused) {
+                // Figma's 1px Primary I-beam caret.
+                Spacer(Modifier.width(4.dp))
+                Box(
+                    Modifier
+                        .width(1.5.dp)
+                        .height(24.dp)
+                        .background(MaterialTheme.colorScheme.primary),
+                )
+            }
+            Spacer(Modifier.weight(1f))
             if (searching) {
                 Text("…", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
             }
@@ -239,8 +274,9 @@ private fun ResultsGrid(
 ) {
     LazyVerticalGrid(
         columns = GridCells.Fixed(4),
-        horizontalArrangement = Arrangement.spacedBy(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+        // Figma cards sit 20px apart.
+        horizontalArrangement = Arrangement.spacedBy(20.dp),
+        verticalArrangement = Arrangement.spacedBy(20.dp),
         modifier = Modifier.fillMaxSize(),
     ) {
         itemsIndexed(items, key = { _, chat -> chat.id }) { index, chat ->
@@ -267,6 +303,13 @@ private fun ResultCard(
     Card(
         onClick = onClick,
         scale = CardDefaults.scale(focusedScale = 1.05f),
+        // Figma cards carry a 0.5px rgba(255,255,255,0.1) hairline, and the
+        // selected card is outlined with a 3px white stroke.
+        border = CardDefaults.border(
+            Border(BorderStroke(0.5.dp, Color.White.copy(alpha = 0.1f))),
+            Border(BorderStroke(3.dp, Color.White)),
+            Border(BorderStroke(0.5.dp, Color.White.copy(alpha = 0.1f))),
+        ),
         modifier = Modifier
             .height(96.dp)
             .focusProperties {
@@ -347,12 +390,13 @@ private fun DpadKeyboard(
     ) {
         // Plain Box, not Card(onClick = {}): the empty onClick made the whole
         // panel an accidental focus target. This is just a rounded backdrop.
+        // Figma keyboard body is #1D2228 with a 4px radius.
         Box(
             modifier = Modifier
                 .fillMaxWidth(0.8f)
                 .height(380.dp)
                 .clip(RoundedCornerShape(4.dp))
-                .background(MaterialTheme.colorScheme.surface),
+                .background(Color(0xFF1D2228)),
         ) {
             Column(
                 modifier = Modifier.fillMaxSize().padding(24.dp),
@@ -411,15 +455,26 @@ private fun KeyButton(
     fr: FocusRequester? = null,
     onFocusChange: ((Boolean) -> Unit)? = null,
 ) {
+    var keyFocused by remember { mutableStateOf(false) }
     Card(
         onClick = onClick,
         scale = CardDefaults.scale(focusedScale = 1.10f),
+        // Figma keyboard keys: rgba(58,67,78,0.5) at rest, solid white with
+        // Grey/800 (#3C4043) text while active; the primary (search) key is
+        // #3A4B5D with white text.
         colors = CardDefaults.colors(
-            containerColor = if (accent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+            containerColor = when {
+                accent -> Color(0xFF3A4B5D)
+                keyFocused -> Color.White
+                else -> Color(0xFF3A434E).copy(alpha = 0.5f)
+            },
         ),
         modifier = modifier
             .height(48.dp)
-            .then(if (onFocusChange != null) Modifier.onFocusChanged { onFocusChange(it.hasFocus) } else Modifier)
+            .onFocusChanged {
+                keyFocused = it.hasFocus
+                onFocusChange?.invoke(it.hasFocus)
+            }
             .let { if (fr != null) it.focusRequester(fr) else it },
     ) {
         Box(
@@ -428,9 +483,14 @@ private fun KeyButton(
         ) {
             Text(
                 label,
-                color = if (accent) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
-                fontSize = if (label.length > 1) 12.sp else 18.sp,
-                fontWeight = if (accent) FontWeight.Bold else FontWeight.SemiBold,
+                // Figma label: Roboto Medium 16px in Grey/300 (#DADCE0).
+                color = when {
+                    accent -> Color.White
+                    keyFocused -> Color(0xFF3C4043)
+                    else -> Color(0xFFDADCE0)
+                },
+                fontSize = if (label.length > 1) 12.sp else 16.sp,
+                fontWeight = if (accent) FontWeight.Bold else FontWeight.Medium,
             )
         }
     }
