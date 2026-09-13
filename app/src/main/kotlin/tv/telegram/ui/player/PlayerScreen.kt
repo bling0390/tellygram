@@ -1315,13 +1315,22 @@ private fun SpeedMenu(
 ) {
     val itemFocuses = remember(speeds) { speeds.map { FocusRequester() } }
     val selectedIndex = speeds.indexOf(current).coerceAtLeast(0)
+    // Single source of truth for the highlight: the pill follows this index, not
+    // the focus system. A Popup window focuses its FIRST focusable child as it
+    // opens, so a focus-driven pill painted 1.0x for a frame before the
+    // requestFocus below landed on the rate in effect — the "highlight jumps to
+    // the selected entry" flicker. Enter/Center is handled here for the same
+    // reason: the selection must be whatever the pill shows, wherever real
+    // focus happens to sit.
     var focusedIndex by remember { mutableIntStateOf(selectedIndex) }
 
     // The Popup is a separate window, so the first requestFocus can land before
-    // its node is attached — retry a few frames (same as the other popups).
+    // its node is attached — retry a few frames, but stop as soon as the user
+    // navigates so a late retry can't yank focus back.
     LaunchedEffect(Unit) {
         withFrameNanos { }
         repeat(5) {
+            if (focusedIndex != selectedIndex) return@LaunchedEffect
             try { itemFocuses[selectedIndex].requestFocus() } catch (_: IllegalStateException) {}
             delay(40L)
         }
@@ -1351,6 +1360,10 @@ private fun SpeedMenu(
                 when (ev.key) {
                     Key.DirectionUp -> { moveFocus(-1); true }
                     Key.DirectionDown -> { moveFocus(+1); true }
+                    Key.DirectionCenter, Key.Enter -> {
+                        onSelect(speeds[focusedIndex])
+                        true
+                    }
                     else -> false
                 }
             },
@@ -1359,6 +1372,7 @@ private fun SpeedMenu(
             SpeedMenuItem(
                 label = formatSpeed(speed),
                 selected = index == selectedIndex,
+                focused = index == focusedIndex,
                 focusRequester = itemFocuses[index],
                 onClick = { onSelect(speed) },
             )
@@ -1370,13 +1384,13 @@ private fun SpeedMenu(
 private fun SpeedMenuItem(
     label: String,
     selected: Boolean,
+    focused: Boolean,
     focusRequester: FocusRequester,
     onClick: () -> Unit,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
-    val focused by interactionSource.collectIsFocusedAsState()
-    // Figma: focused row = On Surface fill + Inverse On Surface label. The check
-    // marks the rate currently in effect.
+    // The focused look comes from the menu's index state, not from the focus
+    // system's own reporting — see SpeedMenu.
     val fill = if (focused) MaterialTheme.colorScheme.onSurface else Color.Transparent
     val fg = if (focused) {
         MaterialTheme.colorScheme.inverseOnSurface
