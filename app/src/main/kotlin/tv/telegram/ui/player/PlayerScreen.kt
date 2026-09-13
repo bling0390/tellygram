@@ -271,8 +271,9 @@ fun PlayerScreen(
     // Everything below (ExoPlayer build, PlayerView inflation, renderer and
     // MediaCodec warm-up) is main-thread work, and it used to run while the page
     // transition was still animating — which dropped frames when opening a video
-    // from the media grid. Compose a poster-only shell first and let the player
-    // in once that window has passed.
+    // from the media grid. Compose a plain shell first and let the player in
+    // once that window has passed. No poster here any more: artwork flashing up
+    // ahead of the video read as a glitch (2026-09-13).
     var playerReady by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         delay(PLAYER_INIT_DELAY_MS)
@@ -285,7 +286,6 @@ fun PlayerScreen(
                 .background(MaterialTheme.colorScheme.background),
             contentAlignment = Alignment.Center,
         ) {
-            PosterLayer(posterPath = posterPath, posterBitmap = posterBitmap, alpha = 1f)
             CircularProgressIndicator(color = Color.White)
         }
         return
@@ -603,11 +603,12 @@ fun PlayerScreen(
             ?: downloadError?.let { stringResource(R.string.player_download_failed, it) }
 
         // ── CinematicBackground poster (Figma 1117:8996) ────────────────────
-        // The design layers a Poster under a Scrim. It fades out on the first
-        // rendered frame and comes back while an error is on screen, so
-        // failures sit on artwork instead of black. Deliberately NOT rotated
+        // Now only a failure puts artwork on screen: the poster used to fill the
+        // window until the first frame rendered, and that poster-then-video swap
+        // read as a glitch (2026-09-13). The thumbnail preload stays because the
+        // error state still wants a still to sit on. Deliberately NOT rotated
         // with the surface: by the time a user rotates (a deliberate button
-        // press) the poster is long faded out.
+        // press) the poster is long gone.
         LaunchedEffect(current.messageId, current.thumbnailFileId) {
             val thumbId = current.thumbnailFileId ?: return@LaunchedEffect
             if (viewModel.fileStateFor(thumbId) !is FileDownloadState.Local) {
@@ -615,7 +616,7 @@ fun PlayerScreen(
             }
         }
         val posterAlpha by animateFloatAsState(
-            targetValue = if (firstFrameRendered && errorMsg == null) 0f else 1f,
+            targetValue = if (errorMsg != null) 1f else 0f,
             animationSpec = tween(durationMillis = 300),
             label = "posterAlpha",
         )
