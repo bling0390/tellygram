@@ -342,32 +342,12 @@ class TdFileRepository(
             Log.d(TAG, "startStreaming(fileId=$fileId): already local, marked complete")
             return
         }
-        // Windowed download: fetch [0, windowBytes) only — playback advances
-        // the window via extendStream as the playhead moves.
-        //
-        // The file is deleted first. Bytes left by an earlier session are of
-        // unknown shape (a past seek may have downloaded a window far from 0),
-        // and serving them as a contiguous prefix is what made a fresh
-        // playback of an already-touched file read zeros and fail container
-        // sniffing — "None of the available extractors could read the stream"
-        // (third live log, 2026-09-13). A fresh window costs a re-download; a
-        // hole costs correctness.
+        // Fresh contiguous download from 0. The delete matters: bytes left by
+        // an earlier attempt (a windowed download from an older build, or a
+        // seek) are NOT a prefix, and serving them as one is what fed the
+        // extractor holes (2026-09-13).
         resetStreamWindow(fileId, 0, priority)
-        Log.d(TAG, "startStreaming(fileId=$fileId, priority=$priority, window=${windowBytes / 1024 / 1024}MB)")
-    }
-
-    /**
-     * Re-target the active download to start at [offset] (used on seek).
-     *
-     * Goes through [resetStreamWindow] deliberately: the previous window is
-     * deleted rather than remembered as a frozen range, so the local file
-     * always holds exactly one contiguous window and "is this byte real?" is
-     * answerable from the file itself. Keeping those bytes alive is what let a
-     * stale range hand the extractor hole data.
-     */
-    fun seekStream(fileId: Int, offset: Long, priority: Int = 1) {
-        Log.d(TAG, "seekStream(fileId=$fileId, offset=$offset)")
-        resetStreamWindow(fileId, offset, priority)
+        Log.d(TAG, "startStreaming(fileId=$fileId, priority=$priority): contiguous from 0")
     }
 
     /**
@@ -376,17 +356,6 @@ class TdFileRepository(
      * size — no holes within the active segment. No-op if the target is
      * already covered or the file is complete.
      */
-    fun extendStream(fileId: Int, targetBytes: Long, priority: Int = 1) {
-        streamingStates[fileId]?.let { cur ->
-            if (cur.completed) return
-            if (targetBytes <= cur.targetBytes) return
-            val limit = (targetBytes - cur.downloadedSize).toIntOffset().coerceAtLeast(1)
-            streamingStates[fileId] = cur.copy(targetBytes = targetBytes)
-            client.send(TdApi.DownloadFile(fileId, priority, cur.downloadedSize.toIntOffset(), limit, false))
-            Log.d(TAG, "extendStream(fileId=$fileId, to=$targetBytes)")
-        }
-    }
-
     /** Current window size used for windowed streaming (bytes). */
     val streamWindowBytes: Long get() = windowBytes
 
@@ -519,22 +488,24 @@ class TdFileRepository(
      * single window. TdDataSource detects the epoch bump and re-opens the
      * (recreated) file.
      */
-    fun resetStreamWindow(fileId: Int, pos: Long, priority: Int = 1) {
+    fun resetStreamWindow(fileId: Int, pos: Long = 0, priority: Int = 1) {
         val cur = streamingStates[fileId]
         client.send(TdApi.CancelDownloadFile(fileId, false))
         client.send(TdApi.DeleteFile(fileId))
         streamingStates[fileId] = StreamingState(
             fileId = fileId,
-            activeStart = pos,
-            downloadedSize = pos,
-            targetBytes = pos + windowBytes,
+            targetBytes = Long.MAX_VALUE,
             epoch = (cur?.epoch ?: 0) + 1,
             resetAtMs = System.currentTimeMillis(),
         )
         wakeStreamWaiters(fileId)
-        client.send(TdApi.DownloadFile(fileId, priority, pos.toIntOffset(), windowBytes.toIntOffset(), false))
+        // Whole file, sequential from 0 (limit 0 = no limit). Disk usage is
+        // bounded by the cache quota and the water-mark eviction instead of by a
+        // window — the price of never serving a hole. [pos] is only logged, so
+        // the caller's intent stays visible.
+        client.send(TdApi.DownloadFile(fileId, priority, 0, 0, false))
         _states.value = _states.value + (fileId to FileDownloadState.Pending())
-        Log.i(TAG, "resetStreamWindow(fileId=$fileId, pos=$pos, epoch=${(cur?.epoch ?: 0) + 1})")
+        Log.i(TAG, "resetStreamWindow(fileId=$fileId, wasAt=$pos): restarting contiguous from 0")
     }
 
     /**

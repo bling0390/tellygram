@@ -14,15 +14,18 @@ import java.io.RandomAccessFile
 /**
  * ExoPlayer DataSource that serves a Telegram file progressively.
  *
- * URI scheme: `td://<fileId>`. Every read is backed by TDLib's sequential
- * `DownloadFile`: playback starts as soon as the moov header has arrived and
- * keeps playing while the rest of the file streams down (updateFile-driven
- * progress). `read()` blocks until the download frontier passes the requested
- * offset — same approach as Telegram X's streaming player.
+ * URI scheme: `td://<fileId>`. The local file is always ONE CONTIGUOUS PREFIX
+ * FROM BYTE 0: the download only ever starts at 0 and appends. Nothing else is
+ * trusted, because TDLib's byte counters describe "bytes on disk" rather than
+ * a contiguous prefix, and an offset (windowed) download leaves a hole below it
+ * that a reader cannot tell apart from data. Five live sessions on 2026-09-13
+ * ended in "UnrecognizedInputFormatException" / "Invalid NAL length" for
+ * exactly that reason — the extractor was fed bytes nobody had written.
  *
- * Seeking past the current frontier re-points the TDLib download to that
- * offset (DownloadFile offset param) so resume/jump-to-position don't wait
- * for the sequential download to crawl up.
+ * The consequence is deliberate: seeking into a region that has not downloaded
+ * yet means WAITING for the download to reach it, and gives up with a retryable
+ * IOException if that takes too long (ExoPlayer retries those itself). Slow
+ * beats corrupt.
  *
  * Non-`td://` URIs are delegated to [fallback] (file:// for previews etc).
  */
@@ -55,19 +58,9 @@ class TdDataSource(
         Log.d(TAG, "open: file=$fileId pos=${dataSpec.position} len=${dataSpec.length}")
         fileRepo.startStreaming(fileId, priority = 1)
 
-        // Only a genuine jump re-points the download — and with it builds a new
-        // window on disk. The extractor re-opens the source to probe (live log
-        // 2026-09-13: opens at 0, 683846, 999233 inside 400ms), and treating
-        // that as a seek deleted the window and restarted the download on every
-        // probe. A position inside the current window is left alone; the read
-        // path waits for the download if it has not arrived yet.
-        val st = fileRepo.streamState(fileId)
-        if (st != null && !st.completed &&
-            (dataSpec.position >= st.targetBytes || dataSpec.position < st.activeStart)
-        ) {
-            fileRepo.seekStream(fileId, dataSpec.position)
-        }
-
+        // A seek never re-points the download: the file stays a contiguous
+        // prefix from 0, and reading an undownloaded region waits for it (see
+        // the class comment). Every open therefore just attaches to the prefix.
         val f = openStreamFile(fileId, dataSpec.position)
             ?: throw IOException("no local path for file $fileId (download failed?)")
         file = f
@@ -149,63 +142,34 @@ class TdDataSource(
                 st = fileRepo.streamState(fileId) ?: st
             }
 
-            // How far the request sits from the download in flight decides who
-            // moves. A read that merely reaches past the frontier is served by
-            // the sequential download: extend its window and keep waiting. A
-            // read that jumped AHEAD of the download, or back behind the active
-            // segment with no frozen range covering it, has to re-point the
-            // download instead.
-            //
-            // Order matters: extendStream only continues from the current
-            // frontier, so extending first seeds a window that starts hundreds
-            // of MB behind the playhead and playback waits for a download that
-            // can never catch up (2026-09-13 log: read at 866MB, frontier 3.5MB,
-            // target 982MB — target was computed from the playhead, the
-            // download still inched up from the old frontier).
-            // Frontier: how far the current window has really been written.
-            // Measured from the file itself — TDLib's counter counts bytes on
-            // disk rather than a contiguous prefix.
-            val frontier = windowFrontier(st, handle)
-            val jumpedAhead = pos > frontier + READ_AHEAD_SLACK_BYTES
-            val jumpedBack = pos < st.activeStart
-            if (!jumpedAhead && !jumpedBack && !st.completed && pos + length > st.targetBytes) {
-                fileRepo.extendStream(fileId, pos + fileRepo.streamWindowBytes)
-            }
+            // How much of the file is really on disk. The download only ever
+            // appends to a prefix from 0, so the file's own length is the whole
+            // truth — no TDLib counter, no window bookkeeping.
+            val end = prefixEnd(st, handle)
 
             // The one legitimate end of stream.
             if (st.completed && st.expectedSize > 0 && pos >= st.expectedSize) {
                 return C.RESULT_END_OF_INPUT
             }
 
-            // Only bytes the file actually contains may be served. The file is
-            // ground truth: the repo deletes it whenever the window moves, so
-            // what is on disk is exactly the current window, written from
-            // activeStart upwards. Nothing below the window is data — serving a
-            // hole is what made the extractor reject the stream ("None of the
-            // available extractors could read the stream", third live log
-            // 2026-09-13).
-            val available = st.completed ||
-                (pos >= st.activeStart && pos + length <= windowFrontier(st, handle))
-            if (!available) {
-                if (jumpedAhead || jumpedBack) {
-                    fileRepo.seekStream(fileId, pos)
-                }
-                if (!waitForStreamRange(fileId, handle, pos, deadline)) {
+            // Past the prefix: the download has not reached here yet. Wait for
+            // it — jumping the download forward is what left holes the extractor
+            // choked on.
+            if (pos >= end) {
+                if (st.completed) return C.RESULT_END_OF_INPUT
+                if (System.currentTimeMillis() >= deadline) {
                     Log.w(
                         TAG,
-                        "read: download stalled for file $fileId at pos $pos " +
-                            "(frontier=${windowFrontier(st, handle)}, " +
-                            "window=${st.activeStart}..${st.targetBytes}, " +
-                            "complete=${st.completed}, jumped=${jumpedAhead || jumpedBack})",
+                        "read: waiting on the download for file $fileId at pos $pos " +
+                            "(downloaded=$end, complete=${st.completed})",
                     )
-                    throw IOException("download stalled for file $fileId at $pos")
+                    throw IOException("download has not reached $pos for file $fileId")
                 }
+                sleepBriefly()
                 continue
             }
 
-            val cur = st
-            val segEnd = windowFrontier(cur, handle) - 1
-            val toRead = minOf(length.toLong(), segEnd - pos + 1).toInt()
+            val toRead = minOf(length.toLong(), end - pos).toInt()
             if (toRead > 0) {
                 val n = handle.read(buffer, offset, toRead)
                 if (n > 0) {
@@ -214,41 +178,17 @@ class TdDataSource(
                 }
             }
 
-            // Nothing readable yet: the frontier has not reached `pos`, or TDLib
-            // has not flushed that part of the file to disk. Only a completed file
-            // may end here — otherwise wait, then fail retryably.
-            if (cur.completed) return C.RESULT_END_OF_INPUT
+            // Short/nothing read even though the prefix claims bytes: wait for
+            // the file to catch up. Only a completed file may end here.
+            if (st.completed) return C.RESULT_END_OF_INPUT
             if (System.currentTimeMillis() >= deadline) {
                 Log.w(
                     TAG,
                     "read: no bytes for file $fileId at pos $pos " +
-                        "(frontier=${windowFrontier(cur, handle)}, complete=${cur.completed})",
+                        "(downloaded=${prefixEnd(st, handle)}, complete=${st.completed})",
                 )
                 throw IOException("stream stalled for file $fileId at $pos")
             }
-            sleepBriefly()
-        }
-    }
-
-    /**
-     * Waits (up to [deadline]) for the current window to reach [pos].
-     *
-     * Polls the file's length on purpose: TDLib's counters lag, and a counter
-     * that never moves while the file grows would stall playback. ExoPlayer
-     * takes short reads, so one byte past [pos] is enough to hand something
-     * back.
-     */
-    private fun waitForStreamRange(
-        fileId: Int,
-        handle: RandomAccessFile,
-        pos: Long,
-        deadline: Long,
-    ): Boolean {
-        while (true) {
-            val st = fileRepo.streamState(fileId) ?: return false
-            if (st.completed) return true
-            if (pos >= st.activeStart && pos + 1 <= windowFrontier(st, handle)) return true
-            if (System.currentTimeMillis() >= deadline) return false
             sleepBriefly()
         }
     }
@@ -263,28 +203,24 @@ class TdDataSource(
     }
 
     /**
-     * How far the current window has really been written.
+     * How many bytes of the file are really on disk.
      *
-     * TDLib's downloadedSize is not usable here — it counts bytes on disk, not
-     * a contiguous prefix, and sat below the window start right after
-     * re-points in the live logs. The file's own length is ground truth because
-     * the repo keeps exactly one window on disk.
+     * The download always starts at 0 and appends, so this is a contiguous
+     * prefix: every byte below it is data. This is the only frontier the reader
+     * trusts — TDLib's downloadedSize counts bytes on disk rather than a
+     * contiguous prefix, and offset downloads left holes that read as zeros and
+     * killed playback (2026-09-13).
      */
-    private fun windowFrontier(state: StreamingState, handle: RandomAccessFile): Long {
+    private fun prefixEnd(state: StreamingState, handle: RandomAccessFile): Long {
         if (state.completed) return state.expectedSize.coerceAtLeast(0L)
-        // Nothing written since the window was rebuilt: what is on disk is the
-        // PREVIOUS window (a hole where the new one goes), so nothing may be
-        // served yet. Waiting for the first write is what stops a fresh
-        // playback from reading the old file's holes and failing container
-        // sniffing (live log 2026-09-13: UnrecognizedInputFormatException 1.3s
-        // after open).
+        // Nothing written since the file was restarted: whatever is on disk
+        // belongs to a previous attempt, so nothing may be served yet.
         val path = state.path
         if (state.resetAtMs > 0 && path != null) {
             val touched = try { File(path).lastModified() } catch (_: SecurityException) { 0L }
-            if (touched < state.resetAtMs) return state.activeStart
+            if (touched < state.resetAtMs) return 0L
         }
-        val written = try { handle.length() } catch (_: IOException) { 0L }
-        return minOf(state.targetBytes, written.coerceAtLeast(state.activeStart))
+        return try { handle.length() } catch (_: IOException) { 0L }
     }
 
     override fun getUri(): Uri = openedUri ?: Uri.EMPTY
@@ -316,14 +252,8 @@ class TdDataSource(
         // file is checked directly, so this is only the sleep between checks.
         private const val READ_POLL_MS = 100L
 
-        // How long open() may wait for the recreated file after a window reset.
+        // How long open() may wait for the recreated file after a restart.
         private const val PATH_OPEN_WAIT_MS = 15_000L
-
-        // A read further ahead of the download frontier than this is treated as
-        // a jump and re-points the download, instead of waiting for the
-        // sequential download to crawl there (which it cannot do in time for a
-        // multi-hundred-MB gap).
-        private const val READ_AHEAD_SLACK_BYTES = 8L * 1024 * 1024
 
         fun uriFor(fileId: Int): Uri = Uri.parse("$SCHEME_TD://$fileId")
     }
