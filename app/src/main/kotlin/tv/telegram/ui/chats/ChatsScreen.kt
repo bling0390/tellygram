@@ -110,6 +110,7 @@ import tv.telegram.td.FileDownloadState
 import tv.telegram.td.MediaItem
 import tv.telegram.td.MediaType
 import tv.telegram.ui.MainViewModel
+import tv.telegram.ui.components.ConfirmDialog
 import tv.telegram.ui.focus.BackPriority
 import tv.telegram.ui.focus.BackRegistration
 import tv.telegram.ui.focus.dpadNavigationSounds
@@ -1658,45 +1659,18 @@ private fun ChatConfirmDialog(
     onCancel: () -> Unit,
 ) {
     val isDelete = action is ChatConfirmAction.Delete
-    val cancelFocus = remember { FocusRequester() }
-    LaunchedEffect(action) {
-        withFrameNanos { }
-        repeat(5) {
-            try { cancelFocus.requestFocus() } catch (_: IllegalStateException) {}
-            delay(60)
-        }
-    }
-    AlertDialog(
-        modifier = Modifier.dpadNavigationSounds(),
-        onDismissRequest = onCancel,
-        title = {
-            Text(
-                stringResource(
-                    if (isDelete) R.string.chat_menu_delete_confirm_title
-                    else R.string.chat_menu_archive_confirm_title
-                )
-            )
-        },
-        text = {
-            Text(
-                stringResource(
-                    if (isDelete) R.string.chat_menu_delete_confirm_text
-                    else R.string.chat_menu_archive_confirm_text
-                )
-            )
-        },
-        confirmButton = {
-            TextButton(onClick = onConfirm) {
-                Text(stringResource(R.string.chat_menu_confirm))
-            }
-        },
-        dismissButton = {
-            TextButton(
-                onClick = onCancel,
-                modifier = Modifier.focusRequester(cancelFocus),
-            ) {
-                Text(stringResource(R.string.chat_menu_cancel))
-            }
-        },
+    ConfirmDialog(
+        title = stringResource(
+            if (isDelete) R.string.chat_menu_delete_confirm_title
+            else R.string.chat_menu_archive_confirm_title
+        ),
+        text = stringResource(
+            if (isDelete) R.string.chat_menu_delete_confirm_text
+            else R.string.chat_menu_archive_confirm_text
+        ),
+        confirmLabel = stringResource(R.string.chat_menu_confirm),
+        onConfirm = onConfirm,
+        cancelLabel = stringResource(R.string.chat_menu_cancel),
+        onDismiss = onCancel,
     )
 }

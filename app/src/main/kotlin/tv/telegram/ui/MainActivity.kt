@@ -73,6 +73,7 @@ import tv.telegram.ui.player.PlayerScreen
 import tv.telegram.ui.search.SearchScreen
 import tv.telegram.ui.settings.SettingsScreen
 import tv.telegram.ui.nav.Routes
+import tv.telegram.ui.components.ConfirmDialog
 import tv.telegram.ui.components.RightDrawer
 import tv.telegram.ui.focus.BackController
 import tv.telegram.ui.focus.BackPriority
@@ -350,23 +351,13 @@ private fun AppNavHost(viewModel: MainViewModel, backController: BackController)
         // Exit confirmation (Back on the rail). Confirm quits the app;
         // cancel / Back closes it and focus returns to the rail item.
         if (showExitConfirm) {
-            AlertDialog(
-                modifier = Modifier.dpadNavigationSounds(),
-                onDismissRequest = { showExitConfirm = false },
-                title = { Text(stringResource(R.string.exit_confirm_title)) },
-                text = { Text(stringResource(R.string.exit_confirm_text)) },
-                confirmButton = {
-                    TextButton(onClick = {
-                        (context as? Activity)?.finish()
-                    }) {
-                        Text(stringResource(R.string.exit_confirm_confirm))
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = { showExitConfirm = false }) {
-                        Text(stringResource(R.string.exit_confirm_cancel))
-                    }
-                },
+            ConfirmDialog(
+                title = stringResource(R.string.exit_confirm_title),
+                text = stringResource(R.string.exit_confirm_text),
+                confirmLabel = stringResource(R.string.exit_confirm_confirm),
+                onConfirm = { (context as? Activity)?.finish() },
+                cancelLabel = stringResource(R.string.exit_confirm_cancel),
+                onDismiss = { showExitConfirm = false },
             )
         }
 

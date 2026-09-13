@@ -56,14 +56,13 @@ import tv.telegram.td.TdUser
 import tv.telegram.ui.Language
 import tv.telegram.ui.MainViewModel
 import tv.telegram.ui.ThemeMode
+import tv.telegram.ui.components.ConfirmDialog
 import tv.telegram.ui.focus.dpadNavigationSounds
 import androidx.tv.material3.Border
 import androidx.tv.material3.Card
 import androidx.tv.material3.CardDefaults
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.TextButton
 
 @Composable
 fun SettingsScreen(viewModel: MainViewModel) {
@@ -182,24 +181,16 @@ fun SettingsScreen(viewModel: MainViewModel) {
     }
 
     if (showLogoutConfirm) {
-        AlertDialog(
-            modifier = Modifier.dpadNavigationSounds(),
-            onDismissRequest = { showLogoutConfirm = false },
-            title = { Text(stringResource(R.string.settings_signout_dialog_title)) },
-            text = { Text(stringResource(R.string.settings_signout_dialog_text)) },
-            confirmButton = {
-                TextButton(onClick = {
-                    viewModel.realSignOut()
-                    showLogoutConfirm = false
-                }) {
-                    Text(stringResource(R.string.settings_signout_dialog_confirm))
-                }
+        ConfirmDialog(
+            title = stringResource(R.string.settings_signout_dialog_title),
+            text = stringResource(R.string.settings_signout_dialog_text),
+            confirmLabel = stringResource(R.string.settings_signout_dialog_confirm),
+            onConfirm = {
+                viewModel.realSignOut()
+                showLogoutConfirm = false
             },
-            dismissButton = {
-                TextButton(onClick = { showLogoutConfirm = false }) {
-                    Text(stringResource(R.string.settings_signout_dialog_cancel))
-                }
-            },
+            cancelLabel = stringResource(R.string.settings_signout_dialog_cancel),
+            onDismiss = { showLogoutConfirm = false },
         )
     }
 
@@ -208,46 +199,39 @@ fun SettingsScreen(viewModel: MainViewModel) {
         val isProgressing = progress != null && progress < 1f
         val isDone = progress == 1f
         val sizeText = formatCacheSize(cacheSizeBytes)
-        AlertDialog(
-            modifier = Modifier.dpadNavigationSounds(),
-            onDismissRequest = { if (!isProgressing) showClearCacheConfirm = false },
-            title = { Text(stringResource(R.string.settings_clear_cache_dialog_title)) },
-            text = {
-                when {
-                    isProgressing -> Text(
-                        stringResource(
-                            R.string.settings_clear_cache_progress,
-                            (progress!! * 100).toInt(),
-                        ),
-                    )
-                    isDone -> Text(stringResource(R.string.settings_clear_cache_done, sizeText))
-                    else -> Text(stringResource(R.string.settings_clear_cache_dialog_text, sizeText))
+        val onConfirmAction: (() -> Unit)? = when {
+            isProgressing -> null
+            isDone -> {
+                {
+                    showClearCacheConfirm = false
+                    viewModel.resetCacheClearProgress()
+                    viewModel.refreshCacheSize()
                 }
+            }
+            else -> { { viewModel.clearCache() } }
+        }
+        ConfirmDialog(
+            title = stringResource(R.string.settings_clear_cache_dialog_title),
+            text = when {
+                isProgressing -> stringResource(
+                    R.string.settings_clear_cache_progress,
+                    (progress!! * 100).toInt(),
+                )
+                isDone -> stringResource(R.string.settings_clear_cache_done, sizeText)
+                else -> stringResource(R.string.settings_clear_cache_dialog_text, sizeText)
             },
-            confirmButton = {
-                when {
-                    isProgressing -> Unit
-                    isDone -> TextButton(onClick = {
-                        showClearCacheConfirm = false
-                        viewModel.resetCacheClearProgress()
-                        viewModel.refreshCacheSize()
-                    }) {
-                        Text(stringResource(R.string.settings_clear_cache_dialog_done_button))
-                    }
-                    else -> TextButton(onClick = {
-                        viewModel.clearCache()
-                    }) {
-                        Text(stringResource(R.string.settings_clear_cache_dialog_confirm))
-                    }
-                }
+            confirmLabel = when {
+                isProgressing -> null
+                isDone -> stringResource(R.string.settings_clear_cache_dialog_done_button)
+                else -> stringResource(R.string.settings_clear_cache_dialog_confirm)
             },
-            dismissButton = {
-                if (!isProgressing) {
-                    TextButton(onClick = { showClearCacheConfirm = false }) {
-                        Text(stringResource(R.string.settings_clear_cache_dialog_cancel))
-                    }
-                }
+            onConfirm = onConfirmAction,
+            cancelLabel = if (isProgressing) {
+                null
+            } else {
+                stringResource(R.string.settings_clear_cache_dialog_cancel)
             },
+            onDismiss = { if (!isProgressing) showClearCacheConfirm = false },
         )
     }
 }
