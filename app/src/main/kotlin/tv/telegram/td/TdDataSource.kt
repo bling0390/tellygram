@@ -134,7 +134,11 @@ class TdDataSource(
             // can never catch up (2026-09-13 log: read at 866MB, frontier 3.5MB,
             // target 982MB — target was computed from the playhead, the
             // download still inched up from the old frontier).
-            val jumpedAhead = pos > st.downloadedSize + READ_AHEAD_SLACK_BYTES
+            // Frontier: how far the current window has really been written.
+            // Measured from the file itself — TDLib's counter counts bytes on
+            // disk rather than a contiguous prefix.
+            val frontier = windowFrontier(st, handle)
+            val jumpedAhead = pos > frontier + READ_AHEAD_SLACK_BYTES
             val jumpedBack = pos < st.activeStart
             if (!jumpedAhead && !jumpedBack && !st.completed && pos + length > st.targetBytes) {
                 fileRepo.extendStream(fileId, pos + fileRepo.streamWindowBytes)
@@ -145,38 +149,34 @@ class TdDataSource(
                 return C.RESULT_END_OF_INPUT
             }
 
-            // The requested range must be real downloaded data (inside the active
-            // segment or a frozen downloaded range). A hole — bytes skipped when a
-            // seek jumped the download forward — reads as zeros and corrupts
-            // playback, so re-point the download at the hole and wait for it to
-            // be filled instead of reading garbage.
-            if (!fileRepo.isStreamRangeAvailable(fileId, pos, length)) {
+            // Only bytes the file actually contains may be served. The file is
+            // ground truth: the repo deletes it whenever the window moves, so
+            // what is on disk is exactly the current window, written from
+            // activeStart upwards. Nothing below the window is data — serving a
+            // hole is what made the extractor reject the stream ("None of the
+            // available extractors could read the stream", third live log
+            // 2026-09-13).
+            val available = st.completed ||
+                (pos >= st.activeStart && pos + length <= windowFrontier(st, handle))
+            if (!available) {
                 if (jumpedAhead || jumpedBack) {
                     fileRepo.seekStream(fileId, pos)
                 }
-                if (!waitForStreamRange(fileId, pos, length, deadline)) {
+                if (!waitForStreamRange(fileId, handle, pos, deadline)) {
                     Log.w(
                         TAG,
                         "read: download stalled for file $fileId at pos $pos " +
-                            "(frontier=${st.downloadedSize}, target=${st.targetBytes}, " +
-                            "active=${st.activeStart}, complete=${st.completed}, " +
-                            "jumped=${jumpedAhead || jumpedBack})",
+                            "(frontier=${windowFrontier(st, handle)}, " +
+                            "window=${st.activeStart}..${st.targetBytes}, " +
+                            "complete=${st.completed}, jumped=${jumpedAhead || jumpedBack})",
                     )
                     throw IOException("download stalled for file $fileId at $pos")
                 }
                 continue
             }
 
-            // Clamp the read to the end of the downloaded segment containing pos.
-            // downloadedSize/file.length() may extend past the segment when a seek
-            // left holes behind, so never read beyond the segment boundary.
-            val cur = fileRepo.streamState(fileId)
-                ?: throw IOException("streaming state lost for file $fileId")
-            val segEnd = when {
-                cur.completed -> cur.expectedSize.coerceAtLeast(0L) - 1
-                pos >= cur.activeStart -> cur.downloadedSize - 1
-                else -> cur.ranges.firstOrNull { pos in it }?.last ?: (pos - 1)
-            }
+            val cur = st
+            val segEnd = windowFrontier(cur, handle) - 1
             val toRead = minOf(length.toLong(), segEnd - pos + 1).toInt()
             if (toRead > 0) {
                 val n = handle.read(buffer, offset, toRead)
@@ -194,42 +194,58 @@ class TdDataSource(
                 Log.w(
                     TAG,
                     "read: no bytes for file $fileId at pos $pos " +
-                        "(frontier=${cur.downloadedSize}, complete=${cur.completed})",
+                        "(frontier=${windowFrontier(cur, handle)}, complete=${cur.completed})",
                 )
                 throw IOException("stream stalled for file $fileId at $pos")
             }
-            fileRepo.awaitStreamBytes(fileId, pos + 1, timeoutMs = READ_WAIT_SLICE_MS)
+            sleepBriefly()
         }
     }
 
     /**
-     * Waits in slices (up to [deadline]) for the download to cover
-     * `pos .. pos+length` in real bytes. Kept separate from the read loop so a
-     * partial arrival is usable: the caller re-reads availability and serves
-     * whatever is on disk instead of insisting on the full request.
+     * Waits (up to [deadline]) for the current window to reach [pos].
+     *
+     * Polls the file's length on purpose: TDLib's counters lag, and a counter
+     * that never moves while the file grows would stall playback. ExoPlayer
+     * takes short reads, so one byte past [pos] is enough to hand something
+     * back.
      */
-    private fun waitForStreamRange(fileId: Int, pos: Long, length: Int, deadline: Long): Boolean {
+    private fun waitForStreamRange(
+        fileId: Int,
+        handle: RandomAccessFile,
+        pos: Long,
+        deadline: Long,
+    ): Boolean {
         while (true) {
-            if (fileRepo.isStreamRangeAvailable(fileId, pos, length)) return true
-            // A partial arrival is usable — ExoPlayer takes short reads — so
-            // start serving as soon as the first byte of the range exists
-            // rather than insisting on the whole request.
-            if (fileRepo.isStreamRangeAvailable(fileId, pos, 1)) return true
-            val remaining = deadline - System.currentTimeMillis()
-            if (remaining <= 0) return false
-            fileRepo.awaitStreamBytes(
-                fileId,
-                pos + length,
-                timeoutMs = minOf(remaining, READ_WAIT_SLICE_MS),
-            )
-            // A file that finished downloading while we waited can serve the
-            // tail immediately, even if the byte accounting lagged.
-            if (fileRepo.streamState(fileId)?.completed == true &&
-                fileRepo.isStreamRangeAvailable(fileId, pos, length)
-            ) {
-                return true
-            }
+            val st = fileRepo.streamState(fileId) ?: return false
+            if (st.completed) return true
+            if (pos >= st.activeStart && pos + 1 <= windowFrontier(st, handle)) return true
+            if (System.currentTimeMillis() >= deadline) return false
+            sleepBriefly()
         }
+    }
+
+    /** Sleeps one poll interval, restoring the interrupt flag if asked to stop. */
+    private fun sleepBriefly() {
+        try {
+            Thread.sleep(READ_POLL_MS)
+        } catch (e: InterruptedException) {
+            Thread.currentThread().interrupt()
+        }
+    }
+
+    /**
+     * How far the current window has really been written.
+     *
+     * TDLib's downloadedSize is not usable here — it counts bytes on disk, not
+     * a contiguous prefix, and sat below the window start right after
+     * re-points in the live logs. The file's own length is ground truth because
+     * the repo keeps exactly one window on disk.
+     */
+    private fun windowFrontier(state: StreamingState, handle: RandomAccessFile): Long {
+        if (state.completed) return state.expectedSize.coerceAtLeast(0L)
+        val written = try { handle.length() } catch (_: IOException) { 0L }
+        return minOf(state.targetBytes, written.coerceAtLeast(state.activeStart))
     }
 
     override fun getUri(): Uri = openedUri ?: Uri.EMPTY
@@ -257,9 +273,9 @@ class TdDataSource(
         // default of 30s, kept so stall behaviour is unchanged).
         private const val READ_WAIT_BUDGET_MS = 30_000L
 
-        // Slice size for those waits: small enough to start serving a partial
-        // range as soon as bytes land, large enough not to spin.
-        private const val READ_WAIT_SLICE_MS = 500L
+        // Poll interval while waiting for the window to reach a position — the
+        // file is checked directly, so this is only the sleep between checks.
+        private const val READ_POLL_MS = 100L
 
         // A read further ahead of the download frontier than this is treated as
         // a jump and re-points the download, instead of waiting for the

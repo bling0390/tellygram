@@ -43,14 +43,13 @@ data class StreamingState(
     val expectedSize: Long = 0,
     val completed: Boolean = false,
     val failed: Boolean = false,
-    // Start offset of the current (active) download segment. The active
-    // segment is [activeStart, downloadedSize] and is written sequentially,
-    // so every byte in it is real data.
+    // Start offset of the current window. The file is deleted whenever the
+    // window moves (see seekStream), so the local file holds exactly this
+    // window, written sequentially from here — bytes below it are not data.
+    // TdDataSource measures how far the window has got from the FILE's own
+    // length: TDLib's downloadedSize counts bytes on disk rather than a
+    // contiguous prefix, and using it as a frontier served holes as data.
     val activeStart: Long = 0,
-    // Frozen, fully-downloaded byte ranges (sorted, non-overlapping), not
-    // including the active segment. Produced by seekStream when it abandons
-    // the previous segment.
-    val ranges: List<LongRange> = emptyList(),
     // Absolute end position of the current windowed download task
     // (activeStart + limit). Windowed streaming only downloads up to this
     // frontier instead of the whole file, so disk usage stays ≈ playhead +
@@ -339,41 +338,31 @@ class TdFileRepository(
             return
         }
         // Windowed download: fetch [0, windowBytes) only — playback advances
-        // the frontier via extendStream as the playhead moves.
-        streamingStates[fileId] = StreamingState(
-            fileId = fileId,
-            targetBytes = windowBytes,
-        )
-        client.send(TdApi.DownloadFile(fileId, priority, 0, windowBytes.toIntOffset(), false))
+        // the window via extendStream as the playhead moves.
+        //
+        // The file is deleted first. Bytes left by an earlier session are of
+        // unknown shape (a past seek may have downloaded a window far from 0),
+        // and serving them as a contiguous prefix is what made a fresh
+        // playback of an already-touched file read zeros and fail container
+        // sniffing — "None of the available extractors could read the stream"
+        // (third live log, 2026-09-13). A fresh window costs a re-download; a
+        // hole costs correctness.
+        resetStreamWindow(fileId, 0, priority)
         Log.d(TAG, "startStreaming(fileId=$fileId, priority=$priority, window=${windowBytes / 1024 / 1024}MB)")
     }
 
-    /** Re-target the active download to start at [offset] (used on seek). */
+    /**
+     * Re-target the active download to start at [offset] (used on seek).
+     *
+     * Goes through [resetStreamWindow] deliberately: the previous window is
+     * deleted rather than remembered as a frozen range, so the local file
+     * always holds exactly one contiguous window and "is this byte real?" is
+     * answerable from the file itself. Keeping those bytes alive is what let a
+     * stale range hand the extractor hole data.
+     */
     fun seekStream(fileId: Int, offset: Long, priority: Int = 1) {
-        streamingStates[fileId]?.let { cur ->
-            // Freeze the active segment (anything actually downloaded so far)
-            // into ranges before re-pointing the download to the new offset.
-            val frozen = if (cur.downloadedSize > cur.activeStart) {
-                // Exclusive end: downloadedSize is a COUNT, so the last byte
-                // really on disk is downloadedSize - 1. "..downloadedSize"
-                // claimed one byte that was never written — a hole byte served
-                // as data, which is how a shifted NAL length reached the MP4
-                // extractor (Invalid NAL length, 2026-09-13).
-                addRange(cur.ranges, cur.activeStart until cur.downloadedSize)
-            } else {
-                cur.ranges
-            }
-            streamingStates[fileId] = cur.copy(
-                activeStart = offset,
-                downloadedSize = offset,
-                completed = false,
-                failed = false,
-                ranges = frozen,
-                targetBytes = offset + windowBytes,
-            )
-        }
-        client.send(TdApi.DownloadFile(fileId, priority, offset.toIntOffset(), windowBytes.toIntOffset(), false))
-        Log.d(TAG, "seekStream(fileId=$fileId, offset=$offset, window=${windowBytes / 1024 / 1024}MB)")
+        Log.d(TAG, "seekStream(fileId=$fileId, offset=$offset)")
+        resetStreamWindow(fileId, offset, priority)
     }
 
     /**
@@ -393,19 +382,6 @@ class TdFileRepository(
         }
     }
 
-    /**
-     * True if the byte range [pos, pos+len) is real downloaded data: either
-     * inside the active segment or inside a frozen downloaded range. Holes
-     * between segments return false even though the file on disk may be
-     * longer (TDLib seeks past the hole and writes at the new offset).
-     */
-    fun isStreamRangeAvailable(fileId: Int, pos: Long, len: Int): Boolean {
-        val st = streamingStates[fileId] ?: return false
-        if (st.completed) return true
-        if (pos >= st.activeStart && pos + len <= st.downloadedSize) return true
-        return st.ranges.any { pos >= it.first && pos + len <= it.last + 1 }
-    }
-
     /** Current window size used for windowed streaming (bytes). */
     val streamWindowBytes: Long get() = windowBytes
 
@@ -413,22 +389,6 @@ class TdFileRepository(
     // ≤256MB, but seek offsets / downloaded sizes are Longs and could exceed
     // Int.MAX_VALUE for >2GB files — clamp instead of wrapping negative.
     private fun Long.toIntOffset(): Int = coerceIn(0L, Int.MAX_VALUE.toLong()).toInt()
-
-    private fun addRange(ranges: List<LongRange>, segment: LongRange): List<LongRange> {
-        val merged = ranges.toMutableList()
-        merged.add(segment)
-        merged.sortBy { it.first }
-        val result = mutableListOf<LongRange>()
-        for (r in merged) {
-            val last = result.lastOrNull()
-            if (last != null && r.first <= last.last + 1) {
-                result[result.size - 1] = last.first..maxOf(last.last, r.last)
-            } else {
-                result.add(r)
-            }
-        }
-        return result
-    }
 
     /**
      * Cancel an in-flight download for [fileId] (progressive streaming or
