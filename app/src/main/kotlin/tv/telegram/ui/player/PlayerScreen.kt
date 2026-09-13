@@ -86,6 +86,7 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.media3.common.AudioAttributes
 import androidx.media3.common.MediaItem as ExoMediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
@@ -268,6 +269,10 @@ fun PlayerScreen(
 
     val exo = remember(current.fileId) {
         ExoPlayer.Builder(context)
+            // Let ExoPlayer take and handle audio focus: another app starting
+            // playback pauses us instead of the two mixing, and we duck/yield
+            // the same way. Nothing in the app asked for focus before this.
+            .setAudioAttributes(AudioAttributes.DEFAULT, /* handleAudioFocus = */ true)
             .setMediaSourceFactory(
                 DefaultMediaSourceFactory(context)
                     .setDataSourceFactory(
@@ -433,6 +438,11 @@ fun PlayerScreen(
     // landscape TV — the rotate button's popover picks the angle. Kept across
     // video switches so a portrait playlist stays rotated.
     var rotation by remember { mutableIntStateOf(0) }
+    // Rotation corrects THIS file's shape, so it does not carry over: 90° on a
+    // portrait clip is right, but the same 90° on the next landscape video lays
+    // it on its side. Keyed on the file id so a recomposition of the same video
+    // can never clear a fresh pick (2026-09-13).
+    LaunchedEffect(current.fileId) { rotation = 0 }
     // How the video fills the screen (FIT / FILL / ZOOM). A viewing preference
     // rather than a per-file correction, so it is kept across videos while the
     // player is open.
