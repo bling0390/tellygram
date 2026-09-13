@@ -138,13 +138,6 @@ private val SeekTimeSlotWidth = 48.dp
 // middle of the enter/exit animation.
 private const val PLAYER_INIT_DELAY_MS = 250L
 
-private fun mediaTypeLabel(type: MediaType): String = when (type) {
-    MediaType.Video -> "Video"
-    MediaType.Photo -> "Photo"
-    MediaType.Animation -> "Animation"
-    MediaType.Unknown -> "Media"
-}
-
 @Composable
 fun PlayerScreen(
     viewModel: MainViewModel,
@@ -175,21 +168,11 @@ fun PlayerScreen(
 
     val current = mediaItems[index]
 
-    // JetStream-style info header: title = first caption line (fallback to
-    // media type), subtitle = "year • type" (mirrors "2011 • Action/Fantasy").
+    // JetStream-style info header: the first caption line, or nothing at all.
+    // The design's "year • genre" subtitle is gone — TG carries no genre, and
+    // the "year • Video" stand-in only ever repeated the title.
     val playerTitle = remember(current.messageId, current.caption) {
-        current.caption?.lineSequence()?.firstOrNull { it.isNotBlank() }?.trim()
-            ?: mediaTypeLabel(current.type)
-    }
-    val playerSubtitle = remember(current.messageId, current.date, current.type) {
-        val year = if (current.date > 0) {
-            java.text.SimpleDateFormat("yyyy", java.util.Locale.getDefault())
-                .format(java.util.Date(current.date * 1000L))
-        } else null
-        buildString {
-            if (year != null) { append(year); append(" • ") }
-            append(mediaTypeLabel(current.type))
-        }
+        current.caption?.lineSequence()?.firstOrNull { it.isNotBlank() }?.trim().orEmpty()
     }
 
     // Exit hook: record the messageId being played so the chats screen can
@@ -719,7 +702,6 @@ fun PlayerScreen(
         ) {
             PlayerController(
                 title = playerTitle,
-                subtitle = playerSubtitle,
                 positionMs = { exo.currentPosition },
                 durationMs = { exo.duration.coerceAtLeast(0L) },
                 bufferedMs = { exo.bufferedPosition.coerceAtLeast(0L) },
@@ -804,7 +786,6 @@ fun PlayerScreen(
 @Composable
 private fun PlayerController(
     title: String,
-    subtitle: String,
     positionMs: () -> Long,
     durationMs: () -> Long,
     bufferedMs: () -> Long,
@@ -958,23 +939,18 @@ private fun PlayerController(
                     .weight(1f)
                     .widthIn(max = 484.dp),
             ) {
-                Text(
-                    text = title,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    // Figma headline/medium = Inter 400 / 28sp / 36.
-                    style = MaterialTheme.typography.headlineMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    text = subtitle,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    // 16sp line (JetStream's "2011 • Action/Fantasy").
-                    style = MaterialTheme.typography.bodyLarge,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                // Blank when the message has no caption: an empty block beats
+                // labelling every uncaptioned file "Video".
+                if (title.isNotBlank()) {
+                    Text(
+                        text = title,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        // Figma headline/medium = Inter 400 / 28sp / 36.
+                        style = MaterialTheme.typography.headlineMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
             Spacer(Modifier.width(12.dp))
             Row(
