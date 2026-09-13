@@ -623,6 +623,12 @@ fun PlayerScreen(
                 CircularProgressIndicator(color = Color.White)
             }
         } else {
+            // Read the mode in THIS scope, not inside AndroidView's update
+            // lambda. The update block runs outside the recompose scope, so a
+            // read inside it never registers a dependency: the picker ticked
+            // (its read lives in the controller's scope) while the video branch
+            // never recomposed and the new mode was never pushed to the view.
+            val videoResizeMode = resizeMode
             // Classic PlayerView (not the compose PlayerSurface): the compose
             // surface is a bare SurfaceView hookup — it neither applies the
             // video's rotation metadata nor preserves its aspect ratio, so
@@ -667,12 +673,11 @@ fun PlayerScreen(
                             player = exo
                         }
                     },
-                    // resizeMode is state, so it has to be applied here —
-                    // AndroidView re-runs update on recomposition but never the
-                    // factory.
+                    // Applied on every recomposition of this branch (and this
+                    // branch now depends on resizeMode — see videoResizeMode).
                     update = {
                         it.player = exo
-                        it.resizeMode = resizeMode
+                        it.resizeMode = videoResizeMode
                     },
                     modifier = Modifier.fillMaxSize(),
                 )
