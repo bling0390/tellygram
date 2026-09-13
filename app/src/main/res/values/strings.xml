@@ -94,6 +94,10 @@
     <string name="settings_language_english">English</string>
     <string name="settings_language_simplified_chinese">简体中文</string>
     <string name="settings_language_traditional_chinese">繁體中文</string>
+    <string name="settings_preferred_language">Preferred Language</string>
+    <string name="settings_help">Help and Support</string>
+    <string name="settings_help_body">Tvgram is a community TV client for Telegram. Questions, bug reports and feature requests belong in the project repository.</string>
+    <string name="settings_app_version_label">Application Version</string>
     <string name="settings_theme_dark">Dark</string>
     <string name="settings_theme_light">Light</string>
     <string name="settings_theme_system">Follow system</string>

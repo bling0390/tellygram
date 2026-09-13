@@ -74,7 +74,6 @@ import tv.telegram.ui.search.SearchScreen
 import tv.telegram.ui.settings.SettingsScreen
 import tv.telegram.ui.nav.Routes
 import tv.telegram.ui.components.ConfirmDialog
-import tv.telegram.ui.components.RightDrawer
 import tv.telegram.ui.focus.BackController
 import tv.telegram.ui.focus.BackPriority
 import tv.telegram.ui.focus.BackRegistration
@@ -116,11 +115,9 @@ private fun AppNavHost(viewModel: MainViewModel, backController: BackController)
     val currentRoute = backStackEntry?.destination?.route
     val inHome = currentRoute?.startsWith(Routes.HOME) == true
 
-    // Settings lives in a right-side drawer (same popup as the player's
-    // media-info drawer) instead of a full NavHost page: selecting the rail
-    // entry opens the overlay on top of the current page, rail stays
-    // visible. Back / Left / OK inside the drawer close it.
-    var settingsOpen by remember { mutableStateOf(false) }
+    // Settings is a NavHost page now (Figma 623:1208 lays the section list and
+    // the detail pane out side by side), not a drawer overlay: the rail
+    // navigates to it like any other destination and Back pops it.
     // Focus target for the rail's settings item — the drawer returns focus
     // here when it closes.
     val settingsRailFocus = remember { FocusRequester() }
@@ -137,23 +134,9 @@ private fun AppNavHost(viewModel: MainViewModel, backController: BackController)
     // Focus target for the rail's search item. The search results grid
     // routes Left here explicitly (see ResultsGrid) for the same reason.
     val searchRailFocus = remember { FocusRequester() }
-    // The rail keeps focusability for a short window after the drawer opens.
-    // If it dropped out of the focus tree immediately (old: enabled =
-    // !settingsOpen), the focus system would hand focus to the nearest
-    // remaining node — the chat list's "Archived Chats" — for one frame,
-    // flashing it before the drawer's first row takes over. Keeping the
-    // rail focusable lets the drawer's own first row claim focus directly
-    // (rail → drawer, no intermediate stop); the rail only drops out after
-    // the slide (250ms) plus handoff has settled.
+    // The rail stays focusable everywhere: settings is a page now, so nothing
+    // needs the old "drop the rail while the drawer slides" dance.
     var railEnabled by remember { mutableStateOf(true) }
-    LaunchedEffect(settingsOpen) {
-        if (settingsOpen) {
-            delay(300L)
-            railEnabled = false
-        } else {
-            railEnabled = true
-        }
-    }
 
     // Exit-confirmation dialog: Back on the rail (outermost layer) asks
     // first instead of quitting immediately. railFocused comes from
@@ -284,6 +267,15 @@ private fun AppNavHost(viewModel: MainViewModel, backController: BackController)
                         onOpenPlayer = { index -> navController.navigate(Routes.player(index)) },
                     )
                 }
+                composable(
+                    route = Routes.HOME_SETTINGS,
+                    enterTransition = { slideInHorizontally(tween(300)) { it } },
+                    exitTransition = { slideOutHorizontally(tween(300)) { -it / 3 } },
+                    popEnterTransition = { slideInHorizontally(tween(300)) { -it / 3 } },
+                    popExitTransition = { slideOutHorizontally(tween(300)) { it } },
+                ) {
+                    SettingsScreen(viewModel = viewModel)
+                }
             }
 
             composable(
@@ -317,16 +309,10 @@ private fun AppNavHost(viewModel: MainViewModel, backController: BackController)
             NavRail(
                 current = currentRoute,
                 onSelect = { route ->
-                    // Settings is a drawer overlay, not a page — selecting it
-                    // opens the drawer instead of navigating.
-                    if (route == Routes.HOME_SETTINGS) {
-                        settingsOpen = true
-                    } else {
-                        navController.navigate(route) {
-                            popUpTo(Routes.HOME) { saveState = true }
-                            launchSingleTop = true
-                            restoreState = true
-                        }
+                    navController.navigate(route) {
+                        popUpTo(Routes.HOME) { saveState = true }
+                        launchSingleTop = true
+                        restoreState = true
                     }
                 },
                 settingsFocus = settingsRailFocus,
@@ -361,22 +347,6 @@ private fun AppNavHost(viewModel: MainViewModel, backController: BackController)
             )
         }
 
-        // Settings drawer: same right-side popup behavior as the player's
-        // media-info drawer, overlaid on the current page. takeFocus = false:
-        // the settings list manages its own focus (first row), so the drawer
-        // container doesn't steal it.
-        if (inHome) {
-            RightDrawer(
-                visible = settingsOpen,
-                onClose = { settingsOpen = false },
-                width = 400.dp,
-                takeFocus = false,
-                restoreFocus = settingsRailFocus,
-                modifier = Modifier.align(Alignment.CenterEnd),
-            ) {
-                SettingsScreen(viewModel = viewModel)
-            }
-        }
     }
 }
 

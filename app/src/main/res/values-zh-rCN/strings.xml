@@ -88,6 +88,10 @@
     <string name="settings_language_english">English</string>
     <string name="settings_language_simplified_chinese">简体中文</string>
     <string name="settings_language_traditional_chinese">繁體中文</string>
+    <string name="settings_preferred_language">偏好语言</string>
+    <string name="settings_help">帮助与支持</string>
+    <string name="settings_help_body">Tvgram 是一个社区维护的 Telegram 电视客户端。使用问题、缺陷反馈和功能建议请提交到项目仓库。</string>
+    <string name="settings_app_version_label">应用版本</string>
     <string name="settings_theme_dark">深色</string>
     <string name="settings_theme_light">浅色</string>
     <string name="settings_theme_system">跟随系统</string>
