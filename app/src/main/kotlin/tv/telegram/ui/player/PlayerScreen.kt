@@ -760,10 +760,12 @@ fun PlayerScreen(
                 },
                 onRotationChange = { degrees ->
                     rotation = degrees
+                    openPopover = null
                     bumpController()
                 },
                 onResizeModeChange = { mode ->
                     resizeMode = mode
+                    openPopover = null
                     bumpController()
                 },
                 onPrev = if (hasPrevVideo) {
@@ -1578,7 +1580,7 @@ private fun MediaInfoDrawer(
 @Composable
 private fun InfoRow(icon: ImageVector, label: String, value: String) {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+        modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
