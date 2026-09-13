@@ -226,6 +226,7 @@ class TdMediaRepository(
                     caption = c.caption.text,
                     date = message.date,
                     chatId = chatId,
+                    duration = anim.duration,
                 )
             }
             else -> null

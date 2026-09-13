@@ -792,6 +792,10 @@ fun PlayerScreen(
             MediaInfoDrawer(
                 item = current,
                 fileInfo = fileInfo,
+                // The message's own duration can be 0 — animations never carried
+                // one, and a video's occasionally arrives as 0 — so hand over
+                // what the player knows once the media is prepared.
+                playedDurationMs = exo.duration.takeIf { it > 0 } ?: 0L,
             )
         }
     }
@@ -1532,9 +1536,14 @@ private fun formatMs(ms: Long): String {
 private fun MediaInfoDrawer(
     item: MediaItem,
     fileInfo: TdApi.File?,
+    playedDurationMs: Long,
 ) {
     val sizeBytes = fileInfo?.size?.toLong()?.takeIf { it > 0 }
         ?: fileInfo?.expectedSize?.toLong()?.takeIf { it > 0 }
+    // Message metadata first (it is there before playback starts), then what the
+    // player measured — otherwise this row shows "—" for anything whose TG
+    // duration is 0.
+    val durationMs = if (item.duration > 0) item.duration * 1000L else playedDurationMs
     val dateText = if (item.date > 0) {
         java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault())
             .format(java.util.Date(item.date * 1000L))
@@ -1558,7 +1567,7 @@ private fun MediaInfoDrawer(
             InfoRow(
                 icon = Icons.Default.Schedule,
                 label = stringResource(R.string.player_info_duration),
-                value = if (item.duration > 0) formatMs(item.duration * 1000L) else "—",
+                value = if (durationMs > 0) formatMs(durationMs) else "—",
             )
             InfoRow(
                 icon = Icons.Default.AspectRatio,
