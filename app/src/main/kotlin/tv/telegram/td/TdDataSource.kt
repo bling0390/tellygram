@@ -6,6 +6,8 @@ import androidx.media3.common.C
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.TransferListener
+import java.io.File
+import java.io.FileNotFoundException
 import java.io.IOException
 import java.io.RandomAccessFile
 
@@ -53,24 +55,50 @@ class TdDataSource(
         Log.d(TAG, "open: file=$fileId pos=${dataSpec.position} len=${dataSpec.length}")
         fileRepo.startStreaming(fileId, priority = 1)
 
-        // If ExoPlayer seeks past the current download frontier (user jump,
-        // or the extractor probing the tail), re-point the TDLib download to
-        // that offset instead of waiting for the sequential download to crawl
-        // up. Seeking within already-downloaded bytes never re-targets.
+        // Only a genuine jump re-points the download — and with it builds a new
+        // window on disk. The extractor re-opens the source to probe (live log
+        // 2026-09-13: opens at 0, 683846, 999233 inside 400ms), and treating
+        // that as a seek deleted the window and restarted the download on every
+        // probe. A position inside the current window is left alone; the read
+        // path waits for the download if it has not arrived yet.
         val st = fileRepo.streamState(fileId)
-        if (st != null && !st.completed && dataSpec.position > st.downloadedSize) {
+        if (st != null && !st.completed &&
+            (dataSpec.position >= st.targetBytes || dataSpec.position < st.activeStart)
+        ) {
             fileRepo.seekStream(fileId, dataSpec.position)
         }
 
-        val path = fileRepo.awaitStreamPath(fileId)
+        val f = openStreamFile(fileId, dataSpec.position)
             ?: throw IOException("no local path for file $fileId (download failed?)")
-        val f = RandomAccessFile(path, "r")
-        f.seek(dataSpec.position)
         file = f
         openedEpoch = fileRepo.streamState(fileId)?.epoch ?: 0
         bytesRemaining = dataSpec.length
         val expected = fileRepo.streamState(fileId)?.expectedSize ?: 0L
         return if (expected > 0) expected - dataSpec.position else C.LENGTH_UNSET.toLong()
+    }
+
+    /**
+     * Opens the streamed file, tolerating the window-reset race.
+     *
+     * A reset deletes the file, but TDLib's next UpdateFile can still carry the
+     * old temp path, so the first RandomAccessFile hits ENOENT (live log
+     * 2026-09-13: FileNotFoundException on .../tdlib-files/temp/38). Drop that
+     * path and wait for the recreated file instead of failing playback.
+     */
+    private fun openStreamFile(fileId: Int, position: Long): RandomAccessFile? {
+        val deadline = System.currentTimeMillis() + PATH_OPEN_WAIT_MS
+        while (true) {
+            val path = fileRepo.awaitStreamPath(fileId, timeoutMs = PATH_OPEN_WAIT_MS)
+                ?: return null
+            try {
+                return RandomAccessFile(path, "r").apply { seek(position) }
+            } catch (e: FileNotFoundException) {
+                Log.d(TAG, "open: $path is gone (window reset), waiting for the recreated file")
+                fileRepo.invalidateStreamPath(fileId, path)
+                if (System.currentTimeMillis() >= deadline) return null
+                sleepBriefly()
+            }
+        }
     }
 
     override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
@@ -244,6 +272,17 @@ class TdDataSource(
      */
     private fun windowFrontier(state: StreamingState, handle: RandomAccessFile): Long {
         if (state.completed) return state.expectedSize.coerceAtLeast(0L)
+        // Nothing written since the window was rebuilt: what is on disk is the
+        // PREVIOUS window (a hole where the new one goes), so nothing may be
+        // served yet. Waiting for the first write is what stops a fresh
+        // playback from reading the old file's holes and failing container
+        // sniffing (live log 2026-09-13: UnrecognizedInputFormatException 1.3s
+        // after open).
+        val path = state.path
+        if (state.resetAtMs > 0 && path != null) {
+            val touched = try { File(path).lastModified() } catch (_: SecurityException) { 0L }
+            if (touched < state.resetAtMs) return state.activeStart
+        }
         val written = try { handle.length() } catch (_: IOException) { 0L }
         return minOf(state.targetBytes, written.coerceAtLeast(state.activeStart))
     }
@@ -276,6 +315,9 @@ class TdDataSource(
         // Poll interval while waiting for the window to reach a position — the
         // file is checked directly, so this is only the sleep between checks.
         private const val READ_POLL_MS = 100L
+
+        // How long open() may wait for the recreated file after a window reset.
+        private const val PATH_OPEN_WAIT_MS = 15_000L
 
         // A read further ahead of the download frontier than this is treated as
         // a jump and re-points the download, instead of waiting for the

@@ -60,6 +60,11 @@ data class StreamingState(
     // offset (emergency disk-watermark reset). TdDataSource watches this to
     // know when to close the old RandomAccessFile and re-open the new one.
     val epoch: Int = 0,
+    // When this window was (re)created. TDLib can still be reporting progress
+    // for the previous download (including a path to the file that was just
+    // deleted), so readers must not trust anything written before this
+    // moment: the file is only data once TDLib has touched it again.
+    val resetAtMs: Long = 0,
 )
 
 class TdFileRepository(
@@ -524,11 +529,29 @@ class TdFileRepository(
             downloadedSize = pos,
             targetBytes = pos + windowBytes,
             epoch = (cur?.epoch ?: 0) + 1,
+            resetAtMs = System.currentTimeMillis(),
         )
         wakeStreamWaiters(fileId)
         client.send(TdApi.DownloadFile(fileId, priority, pos.toIntOffset(), windowBytes.toIntOffset(), false))
         _states.value = _states.value + (fileId to FileDownloadState.Pending())
         Log.i(TAG, "resetStreamWindow(fileId=$fileId, pos=$pos, epoch=${(cur?.epoch ?: 0) + 1})")
+    }
+
+    /**
+     * Forget a streamed path that is no longer on disk.
+     *
+     * A window reset deletes the file, but TDLib's next UpdateFile can still
+     * carry the old temp path, and awaitStreamPath would hand that dead path to
+     * a RandomAccessFile (FileNotFoundException in the 2026-09-13 log).
+     * Dropping it parks readers until the recreated file is reported.
+     */
+    fun invalidateStreamPath(fileId: Int, path: String) {
+        streamingStates[fileId]?.let { cur ->
+            if (cur.path == path) {
+                streamingStates[fileId] = cur.copy(path = null)
+                wakeStreamWaiters(fileId)
+            }
+        }
     }
 
     companion object {
