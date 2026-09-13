@@ -754,18 +754,17 @@ fun PlayerScreen(
                     openPopover = popover
                 },
                 onDismissPopover = { openPopover = null },
+                // The popover closes itself after a pick (see
+                // PlayerPopoverMenuPopup), so these only own the state.
                 onSpeedChange = { newSpeed ->
                     viewModel.setPlayerSpeed(newSpeed)
-                    openPopover = null
                 },
                 onRotationChange = { degrees ->
                     rotation = degrees
-                    openPopover = null
                     bumpController()
                 },
                 onResizeModeChange = { mode ->
                     resizeMode = mode
-                    openPopover = null
                     bumpController()
                 },
                 onPrev = if (hasPrevVideo) {
@@ -1354,7 +1353,19 @@ private fun <T> PlayerPopoverMenuPopup(
         onDismissRequest = onDismiss,
         properties = PopupProperties(focusable = true),
     ) {
-        PlayerPopoverMenu(items = items, current = current, label = label, onSelect = onSelect)
+        PlayerPopoverMenu(
+            items = items,
+            current = current,
+            label = label,
+            // Picking closes the popover here rather than at each call site: a
+            // call site only owns the state, and the first one that forgot to
+            // clear it left a menu sitting over the video with the tick already
+            // moved (2026-09-13).
+            onSelect = { item ->
+                onSelect(item)
+                onDismiss()
+            },
+        )
     }
 }
 
