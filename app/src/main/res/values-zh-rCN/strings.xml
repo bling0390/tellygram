@@ -50,6 +50,10 @@
     <string name="player_btn_next">下一条 »</string>
     <string name="player_error_title">播放出错</string>
     <string name="player_download_failed">下载失败:%1$s</string>
+    <string name="player_btn_display">画面比例</string>
+    <string name="player_display_fit">适应</string>
+    <string name="player_display_fill">拉伸</string>
+    <string name="player_display_zoom">裁剪</string>
 
     <string name="settings_title">设置</string>
     <string name="settings_account">账户信息</string>

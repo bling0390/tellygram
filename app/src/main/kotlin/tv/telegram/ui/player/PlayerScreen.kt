@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AspectRatio
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Forward10
 import androidx.compose.material.icons.filled.Info
@@ -432,6 +433,10 @@ fun PlayerScreen(
     // landscape TV — the rotate button's popover picks the angle. Kept across
     // video switches so a portrait playlist stays rotated.
     var rotation by remember { mutableIntStateOf(0) }
+    // How the video fills the screen (FIT / FILL / ZOOM). A viewing preference
+    // rather than a per-file correction, so it is kept across videos while the
+    // player is open.
+    var resizeMode by remember { mutableIntStateOf(AspectRatioFrameLayout.RESIZE_MODE_FIT) }
     var lastInteractionMs by remember { mutableStateOf(System.currentTimeMillis()) }
     var controllerShownBefore by remember { mutableStateOf(false) }
     // Auto-hide applies only while focus sits on the progress bar; focus on
@@ -652,7 +657,13 @@ fun PlayerScreen(
                             player = exo
                         }
                     },
-                    update = { it.player = exo },
+                    // resizeMode is state, so it has to be applied here —
+                    // AndroidView re-runs update on recomposition but never the
+                    // factory.
+                    update = {
+                        it.player = exo
+                        it.resizeMode = resizeMode
+                    },
                     modifier = Modifier.fillMaxSize(),
                 )
             }
@@ -698,6 +709,7 @@ fun PlayerScreen(
                 speed = speed,
                 speeds = viewModel.playerSpeeds,
                 rotation = rotation,
+                resizeMode = resizeMode,
                 openPopover = openPopover,
                 progressFocusRequester = progressFocusRequester,
                 infoFocusRequester = infoButtonFocus,
@@ -730,6 +742,10 @@ fun PlayerScreen(
                 },
                 onRotationChange = { degrees ->
                     rotation = degrees
+                    bumpController()
+                },
+                onResizeModeChange = { mode ->
+                    resizeMode = mode
                     bumpController()
                 },
                 onPrev = if (hasPrevVideo) {
@@ -773,6 +789,7 @@ private fun PlayerController(
     speed: Float,
     speeds: List<Float>,
     rotation: Int,
+    resizeMode: Int,
     openPopover: PlayerPopover?,
     progressFocusRequester: FocusRequester,
     infoFocusRequester: FocusRequester,
@@ -786,6 +803,7 @@ private fun PlayerController(
     onDismissPopover: () -> Unit,
     onSpeedChange: (Float) -> Unit,
     onRotationChange: (Int) -> Unit,
+    onResizeModeChange: (Int) -> Unit,
     onInfo: () -> Unit,
     onPrev: (() -> Unit)?,
     onNext: (() -> Unit)?,
@@ -817,6 +835,7 @@ private fun PlayerController(
     val nextFocus = remember { FocusRequester() }
     val speedFocus = remember { FocusRequester() }
     val rotateFocus = remember { FocusRequester() }
+    val displayFocus = remember { FocusRequester() }
     val infoFocus = infoFocusRequester
 
     // Popover focus handover: the Popup window holds focus while a picker is up,
@@ -831,6 +850,7 @@ private fun PlayerController(
             val target = when (popoverShownBefore) {
                 PlayerPopover.Speed -> speedFocus
                 PlayerPopover.Rotation -> rotateFocus
+                PlayerPopover.Display -> displayFocus
                 null -> null
             }
             popoverShownBefore = null
@@ -849,6 +869,7 @@ private fun PlayerController(
             if (onNext != null) add(nextFocus)
             add(speedFocus)
             add(rotateFocus)
+            add(displayFocus)
             add(infoFocus)
         }
     }
@@ -871,6 +892,14 @@ private fun PlayerController(
         selectedIndex = playIndex
         playFocus.requestFocus()
     }
+
+    // Localised display menu labels. The popover takes a plain (T) -> String,
+    // so the strings are resolved here rather than inside the menu.
+    val displayLabels = mapOf(
+        AspectRatioFrameLayout.RESIZE_MODE_FIT to stringResource(R.string.player_display_fit),
+        AspectRatioFrameLayout.RESIZE_MODE_FILL to stringResource(R.string.player_display_fill),
+        AspectRatioFrameLayout.RESIZE_MODE_ZOOM to stringResource(R.string.player_display_zoom),
+    )
 
     // JetStream-style controller: a dark scrim gradient over the poster, a
     // title block on the left, circular action buttons on the right, and a
@@ -1018,6 +1047,24 @@ private fun PlayerController(
                             current = rotation,
                             label = ::formatDegrees,
                             onSelect = onRotationChange,
+                            onDismiss = onDismissPopover,
+                        )
+                    }
+                }
+                Spacer(Modifier.width(12.dp))
+                Box {
+                    ControllerButton(
+                        icon = Icons.Default.AspectRatio,
+                        contentDescription = stringResource(R.string.player_btn_display),
+                        onClick = { onOpenPopover(PlayerPopover.Display) },
+                        modifier = Modifier.focusRequester(displayFocus),
+                    )
+                    if (openPopover == PlayerPopover.Display) {
+                        PlayerPopoverMenuPopup(
+                            items = PLAYER_RESIZE_MODES,
+                            current = resizeMode,
+                            label = { mode -> displayLabels.getValue(mode) },
+                            onSelect = onResizeModeChange,
                             onDismiss = onDismissPopover,
                         )
                     }
@@ -1254,10 +1301,17 @@ private val PlayerPopoverListPaddingV = 8.dp
 private val PlayerPopoverListPaddingH = 12.dp
 
 // Which picker the controller has open, if any.
-private enum class PlayerPopover { Speed, Rotation }
+private enum class PlayerPopover { Speed, Rotation, Display }
 
 // Surface rotation angles the rotate button offers, upright first.
 private val PLAYER_ROTATIONS = listOf(0, 90, 180, 270)
+
+// How the video fills the frame, in menu order: letterbox, stretch, crop.
+private val PLAYER_RESIZE_MODES = listOf(
+    AspectRatioFrameLayout.RESIZE_MODE_FIT,
+    AspectRatioFrameLayout.RESIZE_MODE_FILL,
+    AspectRatioFrameLayout.RESIZE_MODE_ZOOM,
+)
 
 // "1.0x" / "1.25x" — the same shape the removed inline speed label used.
 private fun formatSpeed(speed: Float): String = "${speed}x"

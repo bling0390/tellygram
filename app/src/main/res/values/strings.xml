@@ -51,6 +51,10 @@
     <string name="player_btn_speed">Speed</string>
     <string name="player_btn_rotate">Rotate</string>
     <string name="player_btn_info">Info</string>
+    <string name="player_btn_display">Display</string>
+    <string name="player_display_fit">Fit</string>
+    <string name="player_display_fill">Fill</string>
+    <string name="player_display_zoom">Zoom</string>
     <string name="player_info_title">Media Info</string>
     <string name="player_info_type">Type</string>
     <string name="player_info_resolution">Resolution</string>
