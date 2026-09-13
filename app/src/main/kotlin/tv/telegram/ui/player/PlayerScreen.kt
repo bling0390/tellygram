@@ -2,15 +2,11 @@
 
 package tv.telegram.ui.player
 
-import android.graphics.BitmapFactory
 import android.util.Log
 import android.view.LayoutInflater
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -52,7 +48,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -65,8 +60,6 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.Key
@@ -75,7 +68,6 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
@@ -101,13 +93,8 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
-import coil.compose.AsyncImage
-import coil.request.ImageRequest
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import java.io.File
 import tv.telegram.R
 import tv.telegram.td.FileDownloadState
 import tv.telegram.td.MediaItem
@@ -253,19 +240,6 @@ fun PlayerScreen(
         onDispose {
             viewModel.fileRepo.cancelDownload(current.fileId)
         }
-    }
-
-    // Poster sources (Figma CinematicBackground). Built before the player so the
-    // deferred first composition below has artwork to show: the embedded
-    // minithumbnail is available with zero latency, and the downloaded thumbnail
-    // is sharper and takes over as soon as its file is Local.
-    val posterPath = current.thumbnailFileId?.let {
-        (fileStates[it] as? FileDownloadState.Local)?.path
-    }
-    val posterBitmap by produceState<ImageBitmap?>(null, current.messageId, current.minithumbnail) {
-        // Keep the decode off the UI thread — the poster is built inside the
-        // navigation window.
-        value = withContext(Dispatchers.Default) { decodeMinithumbnail(current.minithumbnail) }
     }
 
     // Everything below (ExoPlayer build, PlayerView inflation, renderer and
@@ -602,32 +576,17 @@ fun PlayerScreen(
         val errorMsg = playerError
             ?: downloadError?.let { stringResource(R.string.player_download_failed, it) }
 
-        // ── CinematicBackground poster (Figma 1117:8996) ────────────────────
-        // Now only a failure puts artwork on screen: the poster used to fill the
-        // window until the first frame rendered, and that poster-then-video swap
-        // read as a glitch (2026-09-13). The thumbnail preload stays because the
-        // error state still wants a still to sit on. Deliberately NOT rotated
-        // with the surface: by the time a user rotates (a deliberate button
-        // press) the poster is long gone.
-        LaunchedEffect(current.messageId, current.thumbnailFileId) {
-            val thumbId = current.thumbnailFileId ?: return@LaunchedEffect
-            if (viewModel.fileStateFor(thumbId) !is FileDownloadState.Local) {
-                viewModel.ensureMediaFile(thumbId, priority = 24)
-            }
-        }
-        val posterAlpha by animateFloatAsState(
-            targetValue = if (errorMsg != null) 1f else 0f,
-            animationSpec = tween(durationMillis = 300),
-            label = "posterAlpha",
-        )
-        if (posterAlpha > 0.01f) {
-            PosterLayer(posterPath = posterPath, posterBitmap = posterBitmap, alpha = posterAlpha)
-        }
-
         if (errorMsg != null) {
             // Error overlay — replaces the silent black screen: shows what
-            // failed, OK retries (re-download / re-prepare), Back exits.
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            // failed, OK retries (re-download / re-prepare), Back exits. Opaque
+            // black on purpose: this used to sit on the message thumbnail, and
+            // a still behind a failure read as a glitch (2026-09-13).
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black),
+                contentAlignment = Alignment.Center,
+            ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
                         text = stringResource(R.string.player_error_title),
@@ -1439,45 +1398,6 @@ private fun SpeedMenuItem(
                 modifier = Modifier.size(19.dp),
             )
         }
-    }
-}
-
-private fun decodeMinithumbnail(bytes: ByteArray?): ImageBitmap? {
-    if (bytes == null || bytes.isEmpty()) return null
-    return try {
-        BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
-    } catch (_: IllegalArgumentException) {
-        null
-    }
-}
-
-// Full-bleed poster for the player's CinematicBackground: prefers the real
-// (downloaded) thumbnail and falls back to the message's embedded minithumbnail.
-@Composable
-private fun PosterLayer(posterPath: String?, posterBitmap: ImageBitmap?, alpha: Float) {
-    val modifier = Modifier
-        .fillMaxSize()
-        .graphicsLayer { this.alpha = alpha }
-    val ctx = LocalContext.current
-    // Memoised on the path: a fresh ImageRequest is never equal to the previous
-    // one, so Coil restarted the load on every recomposition and the poster
-    // blinked.
-    val posterRequest = remember(posterPath) {
-        posterPath?.let { ImageRequest.Builder(ctx).data(File(it)).build() }
-    }
-    when {
-        posterRequest != null -> AsyncImage(
-            model = posterRequest,
-            contentDescription = null,
-            contentScale = ContentScale.Crop,
-            modifier = modifier,
-        )
-        posterBitmap != null -> Image(
-            bitmap = posterBitmap,
-            contentDescription = null,
-            contentScale = ContentScale.Crop,
-            modifier = modifier,
-        )
     }
 }
 
