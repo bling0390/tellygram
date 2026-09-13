@@ -64,6 +64,7 @@
     <string name="player_btn_next">Next »</string>
     <string name="player_error_title">Playback error</string>
     <string name="player_download_failed">Download failed: %1$s</string>
+    <string name="player_error_unsupported_codec">This video\'s codec isn\'t supported by this device</string>
 
     <!-- Settings screen -->
     <string name="settings_title">Settings</string>

@@ -50,6 +50,7 @@
     <string name="player_btn_next">下一個 »</string>
     <string name="player_error_title">播放錯誤</string>
     <string name="player_download_failed">下載失敗:%1$s</string>
+    <string name="player_error_unsupported_codec">本機解碼器不支援這條影片的編碼格式</string>
     <string name="player_btn_display">畫面比例</string>
     <string name="player_display_fit">適應</string>
     <string name="player_display_fill">拉伸</string>

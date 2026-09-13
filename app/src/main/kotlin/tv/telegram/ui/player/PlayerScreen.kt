@@ -94,6 +94,7 @@ import androidx.media3.common.MediaItem as ExoMediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.AspectRatioFrameLayout
@@ -255,6 +256,16 @@ fun PlayerScreen(
 
     val exo = remember(current.fileId) {
         ExoPlayer.Builder(context)
+            // Let MediaCodec fall back to the platform's software decoder when
+            // the hardware one refuses the format. TV boxes reject anything
+            // past 8-bit 4:2:0, so an H.264 High 4:4:4 clip fails init outright
+            // (ERROR_CODE_DECODER_INIT_FAILED, format_supported=
+            // NO_EXCEEDS_CAPABILITIES, 2026-09-13). Free when the hardware
+            // decoder accepts; slow-but-playing beats a hard failure when it
+            // does not.
+            .setRenderersFactory(
+                DefaultRenderersFactory(context).setEnableDecoderFallback(true),
+            )
             // Let ExoPlayer take and handle audio focus: another app starting
             // playback pauses us instead of the two mixing, and we duck/yield
             // the same way. Nothing in the app asked for focus before this.
@@ -357,8 +368,12 @@ fun PlayerScreen(
     // Playback error surfaced to the UI — previously any error left the
     // player silently black (there was no onPlayerError listener at all).
     var playerError by remember(current.fileId) { mutableStateOf<String?>(null) }
+    // True when the failure is the device refusing the format rather than a
+    // playback bug — those get a plain-language line above the technical dump.
+    var playerErrorUnsupportedCodec by remember(current.fileId) { mutableStateOf(false) }
     val retryPlayback = {
         playerError = null
+        playerErrorUnsupportedCodec = false
         mediaPrepared = false
         firstFrameRendered = false
         isBuffering = false
@@ -378,6 +393,11 @@ fun PlayerScreen(
             override fun onPlayerError(error: PlaybackException) {
                 Log.e(TAG, "playback error for file ${current.fileId}", error)
                 playerError = error.errorCodeName + ": " + (error.message ?: "")
+                // A decoder that refused the format is a device capability
+                // limit, not a bug worth showing as a MediaCodec dump.
+                playerErrorUnsupportedCodec =
+                    error.errorCodeName.startsWith("ERROR_CODE_DECODER") ||
+                        error.message?.contains("NO_EXCEEDS_CAPABILITIES") == true
             }
             override fun onRenderedFirstFrame() {
                 firstFrameRendered = true
@@ -574,8 +594,16 @@ fun PlayerScreen(
             },
     ) {
         val downloadError = (currentFileState as? FileDownloadState.Failed)?.reason
-        val errorMsg = playerError
-            ?: downloadError?.let { stringResource(R.string.player_download_failed, it) }
+        // "avc1.F4001E … NO_EXCEEDS_CAPABILITIES" says the device's decoder
+        // cannot handle this profile at all, which deserves a human line rather
+        // than the raw codec string.
+        val errorMsg = playerError?.let { text ->
+            if (playerErrorUnsupportedCodec) {
+                stringResource(R.string.player_error_unsupported_codec) + "\n\n" + text
+            } else {
+                text
+            }
+        } ?: downloadError?.let { stringResource(R.string.player_download_failed, it) }
 
         if (errorMsg != null) {
             // Error overlay — replaces the silent black screen: shows what
