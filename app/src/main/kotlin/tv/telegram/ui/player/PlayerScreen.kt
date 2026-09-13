@@ -30,13 +30,16 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AspectRatio
+import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Forward10
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Replay10
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.ScreenRotation
+import androidx.compose.material.icons.filled.SdStorage
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Speed
@@ -1517,13 +1520,6 @@ private fun MediaInfoDrawer(
     item: MediaItem,
     fileInfo: TdApi.File?,
 ) {
-
-    val typeLabel = when (item.type) {
-        MediaType.Video -> "Video"
-        MediaType.Photo -> "Photo"
-        MediaType.Animation -> "Animation/GIF"
-        else -> "Unknown"
-    }
     val sizeBytes = fileInfo?.size?.toLong()?.takeIf { it > 0 }
         ?: fileInfo?.expectedSize?.toLong()?.takeIf { it > 0 }
     val dateText = if (item.date > 0) {
@@ -1546,21 +1542,26 @@ private fun MediaInfoDrawer(
             )
             Spacer(Modifier.height(20.dp))
 
-            InfoRow(stringResource(R.string.player_info_type), typeLabel)
             InfoRow(
-                stringResource(R.string.player_info_resolution),
-                if (item.width > 0 && item.height > 0) "${item.width} × ${item.height}" else "—",
+                icon = Icons.Default.Schedule,
+                label = stringResource(R.string.player_info_duration),
+                value = if (item.duration > 0) formatMs(item.duration * 1000L) else "—",
             )
             InfoRow(
-                stringResource(R.string.player_info_size),
-                if (sizeBytes != null) formatBytes(sizeBytes) else "—",
+                icon = Icons.Default.AspectRatio,
+                label = stringResource(R.string.player_info_resolution),
+                value = if (item.width > 0 && item.height > 0) "${item.width} × ${item.height}" else "—",
             )
             InfoRow(
-                stringResource(R.string.player_info_streaming),
-                if (item.supportsStreaming) "Yes" else "No",
+                icon = Icons.Default.SdStorage,
+                label = stringResource(R.string.player_info_size),
+                value = if (sizeBytes != null) formatBytes(sizeBytes) else "—",
             )
-            InfoRow(stringResource(R.string.player_info_date), dateText)
-            InfoRow(stringResource(R.string.player_info_file_id), item.fileId.toString())
+            InfoRow(
+                icon = Icons.Default.CalendarToday,
+                label = stringResource(R.string.player_info_date),
+                value = dateText,
+            )
 
             if (!item.caption.isNullOrBlank()) {
                 Spacer(Modifier.height(16.dp))
@@ -1575,11 +1576,18 @@ private fun MediaInfoDrawer(
 }
 
 @Composable
-private fun InfoRow(label: String, value: String) {
+private fun InfoRow(icon: ImageVector, label: String, value: String) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(18.dp),
+        )
+        Spacer(Modifier.width(12.dp))
         Text(
             text = label,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
