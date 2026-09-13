@@ -50,6 +50,7 @@ class TdDataSource(
         }
         openedUri = uri
         fileId = uri.host?.toIntOrNull() ?: throw IOException("bad td uri: $uri")
+        Log.d(TAG, "open: file=$fileId pos=${dataSpec.position} len=${dataSpec.length}")
         fileRepo.startStreaming(fileId, priority = 1)
 
         // If ExoPlayer seeks past the current download frontier (user jump,
@@ -120,11 +121,22 @@ class TdDataSource(
                 st = fileRepo.streamState(fileId) ?: st
             }
 
-            // Windowed streaming: the active download only fetches up to the
-            // current frontier (targetBytes ≈ playhead + window). When the
-            // playhead reaches the frontier and the file isn't complete yet,
-            // extend the download so playback can continue past it.
-            if (!st.completed && pos + length > st.targetBytes) {
+            // How far the request sits from the download in flight decides who
+            // moves. A read that merely reaches past the frontier is served by
+            // the sequential download: extend its window and keep waiting. A
+            // read that jumped AHEAD of the download, or back behind the active
+            // segment with no frozen range covering it, has to re-point the
+            // download instead.
+            //
+            // Order matters: extendStream only continues from the current
+            // frontier, so extending first seeds a window that starts hundreds
+            // of MB behind the playhead and playback waits for a download that
+            // can never catch up (2026-09-13 log: read at 866MB, frontier 3.5MB,
+            // target 982MB — target was computed from the playhead, the
+            // download still inched up from the old frontier).
+            val jumpedAhead = pos > st.downloadedSize + READ_AHEAD_SLACK_BYTES
+            val jumpedBack = pos < st.activeStart
+            if (!jumpedAhead && !jumpedBack && !st.completed && pos + length > st.targetBytes) {
                 fileRepo.extendStream(fileId, pos + fileRepo.streamWindowBytes)
             }
 
@@ -139,11 +151,7 @@ class TdDataSource(
             // playback, so re-point the download at the hole and wait for it to
             // be filled instead of reading garbage.
             if (!fileRepo.isStreamRangeAvailable(fileId, pos, length)) {
-                // Only re-point when the request is genuinely elsewhere. A read
-                // that merely reaches past the frontier is served by the download
-                // already in flight — seeking there cancels it and starts over,
-                // which is what read as a stall below.
-                if (pos < st.activeStart || pos >= st.targetBytes) {
+                if (jumpedAhead || jumpedBack) {
                     fileRepo.seekStream(fileId, pos)
                 }
                 if (!waitForStreamRange(fileId, pos, length, deadline)) {
@@ -151,7 +159,8 @@ class TdDataSource(
                         TAG,
                         "read: download stalled for file $fileId at pos $pos " +
                             "(frontier=${st.downloadedSize}, target=${st.targetBytes}, " +
-                            "complete=${st.completed})",
+                            "active=${st.activeStart}, complete=${st.completed}, " +
+                            "jumped=${jumpedAhead || jumpedBack})",
                     )
                     throw IOException("download stalled for file $fileId at $pos")
                 }
@@ -202,6 +211,10 @@ class TdDataSource(
     private fun waitForStreamRange(fileId: Int, pos: Long, length: Int, deadline: Long): Boolean {
         while (true) {
             if (fileRepo.isStreamRangeAvailable(fileId, pos, length)) return true
+            // A partial arrival is usable — ExoPlayer takes short reads — so
+            // start serving as soon as the first byte of the range exists
+            // rather than insisting on the whole request.
+            if (fileRepo.isStreamRangeAvailable(fileId, pos, 1)) return true
             val remaining = deadline - System.currentTimeMillis()
             if (remaining <= 0) return false
             fileRepo.awaitStreamBytes(
@@ -247,6 +260,12 @@ class TdDataSource(
         // Slice size for those waits: small enough to start serving a partial
         // range as soon as bytes land, large enough not to spin.
         private const val READ_WAIT_SLICE_MS = 500L
+
+        // A read further ahead of the download frontier than this is treated as
+        // a jump and re-points the download, instead of waiting for the
+        // sequential download to crawl there (which it cannot do in time for a
+        // multi-hundred-MB gap).
+        private const val READ_AHEAD_SLACK_BYTES = 8L * 1024 * 1024
 
         fun uriFor(fileId: Int): Uri = Uri.parse("$SCHEME_TD://$fileId")
     }

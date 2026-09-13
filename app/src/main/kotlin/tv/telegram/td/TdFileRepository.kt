@@ -145,9 +145,26 @@ class TdFileRepository(
         if (cur != null) {
             val failed = !local.isDownloadingActive && !local.isDownloadingCompleted
                 && local.path.isNotEmpty() && cur.path != null
+            // TDLib keeps reporting the previous request's progress for a
+            // moment after seekStream re-points the download, and that value
+            // can sit BELOW the new window's start. Storing it verbatim left
+            // the state incoherent (activeStart ahead of downloadedSize), so
+            // every availability check failed and the reader waited out its
+            // budget on a download that had nothing reported for it yet
+            // (frontier=3.5MB vs pos=866MB in the 2026-09-13 log).
+            val reported = local.downloadedSize.toLong()
+            val clamped = if (local.isDownloadingCompleted) reported
+            else reported.coerceAtLeast(cur.activeStart)
+            if (clamped != reported) {
+                Log.d(
+                    TAG,
+                    "updateFile($fileId): reported downloadedSize $reported below " +
+                        "activeStart ${cur.activeStart} — clamped (window re-point)",
+                )
+            }
             streamingStates[fileId] = cur.copy(
                 path = local.path.takeIf { it.isNotEmpty() } ?: cur.path,
-                downloadedSize = local.downloadedSize.toLong(),
+                downloadedSize = clamped,
                 expectedSize = file.expectedSize.toLong().takeIf { it > 0 } ?: cur.expectedSize,
                 completed = local.isDownloadingCompleted,
                 failed = failed,
@@ -337,7 +354,12 @@ class TdFileRepository(
             // Freeze the active segment (anything actually downloaded so far)
             // into ranges before re-pointing the download to the new offset.
             val frozen = if (cur.downloadedSize > cur.activeStart) {
-                addRange(cur.ranges, cur.activeStart..cur.downloadedSize)
+                // Exclusive end: downloadedSize is a COUNT, so the last byte
+                // really on disk is downloadedSize - 1. "..downloadedSize"
+                // claimed one byte that was never written — a hole byte served
+                // as data, which is how a shifted NAL length reached the MP4
+                // extractor (Invalid NAL length, 2026-09-13).
+                addRange(cur.ranges, cur.activeStart until cur.downloadedSize)
             } else {
                 cur.ranges
             }
