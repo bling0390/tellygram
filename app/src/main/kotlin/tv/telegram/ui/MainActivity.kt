@@ -78,6 +78,7 @@ import tv.telegram.ui.focus.BackController
 import tv.telegram.ui.focus.BackPriority
 import tv.telegram.ui.focus.BackRegistration
 import tv.telegram.ui.focus.LocalBackController
+import tv.telegram.ui.focus.dpadNavigationSounds
 import tv.telegram.ui.theme.TvgramTheme
 import androidx.tv.material3.Border
 import androidx.tv.material3.Card
@@ -233,7 +234,10 @@ private fun AppNavHost(viewModel: MainViewModel, backController: BackController)
     // jumps when focus moves between the rail and the content area.
     val railWidth = 84.dp
 
-    Box(modifier = Modifier.fillMaxSize()) {
+    // D-pad presses play the platform's navigation sounds for the whole
+    // activity window (rail, pages, in-tree overlays). Dialog / Popup windows
+    // own separate input pipelines and carry their own copy.
+    Box(modifier = Modifier.fillMaxSize().dpadNavigationSounds()) {
         NavHost(
             navController = navController,
             startDestination = startDestination,
@@ -347,6 +351,7 @@ private fun AppNavHost(viewModel: MainViewModel, backController: BackController)
         // cancel / Back closes it and focus returns to the rail item.
         if (showExitConfirm) {
             AlertDialog(
+                modifier = Modifier.dpadNavigationSounds(),
                 onDismissRequest = { showExitConfirm = false },
                 title = { Text(stringResource(R.string.exit_confirm_title)) },
                 text = { Text(stringResource(R.string.exit_confirm_text)) },

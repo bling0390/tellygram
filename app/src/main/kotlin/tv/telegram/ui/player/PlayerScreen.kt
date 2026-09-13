@@ -118,6 +118,7 @@ import tv.telegram.ui.MainViewModel
 import tv.telegram.ui.components.RightDrawer
 import tv.telegram.ui.focus.BackPriority
 import tv.telegram.ui.focus.BackRegistration
+import tv.telegram.ui.focus.dpadNavigationSounds
 import org.drinkless.td.libcore.telegram.TdApi
 import androidx.tv.material3.Icon
 import androidx.tv.material3.MaterialTheme
@@ -1343,6 +1344,9 @@ private fun SpeedMenu(
 
     Column(
         modifier = Modifier
+            // The popover lives in its own window, so it needs its own copy of
+            // the D-pad sounds.
+            .dpadNavigationSounds()
             .width(SpeedMenuWidth)
             .shadow(8.dp, RoundedCornerShape(SpeedMenuRadius))
             .background(

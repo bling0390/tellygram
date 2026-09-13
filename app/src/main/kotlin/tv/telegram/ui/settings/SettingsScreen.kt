@@ -56,6 +56,7 @@ import tv.telegram.td.TdUser
 import tv.telegram.ui.Language
 import tv.telegram.ui.MainViewModel
 import tv.telegram.ui.ThemeMode
+import tv.telegram.ui.focus.dpadNavigationSounds
 import androidx.tv.material3.Border
 import androidx.tv.material3.Card
 import androidx.tv.material3.CardDefaults
@@ -182,6 +183,7 @@ fun SettingsScreen(viewModel: MainViewModel) {
 
     if (showLogoutConfirm) {
         AlertDialog(
+            modifier = Modifier.dpadNavigationSounds(),
             onDismissRequest = { showLogoutConfirm = false },
             title = { Text(stringResource(R.string.settings_signout_dialog_title)) },
             text = { Text(stringResource(R.string.settings_signout_dialog_text)) },
@@ -207,6 +209,7 @@ fun SettingsScreen(viewModel: MainViewModel) {
         val isDone = progress == 1f
         val sizeText = formatCacheSize(cacheSizeBytes)
         AlertDialog(
+            modifier = Modifier.dpadNavigationSounds(),
             onDismissRequest = { if (!isProgressing) showClearCacheConfirm = false },
             title = { Text(stringResource(R.string.settings_clear_cache_dialog_title)) },
             text = {

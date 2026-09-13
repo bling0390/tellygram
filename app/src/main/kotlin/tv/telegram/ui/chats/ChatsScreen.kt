@@ -112,6 +112,7 @@ import tv.telegram.td.MediaType
 import tv.telegram.ui.MainViewModel
 import tv.telegram.ui.focus.BackPriority
 import tv.telegram.ui.focus.BackRegistration
+import tv.telegram.ui.focus.dpadNavigationSounds
 import tv.telegram.ui.focus.focusGridItem
 import tv.telegram.ui.focus.focusListItem
 import tv.telegram.ui.focus.isFullyVisible
@@ -1400,6 +1401,8 @@ private fun PhotoFullscreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
+            // Dialog window: its own input pipeline, so its own D-pad sounds.
+            .dpadNavigationSounds()
             .background(Color.Black)
             .focusable()
             .focusRequester(focusRequester)
@@ -1526,6 +1529,8 @@ private fun ChatContextMenu(
         Box(
             modifier = Modifier
                 .fillMaxSize()
+                // Dialog window: its own input pipeline, so its own D-pad sounds.
+                .dpadNavigationSounds()
                 .onPreviewKeyEvent { ev ->
                     if (!ev.key.isConfirmKey()) return@onPreviewKeyEvent false
                     when (ev.type) {
@@ -1662,6 +1667,7 @@ private fun ChatConfirmDialog(
         }
     }
     AlertDialog(
+        modifier = Modifier.dpadNavigationSounds(),
         onDismissRequest = onCancel,
         title = {
             Text(
