@@ -422,15 +422,15 @@ fun PlayerScreen(
     // Box keeps focus (left/right seek without revealing the controller);
     // OK / Up / Down reveal the controller with focus on the progress bar.
     var showController by remember { mutableStateOf(false) }
-    // Speed popover. Owned here rather than inside PlayerController because the
-    // capture-phase Back handler below runs before any child sees the key, so
-    // "Back closes the popover first" has to be decided at this level.
-    var showSpeedMenu by remember { mutableStateOf(false) }
+    // Which picker (speed / rotation) is open, if any. Owned here rather than
+    // inside PlayerController because the capture-phase Back handler below runs
+    // before any child sees the key, so "Back closes the popover first" has to
+    // be decided at this level.
+    var openPopover by remember { mutableStateOf<PlayerPopover?>(null) }
     // Screen rotation for the video surface: 0 / 90 / 180 / 270 degrees.
     // Portrait videos (very common in TG) play with big black bars on a
-    // landscape TV — one rotate press turns them full-screen. Kept across
-    // video switches so a portrait playlist stays rotated; press the button
-    // three more times to cycle back.
+    // landscape TV — the rotate button's popover picks the angle. Kept across
+    // video switches so a portrait playlist stays rotated.
     var rotation by remember { mutableIntStateOf(0) }
     var lastInteractionMs by remember { mutableStateOf(System.currentTimeMillis()) }
     var controllerShownBefore by remember { mutableStateOf(false) }
@@ -456,16 +456,16 @@ fun PlayerScreen(
     }
     // Auto-hide: only while focus is on the progress bar, 4s after the last
     // interaction (bump restarts the timer). Focus on buttons → no auto-hide.
-    // The speed popover pins the controller open while it is up.
-    LaunchedEffect(showController, lastInteractionMs, progressFocused, showSpeedMenu) {
-        if (showController && progressFocused && !showSpeedMenu) {
+    // An open popover pins the controller up while it is showing.
+    LaunchedEffect(showController, lastInteractionMs, progressFocused, openPopover) {
+        if (showController && progressFocused && openPopover == null) {
             delay(4000L)
             showController = false
         }
     }
-    // The popover cannot outlive the controller it hangs off.
+    // A popover cannot outlive the controller it hangs off.
     LaunchedEffect(showController) {
-        if (!showController) showSpeedMenu = false
+        if (!showController) openPopover = null
     }
     val bumpController = {
         showController = true
@@ -484,10 +484,10 @@ fun PlayerScreen(
 
 
     // Back hides the controller first; a second Back leaves the player.
-    // Speed popover first, then the info drawer, then the controller.
+    // An open popover first, then the info drawer, then the controller.
     BackRegistration(BackPriority.PLAYER) {
         when {
-            showSpeedMenu -> showSpeedMenu = false
+            openPopover != null -> openPopover = null
             showInfo -> showInfo = false
             showController -> showController = false
             else -> closePlayer()
@@ -505,7 +505,7 @@ fun PlayerScreen(
             .onPreviewKeyEvent { ev ->
                 if (ev.type == KeyEventType.KeyDown && ev.key == Key.Back) {
                     when {
-                        showSpeedMenu -> { showSpeedMenu = false; true }
+                        openPopover != null -> { openPopover = null; true }
                         showInfo -> { showInfo = false; true }
                         showController -> { showController = false; true }
                         else -> false
@@ -697,7 +697,8 @@ fun PlayerScreen(
                 isPlaying = { nowPlaying },
                 speed = speed,
                 speeds = viewModel.playerSpeeds,
-                speedMenuOpen = showSpeedMenu,
+                rotation = rotation,
+                openPopover = openPopover,
                 progressFocusRequester = progressFocusRequester,
                 infoFocusRequester = infoButtonFocus,
                 onProgressFocusChange = { progressFocused = it },
@@ -718,17 +719,17 @@ fun PlayerScreen(
                     )
                     bumpController()
                 },
-                onOpenSpeedMenu = {
+                onOpenPopover = { popover ->
                     bumpController()
-                    showSpeedMenu = true
+                    openPopover = popover
                 },
+                onDismissPopover = { openPopover = null },
                 onSpeedChange = { newSpeed ->
                     viewModel.setPlayerSpeed(newSpeed)
-                    showSpeedMenu = false
+                    openPopover = null
                 },
-                onSpeedMenuDismiss = { showSpeedMenu = false },
-                onRotate = {
-                    rotation = (rotation + 90) % 360
+                onRotationChange = { degrees ->
+                    rotation = degrees
                     bumpController()
                 },
                 onPrev = if (hasPrevVideo) {
@@ -771,7 +772,8 @@ private fun PlayerController(
     isPlaying: () -> Boolean,
     speed: Float,
     speeds: List<Float>,
-    speedMenuOpen: Boolean,
+    rotation: Int,
+    openPopover: PlayerPopover?,
     progressFocusRequester: FocusRequester,
     infoFocusRequester: FocusRequester,
     onProgressFocusChange: (Boolean) -> Unit,
@@ -780,10 +782,10 @@ private fun PlayerController(
     onPlayPause: () -> Unit,
     onSeekBack: () -> Unit,
     onSeekFwd: () -> Unit,
-    onOpenSpeedMenu: () -> Unit,
+    onOpenPopover: (PlayerPopover) -> Unit,
+    onDismissPopover: () -> Unit,
     onSpeedChange: (Float) -> Unit,
-    onSpeedMenuDismiss: () -> Unit,
-    onRotate: () -> Unit,
+    onRotationChange: (Int) -> Unit,
     onInfo: () -> Unit,
     onPrev: (() -> Unit)?,
     onNext: (() -> Unit)?,
@@ -817,17 +819,25 @@ private fun PlayerController(
     val rotateFocus = remember { FocusRequester() }
     val infoFocus = infoFocusRequester
 
-    // Popover focus handover: the Popup window holds focus while the menu is
-    // up, so hand the speed button back once it closes (the same explicit
+    // Popover focus handover: the Popup window holds focus while a picker is up,
+    // so hand the button that opened it back once it closes (the same explicit
     // restore the RightDrawer needs). Guarded on "was open" so the first
     // composition does not steal focus from the seeker.
-    var speedMenuShownBefore by remember { mutableStateOf(false) }
-    LaunchedEffect(speedMenuOpen) {
-        if (speedMenuOpen) {
-            speedMenuShownBefore = true
-        } else if (speedMenuShownBefore) {
+    var popoverShownBefore by remember { mutableStateOf<PlayerPopover?>(null) }
+    LaunchedEffect(openPopover) {
+        if (openPopover != null) {
+            popoverShownBefore = openPopover
+        } else if (popoverShownBefore != null) {
+            val target = when (popoverShownBefore) {
+                PlayerPopover.Speed -> speedFocus
+                PlayerPopover.Rotation -> rotateFocus
+                null -> null
+            }
+            popoverShownBefore = null
             withFrameNanos { }
-            try { speedFocus.requestFocus() } catch (_: IllegalStateException) {}
+            if (target != null) {
+                try { target.requestFocus() } catch (_: IllegalStateException) {}
+            }
         }
     }
     val buttonFocuses = remember(onPrev, onNext) {
@@ -975,31 +985,43 @@ private fun PlayerController(
                     )
                 }
                 Spacer(Modifier.width(12.dp))
-                // The popover anchors to this Box, so it opens directly above
-                // the speed button no matter how the row is laid out.
+                // Each popover anchors to its own button's Box, so it opens
+                // directly above that button no matter how the row is laid out.
                 Box {
                     ControllerButton(
                         icon = Icons.Default.Speed,
                         contentDescription = stringResource(R.string.player_btn_speed),
-                        onClick = onOpenSpeedMenu,
+                        onClick = { onOpenPopover(PlayerPopover.Speed) },
                         modifier = Modifier.focusRequester(speedFocus),
                     )
-                    if (speedMenuOpen) {
-                        SpeedMenuPopup(
-                            speeds = speeds,
+                    if (openPopover == PlayerPopover.Speed) {
+                        PlayerPopoverMenuPopup(
+                            items = speeds,
                             current = speed,
+                            label = ::formatSpeed,
                             onSelect = onSpeedChange,
-                            onDismiss = onSpeedMenuDismiss,
+                            onDismiss = onDismissPopover,
                         )
                     }
                 }
                 Spacer(Modifier.width(12.dp))
-                ControllerButton(
-                    icon = Icons.Default.ScreenRotation,
-                    contentDescription = stringResource(R.string.player_btn_rotate),
-                    onClick = onRotate,
-                    modifier = Modifier.focusRequester(rotateFocus),
-                )
+                Box {
+                    ControllerButton(
+                        icon = Icons.Default.ScreenRotation,
+                        contentDescription = stringResource(R.string.player_btn_rotate),
+                        onClick = { onOpenPopover(PlayerPopover.Rotation) },
+                        modifier = Modifier.focusRequester(rotateFocus),
+                    )
+                    if (openPopover == PlayerPopover.Rotation) {
+                        PlayerPopoverMenuPopup(
+                            items = PLAYER_ROTATIONS,
+                            current = rotation,
+                            label = ::formatDegrees,
+                            onSelect = onRotationChange,
+                            onDismiss = onDismissPopover,
+                        )
+                    }
+                }
                 Spacer(Modifier.width(12.dp))
                 ControllerButton(
                     icon = Icons.Default.Info,
@@ -1218,43 +1240,53 @@ private fun ControllerButton(
 
 // Decode TDLib's embedded minithumbnail (raw JPEG bytes — it ships inside the
 // message, so nothing is downloaded) into something Compose can draw.
-// ── Speed popover ───────────────────────────────────────────────────────────
+// ── Player popovers ───────────────────────────────────────────────────────
 // Figma 1117:15358 ("Menu", component set 1117:9959) is the JetStream popover
-// the design shows for the subtitle picker; the speed picker reuses it: a 216dp
-// column, 16dp radius, background-token fill under the design's elevation
+// the design shows for the subtitle picker; the player's pickers reuse it: a
+// 216dp column, 16dp radius, background-token fill under the design's elevation
 // shadow, 8/12dp list padding and 40dp rows (10/12 padding around the 20dp line
 // box). A focused row inverts to the On Surface fill with an Inverse On Surface
 // label and grows ~5% (201.6/192 in the design).
-private val SpeedMenuWidth = 216.dp
-private val SpeedMenuRadius = 16.dp
-private val SpeedMenuRowHeight = 40.dp
-private val SpeedMenuListPaddingV = 8.dp
-private val SpeedMenuListPaddingH = 12.dp
+private val PlayerPopoverWidth = 216.dp
+private val PlayerPopoverRadius = 16.dp
+private val PlayerPopoverRowHeight = 40.dp
+private val PlayerPopoverListPaddingV = 8.dp
+private val PlayerPopoverListPaddingH = 12.dp
+
+// Which picker the controller has open, if any.
+private enum class PlayerPopover { Speed, Rotation }
+
+// Surface rotation angles the rotate button offers, upright first.
+private val PLAYER_ROTATIONS = listOf(0, 90, 180, 270)
 
 // "1.0x" / "1.25x" — the same shape the removed inline speed label used.
 private fun formatSpeed(speed: Float): String = "${speed}x"
 
+// "0°" / "90°" — language-neutral, so no new strings are needed.
+private fun formatDegrees(degrees: Int): String = "$degrees°"
+
 @Composable
-private fun SpeedMenuPopup(
-    speeds: List<Float>,
-    current: Float,
-    onSelect: (Float) -> Unit,
+private fun <T> PlayerPopoverMenuPopup(
+    items: List<T>,
+    current: T,
+    label: (T) -> String,
+    onSelect: (T) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val gapPx = with(LocalDensity.current) { 12.dp.roundToPx() }
-    val positionProvider = remember(gapPx) { SpeedMenuPositionProvider(gapPx) }
+    val positionProvider = remember(gapPx) { PlayerPopoverPositionProvider(gapPx) }
     Popup(
         popupPositionProvider = positionProvider,
         onDismissRequest = onDismiss,
         properties = PopupProperties(focusable = true),
     ) {
-        SpeedMenu(speeds = speeds, current = current, onSelect = onSelect)
+        PlayerPopoverMenu(items = items, current = current, label = label, onSelect = onSelect)
     }
 }
 
 // Anchors the popover to the trigger: right-aligned to the button it hangs off
 // and sitting above it, clamped into the window so it can never go off-screen.
-private class SpeedMenuPositionProvider(private val gapPx: Int) : PopupPositionProvider {
+private class PlayerPopoverPositionProvider(private val gapPx: Int) : PopupPositionProvider {
     override fun calculatePosition(
         anchorBounds: IntRect,
         windowSize: IntSize,
@@ -1269,13 +1301,14 @@ private class SpeedMenuPositionProvider(private val gapPx: Int) : PopupPositionP
 }
 
 @Composable
-private fun SpeedMenu(
-    speeds: List<Float>,
-    current: Float,
-    onSelect: (Float) -> Unit,
+private fun <T> PlayerPopoverMenu(
+    items: List<T>,
+    current: T,
+    label: (T) -> String,
+    onSelect: (T) -> Unit,
 ) {
-    val itemFocuses = remember(speeds) { speeds.map { FocusRequester() } }
-    val selectedIndex = speeds.indexOf(current).coerceAtLeast(0)
+    val itemFocuses = remember(items) { items.map { FocusRequester() } }
+    val selectedIndex = items.indexOf(current).coerceAtLeast(0)
     // Single source of truth for the highlight: the pill follows this index, not
     // the focus system. A Popup window focuses its FIRST focusable child as it
     // opens, so a focus-driven pill painted 1.0x for a frame before the
@@ -1307,15 +1340,15 @@ private fun SpeedMenu(
             // The popover lives in its own window, so it needs its own copy of
             // the D-pad sounds.
             .dpadNavigationSounds()
-            .width(SpeedMenuWidth)
-            .shadow(8.dp, RoundedCornerShape(SpeedMenuRadius))
+            .width(PlayerPopoverWidth)
+            .shadow(8.dp, RoundedCornerShape(PlayerPopoverRadius))
             .background(
                 MaterialTheme.colorScheme.background,
-                RoundedCornerShape(SpeedMenuRadius),
+                RoundedCornerShape(PlayerPopoverRadius),
             )
             .padding(
-                vertical = SpeedMenuListPaddingV,
-                horizontal = SpeedMenuListPaddingH,
+                vertical = PlayerPopoverListPaddingV,
+                horizontal = PlayerPopoverListPaddingH,
             )
             // Trap the D-pad: without this the first Up / last Down walks focus
             // out of the popover into whatever sits behind it.
@@ -1325,27 +1358,27 @@ private fun SpeedMenu(
                     Key.DirectionUp -> { moveFocus(-1); true }
                     Key.DirectionDown -> { moveFocus(+1); true }
                     Key.DirectionCenter, Key.Enter -> {
-                        onSelect(speeds[focusedIndex])
+                        onSelect(items[focusedIndex])
                         true
                     }
                     else -> false
                 }
             },
     ) {
-        speeds.forEachIndexed { index, speed ->
-            SpeedMenuItem(
-                label = formatSpeed(speed),
+        items.forEachIndexed { index, item ->
+            PlayerPopoverItem(
+                label = label(item),
                 selected = index == selectedIndex,
                 focused = index == focusedIndex,
                 focusRequester = itemFocuses[index],
-                onClick = { onSelect(speed) },
+                onClick = { onSelect(item) },
             )
         }
     }
 }
 
 @Composable
-private fun SpeedMenuItem(
+private fun PlayerPopoverItem(
     label: String,
     selected: Boolean,
     focused: Boolean,
@@ -1364,7 +1397,7 @@ private fun SpeedMenuItem(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(SpeedMenuRowHeight)
+            .height(PlayerPopoverRowHeight)
             .focusRequester(focusRequester)
             .graphicsLayer {
                 val scale = if (focused) 1.05f else 1f
