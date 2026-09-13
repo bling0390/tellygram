@@ -231,13 +231,18 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Playback rates offered by the player's speed popover, slowest first. */
+    val playerSpeeds: List<Float> = listOf(1.0f, 1.25f, 1.5f, 2.0f)
+
+    fun setPlayerSpeed(speed: Float) {
+        _playerPlaybackSpeed.value = speed
+    }
+
     fun cyclePlayerSpeed(): Float {
-        val next = when (_playerPlaybackSpeed.value) {
-            1.0f  -> 1.25f
-            1.25f -> 1.5f
-            1.5f  -> 2.0f
-            else  -> 1.0f
-        }
+        val speeds = playerSpeeds
+        // indexOf(-1) (a rate set from outside the list) falls back to the
+        // first entry, so cycling always lands on a listed rate.
+        val next = speeds[(speeds.indexOf(_playerPlaybackSpeed.value) + 1) % speeds.size]
         _playerPlaybackSpeed.value = next
         return next
     }

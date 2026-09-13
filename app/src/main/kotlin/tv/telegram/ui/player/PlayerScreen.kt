@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -32,6 +33,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Forward10
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Pause
@@ -57,6 +59,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
@@ -73,11 +77,19 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupPositionProvider
+import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntRect
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -435,6 +447,10 @@ fun PlayerScreen(
     // Box keeps focus (left/right seek without revealing the controller);
     // OK / Up / Down reveal the controller with focus on the progress bar.
     var showController by remember { mutableStateOf(false) }
+    // Speed popover. Owned here rather than inside PlayerController because the
+    // capture-phase Back handler below runs before any child sees the key, so
+    // "Back closes the popover first" has to be decided at this level.
+    var showSpeedMenu by remember { mutableStateOf(false) }
     // Screen rotation for the video surface: 0 / 90 / 180 / 270 degrees.
     // Portrait videos (very common in TG) play with big black bars on a
     // landscape TV — one rotate press turns them full-screen. Kept across
@@ -465,11 +481,16 @@ fun PlayerScreen(
     }
     // Auto-hide: only while focus is on the progress bar, 4s after the last
     // interaction (bump restarts the timer). Focus on buttons → no auto-hide.
-    LaunchedEffect(showController, lastInteractionMs, progressFocused) {
-        if (showController && progressFocused) {
+    // The speed popover pins the controller open while it is up.
+    LaunchedEffect(showController, lastInteractionMs, progressFocused, showSpeedMenu) {
+        if (showController && progressFocused && !showSpeedMenu) {
             delay(4000L)
             showController = false
         }
+    }
+    // The popover cannot outlive the controller it hangs off.
+    LaunchedEffect(showController) {
+        if (!showController) showSpeedMenu = false
     }
     val bumpController = {
         showController = true
@@ -488,9 +509,10 @@ fun PlayerScreen(
 
 
     // Back hides the controller first; a second Back leaves the player.
-    // Info drawer takes priority when open.
+    // Speed popover first, then the info drawer, then the controller.
     BackRegistration(BackPriority.PLAYER) {
         when {
+            showSpeedMenu -> showSpeedMenu = false
             showInfo -> showInfo = false
             showController -> showController = false
             else -> closePlayer()
@@ -508,6 +530,7 @@ fun PlayerScreen(
             .onPreviewKeyEvent { ev ->
                 if (ev.type == KeyEventType.KeyDown && ev.key == Key.Back) {
                     when {
+                        showSpeedMenu -> { showSpeedMenu = false; true }
                         showInfo -> { showInfo = false; true }
                         showController -> { showController = false; true }
                         else -> false
@@ -712,6 +735,8 @@ fun PlayerScreen(
                 bufferedMs = { exo.bufferedPosition.coerceAtLeast(0L) },
                 isPlaying = { nowPlaying },
                 speed = speed,
+                speeds = viewModel.playerSpeeds,
+                speedMenuOpen = showSpeedMenu,
                 progressFocusRequester = progressFocusRequester,
                 infoFocusRequester = infoButtonFocus,
                 onProgressFocusChange = { progressFocused = it },
@@ -732,10 +757,15 @@ fun PlayerScreen(
                     )
                     bumpController()
                 },
-                onSpeedCycle = {
-                    viewModel.cyclePlayerSpeed()
+                onOpenSpeedMenu = {
                     bumpController()
+                    showSpeedMenu = true
                 },
+                onSpeedChange = { newSpeed ->
+                    viewModel.setPlayerSpeed(newSpeed)
+                    showSpeedMenu = false
+                },
+                onSpeedMenuDismiss = { showSpeedMenu = false },
                 onRotate = {
                     rotation = (rotation + 90) % 360
                     bumpController()
@@ -779,6 +809,8 @@ private fun PlayerController(
     bufferedMs: () -> Long,
     isPlaying: () -> Boolean,
     speed: Float,
+    speeds: List<Float>,
+    speedMenuOpen: Boolean,
     progressFocusRequester: FocusRequester,
     infoFocusRequester: FocusRequester,
     onProgressFocusChange: (Boolean) -> Unit,
@@ -787,7 +819,9 @@ private fun PlayerController(
     onPlayPause: () -> Unit,
     onSeekBack: () -> Unit,
     onSeekFwd: () -> Unit,
-    onSpeedCycle: () -> Unit,
+    onOpenSpeedMenu: () -> Unit,
+    onSpeedChange: (Float) -> Unit,
+    onSpeedMenuDismiss: () -> Unit,
     onRotate: () -> Unit,
     onInfo: () -> Unit,
     onPrev: (() -> Unit)?,
@@ -821,6 +855,20 @@ private fun PlayerController(
     val speedFocus = remember { FocusRequester() }
     val rotateFocus = remember { FocusRequester() }
     val infoFocus = infoFocusRequester
+
+    // Popover focus handover: the Popup window holds focus while the menu is
+    // up, so hand the speed button back once it closes (the same explicit
+    // restore the RightDrawer needs). Guarded on "was open" so the first
+    // composition does not steal focus from the seeker.
+    var speedMenuShownBefore by remember { mutableStateOf(false) }
+    LaunchedEffect(speedMenuOpen) {
+        if (speedMenuOpen) {
+            speedMenuShownBefore = true
+        } else if (speedMenuShownBefore) {
+            withFrameNanos { }
+            try { speedFocus.requestFocus() } catch (_: IllegalStateException) {}
+        }
+    }
     val buttonFocuses = remember(onPrev, onNext) {
         buildList {
             if (onPrev != null) add(prevFocus)
@@ -966,12 +1014,24 @@ private fun PlayerController(
                     )
                 }
                 Spacer(Modifier.width(12.dp))
-                ControllerButton(
-                    icon = Icons.Default.Speed,
-                    contentDescription = stringResource(R.string.player_btn_speed),
-                    onClick = onSpeedCycle,
-                    modifier = Modifier.focusRequester(speedFocus),
-                )
+                // The popover anchors to this Box, so it opens directly above
+                // the speed button no matter how the row is laid out.
+                Box {
+                    ControllerButton(
+                        icon = Icons.Default.Speed,
+                        contentDescription = stringResource(R.string.player_btn_speed),
+                        onClick = onOpenSpeedMenu,
+                        modifier = Modifier.focusRequester(speedFocus),
+                    )
+                    if (speedMenuOpen) {
+                        SpeedMenuPopup(
+                            speeds = speeds,
+                            current = speed,
+                            onSelect = onSpeedChange,
+                            onDismiss = onSpeedMenuDismiss,
+                        )
+                    }
+                }
                 Spacer(Modifier.width(12.dp))
                 ControllerButton(
                     icon = Icons.Default.ScreenRotation,
@@ -1197,6 +1257,172 @@ private fun ControllerButton(
 
 // Decode TDLib's embedded minithumbnail (raw JPEG bytes — it ships inside the
 // message, so nothing is downloaded) into something Compose can draw.
+// ── Speed popover ───────────────────────────────────────────────────────────
+// Figma 1117:15358 ("Menu", component set 1117:9959) is the JetStream popover
+// the design shows for the subtitle picker; the speed picker reuses it: a 216dp
+// column, 16dp radius, background-token fill under the design's elevation
+// shadow, 8/12dp list padding and 40dp rows (10/12 padding around the 20dp line
+// box). A focused row inverts to the On Surface fill with an Inverse On Surface
+// label and grows ~5% (201.6/192 in the design).
+private val SpeedMenuWidth = 216.dp
+private val SpeedMenuRadius = 16.dp
+private val SpeedMenuRowHeight = 40.dp
+private val SpeedMenuListPaddingV = 8.dp
+private val SpeedMenuListPaddingH = 12.dp
+
+// "1.0x" / "1.25x" — the same shape the removed inline speed label used.
+private fun formatSpeed(speed: Float): String = "${speed}x"
+
+@Composable
+private fun SpeedMenuPopup(
+    speeds: List<Float>,
+    current: Float,
+    onSelect: (Float) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val gapPx = with(LocalDensity.current) { 12.dp.roundToPx() }
+    val positionProvider = remember(gapPx) { SpeedMenuPositionProvider(gapPx) }
+    Popup(
+        popupPositionProvider = positionProvider,
+        onDismissRequest = onDismiss,
+        properties = PopupProperties(focusable = true),
+    ) {
+        SpeedMenu(speeds = speeds, current = current, onSelect = onSelect)
+    }
+}
+
+// Anchors the popover to the trigger: right-aligned to the button it hangs off
+// and sitting above it, clamped into the window so it can never go off-screen.
+private class SpeedMenuPositionProvider(private val gapPx: Int) : PopupPositionProvider {
+    override fun calculatePosition(
+        anchorBounds: IntRect,
+        windowSize: IntSize,
+        layoutDirection: LayoutDirection,
+        popupContentSize: IntSize,
+    ): IntOffset {
+        val x = (anchorBounds.right - popupContentSize.width)
+            .coerceIn(0, (windowSize.width - popupContentSize.width).coerceAtLeast(0))
+        val y = (anchorBounds.top - popupContentSize.height - gapPx).coerceAtLeast(0)
+        return IntOffset(x, y)
+    }
+}
+
+@Composable
+private fun SpeedMenu(
+    speeds: List<Float>,
+    current: Float,
+    onSelect: (Float) -> Unit,
+) {
+    val itemFocuses = remember(speeds) { speeds.map { FocusRequester() } }
+    val selectedIndex = speeds.indexOf(current).coerceAtLeast(0)
+    var focusedIndex by remember { mutableIntStateOf(selectedIndex) }
+
+    // The Popup is a separate window, so the first requestFocus can land before
+    // its node is attached — retry a few frames (same as the other popups).
+    LaunchedEffect(Unit) {
+        withFrameNanos { }
+        repeat(5) {
+            try { itemFocuses[selectedIndex].requestFocus() } catch (_: IllegalStateException) {}
+            delay(40L)
+        }
+    }
+
+    fun moveFocus(delta: Int) {
+        focusedIndex = (focusedIndex + delta).coerceIn(0, itemFocuses.lastIndex)
+        try { itemFocuses[focusedIndex].requestFocus() } catch (_: IllegalStateException) {}
+    }
+
+    Column(
+        modifier = Modifier
+            .width(SpeedMenuWidth)
+            .shadow(8.dp, RoundedCornerShape(SpeedMenuRadius))
+            .background(
+                MaterialTheme.colorScheme.background,
+                RoundedCornerShape(SpeedMenuRadius),
+            )
+            .padding(
+                vertical = SpeedMenuListPaddingV,
+                horizontal = SpeedMenuListPaddingH,
+            )
+            // Trap the D-pad: without this the first Up / last Down walks focus
+            // out of the popover into whatever sits behind it.
+            .onPreviewKeyEvent { ev ->
+                if (ev.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                when (ev.key) {
+                    Key.DirectionUp -> { moveFocus(-1); true }
+                    Key.DirectionDown -> { moveFocus(+1); true }
+                    else -> false
+                }
+            },
+    ) {
+        speeds.forEachIndexed { index, speed ->
+            SpeedMenuItem(
+                label = formatSpeed(speed),
+                selected = index == selectedIndex,
+                focusRequester = itemFocuses[index],
+                onClick = { onSelect(speed) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun SpeedMenuItem(
+    label: String,
+    selected: Boolean,
+    focusRequester: FocusRequester,
+    onClick: () -> Unit,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val focused by interactionSource.collectIsFocusedAsState()
+    // Figma: focused row = On Surface fill + Inverse On Surface label. The check
+    // marks the rate currently in effect.
+    val fill = if (focused) MaterialTheme.colorScheme.onSurface else Color.Transparent
+    val fg = if (focused) {
+        MaterialTheme.colorScheme.inverseOnSurface
+    } else {
+        MaterialTheme.colorScheme.onSurface
+    }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(SpeedMenuRowHeight)
+            .focusRequester(focusRequester)
+            .graphicsLayer {
+                val scale = if (focused) 1.05f else 1f
+                scaleX = scale
+                scaleY = scale
+            }
+            .clip(RoundedCornerShape(8.dp))
+            .background(fill)
+            .focusable(interactionSource = interactionSource)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick,
+            )
+            .padding(horizontal = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Text(
+            text = label,
+            color = fg,
+            // Figma title/small = Inter Medium 500 / 14 / 20, which is this
+            // app's labelLarge (its own titleSmall is 12/16 Regular).
+            style = MaterialTheme.typography.labelLarge,
+        )
+        if (selected) {
+            Icon(
+                imageVector = Icons.Default.Check,
+                contentDescription = null,
+                tint = fg,
+                modifier = Modifier.size(19.dp),
+            )
+        }
+    }
+}
+
 private fun decodeMinithumbnail(bytes: ByteArray?): ImageBitmap? {
     if (bytes == null || bytes.isEmpty()) return null
     return try {
