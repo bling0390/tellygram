@@ -1,0 +1,129 @@
+name: personal-apk
+
+# One user's personal APK, built on demand by the tellygram.app relay.
+#
+# Why repository_dispatch instead of workflow_dispatch: a repository_dispatch
+# payload is not rendered into the run UI, while workflow_dispatch inputs are —
+# and this repository is public, so anything printed here is world-readable.
+# The credential still never travels in the payload: the runner fetches it once
+# from the relay with a shared secret, masks it, and the relay forgets it.
+#
+# Secrets required on this repository:
+#   RELAY_SECRET        shared with the relay; lets the runner fetch credentials
+#   UPLOAD_SECRET       shared with the relay; lets the runner publish the APK
+#   KEYSTORE_BASE64     base64 of the DISTRIBUTION keystore (not a personal one)
+#   KEYSTORE_PASSWORD   store password
+#   KEY_ALIAS           key alias
+#   KEY_PASSWORD        key password
+#   EXPECTED_CERT_SHA256 optional: the relay also checks the APK's signer
+
+on:
+  repository_dispatch:
+    types: [personal-apk]
+
+permissions:
+  contents: read
+
+concurrency:
+  # Personal builds are independent; do not cancel one for another.
+  group: personal-apk-${{ github.event.client_payload.jobId }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      JOB_ID: ${{ github.event.client_payload.jobId }}
+      RELAY: ${{ github.event.client_payload.relay }}
+      ABI: ${{ github.event.client_payload.abi }}
+    steps:
+      - name: Fetch the credential once, from the relay
+        env:
+          RELAY_SECRET: ${{ secrets.RELAY_SECRET }}
+        run: |
+          set -euo pipefail
+          : "${JOB_ID:?missing jobId}"
+          : "${RELAY:?missing relay}"
+          creds="$RUNNER_TEMP/creds.json"
+          curl -fsS --max-time 30 \
+            -H "Authorization: Bearer $RELAY_SECRET" \
+            "$RELAY/ci/creds/$JOB_ID" -o "$creds"
+          ID=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["api_id"])' "$creds")
+          HASH=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["api_hash"])' "$creds")
+          # Mask before anything else can print them: from here on GitHub
+          # redacts these values wherever they appear in the log.
+          echo "::add-mask::$ID"
+          echo "::add-mask::$HASH"
+          {
+            echo "TG_API_ID=$ID"
+            echo "TG_API_HASH=$HASH"
+          } >> "$GITHUB_ENV"
+          rm -f "$creds"
+          echo "abi=${ABI:-arm64-v8a}" >> "$GITHUB_OUTPUT"
+        id: creds
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Write signing config (from secrets, into the work tree only)
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/dist.keystore"
+          cat > keystore.properties <<EOF
+          storeFile=$RUNNER_TEMP/dist.keystore
+          storePassword=$KEYSTORE_PASSWORD
+          keyAlias=$KEY_ALIAS
+          keyPassword=$KEY_PASSWORD
+          EOF
+          # A minimal local.properties: BUILD_NUMBER bookkeeping needs the file,
+          # and it must NOT carry credentials (they come from the environment).
+          printf 'BUILD_NUMBER=1\n' > local.properties
+
+      - name: Build release APK
+        id: build
+        run: |
+          set -euo pipefail
+          ABI="${{ steps.creds.outputs.abi }}"
+          ./gradlew :app:assembleRelease -Pabi="$ABI" --no-daemon --stacktrace
+          APK=$(find app/build/outputs/apk/release -name "*${ABI}*.apk" | head -1)
+          [ -n "$APK" ] || APK=$(find app/build/outputs/apk/release -name "*.apk" | head -1)
+          [ -n "$APK" ] || { echo "no APK produced"; exit 1; }
+          echo "apk=$APK" >> "$GITHUB_OUTPUT"
+          ls -l "$APK"
+
+      - name: Publish to the relay (single-use upload)
+        env:
+          UPLOAD_SECRET: ${{ secrets.UPLOAD_SECRET }}
+        run: |
+          set -euo pipefail
+          curl -fsS --max-time 300 -X PUT \
+            -H "Authorization: Bearer $UPLOAD_SECRET" \
+            -H "Content-Type: application/vnd.android.package-archive" \
+            --data-binary @"${{ steps.build.outputs.apk }}" \
+            "$RELAY/ci/upload/$JOB_ID"
+
+      - name: Report failure
+        if: failure()
+        env:
+          UPLOAD_SECRET: ${{ secrets.UPLOAD_SECRET }}
+        run: |
+          curl -fsS --max-time 20 -X POST \
+            -H "Authorization: Bearer $UPLOAD_SECRET" \
+            "$RELAY/ci/fail/$JOB_ID" || true
+
+      - name: Scrub
+        if: always()
+        run: |
+          rm -f "$RUNNER_TEMP/dist.keystore" keystore.properties local.properties || true

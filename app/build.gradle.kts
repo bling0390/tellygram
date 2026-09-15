@@ -27,8 +27,25 @@ android {
         val f = rootProject.file("local.properties")
         if (f.exists()) f.inputStream().use { load(it) }
     }
-    val tgApiId   = localProps.getProperty("TG_API_ID",   "")
-    val tgApiHash = localProps.getProperty("TG_API_HASH", "")
+    // Credentials can arrive three ways, in priority order:
+    //   1. -P property        (scripted local builds)
+    //   2. environment        (CI: the runner exports them after masking them
+    //                         in the log, so they are never a command-line
+    //                         argument and never appear in logs)
+    //   3. local.properties   (developer machine; gitignored)
+    // Personal-build CI must NOT go through local.properties: that file lives
+    // in the work tree, and the values it feeds end up in generated
+    // BuildConfig.java and in the APK's DEX — which is expected for the user's
+    // own credential, but it must not be left behind for the next job.
+    fun credential(name: String): String =
+        (
+            providers.gradleProperty(name).orNull
+                ?: System.getenv(name)
+                ?: localProps.getProperty(name, "")
+            ).trim()
+
+    val tgApiId   = credential("TG_API_ID")
+    val tgApiHash = credential("TG_API_HASH")
 
     // Proxy config — applied ONLY in buildTypes.debug below; release
     // gets empty defaults so TdClient.enableProxy() no-ops. Keeps
