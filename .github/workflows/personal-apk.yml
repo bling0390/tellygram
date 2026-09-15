@@ -97,6 +97,10 @@ jobs:
           set -euo pipefail
           ABI="${{ steps.creds.outputs.abi }}"
           ./gradlew :app:assembleRelease -Pabi="$ABI" --no-daemon --stacktrace
+          # -Pabi=<arch> makes gradle emit exactly one artifact, named
+          # app-<arch>-release.apk. -Pabi=universal turns splits off, so that
+          # build produces a plain app-release.apk with no ABI in the name —
+          # hence the fallback.
           APK=$(find app/build/outputs/apk/release -name "*${ABI}*.apk" | head -1)
           [ -n "$APK" ] || APK=$(find app/build/outputs/apk/release -name "*.apk" | head -1)
           [ -n "$APK" ] || { echo "no APK produced"; exit 1; }
