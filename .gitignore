@@ -41,3 +41,6 @@ gradle/wrapper/gradle-wrapper.jar.lck
 
 # OS
 Thumbs.db
+
+# Kotlin build artifact dir
+.kotlin/
