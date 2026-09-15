@@ -81,13 +81,24 @@ android {
         vectorDrawables { useSupportLibrary = true }
     }
 
-    // Multi-ABI splits (D-005)
+    // Multi-ABI splits (D-005).
+    // Personal builds pass -Pabi=<arch> so a build produces exactly the artifact
+    // that was asked for: one ABI with splits on, or a plain universal APK with
+    // splits off when "universal" is requested. Without the property a developer
+    // build still emits every ABI plus the universal one.
+    val requestedAbi = providers.gradleProperty("abi").orNull?.trim().orEmpty()
+    val singleAbi = requestedAbi.isNotEmpty() && requestedAbi != "universal"
     splits {
         abi {
-            isEnable        = true
+            isEnable        = requestedAbi != "universal"
             reset()
-            include("arm64-v8a", "armeabi-v7a", "x86", "x86_64")
-            isUniversalApk  = true
+            if (singleAbi) {
+                include(requestedAbi)
+                isUniversalApk = false
+            } else {
+                include("arm64-v8a", "armeabi-v7a", "x86", "x86_64")
+                isUniversalApk  = true
+            }
         }
     }
 
