@@ -112,22 +112,18 @@ jobs:
           UPLOAD_SECRET: ${{ secrets.UPLOAD_SECRET }}
         run: |
           set -euo pipefail
+          APK="${{ steps.build.outputs.apk }}"
+          # The relay refuses anything not signed by the distribution key, so
+          # report the signer certificate's SHA-256 for it to verify server-side.
+          SDK="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+          BT=$(ls -d "$SDK"/build-tools/* 2>/dev/null | sort -V | tail -1)
+          FP=$("$BT/apksigner" verify --print-certs "$APK" 2>/dev/null \
+                | awk -F': ' '/SHA-256 digest/ {print $2; exit}' | tr -d ':' | tr 'A-F' 'a-f')
+          [ -n "$FP" ] || { echo "could not read the signer fingerprint"; exit 1; }
+          echo "signer sha256: $FP"
           curl -fsS --max-time 300 -X PUT \
             -H "Authorization: Bearer $UPLOAD_SECRET" \
             -H "Content-Type: application/vnd.android.package-archive" \
-            --data-binary @"${{ steps.build.outputs.apk }}" \
+            -H "X-Apk-Cert-Sha256: $FP" \
+            --data-binary @"$APK" \
             "$RELAY/ci/upload/$JOB_ID"
-
-      - name: Report failure
-        if: failure()
-        env:
-          UPLOAD_SECRET: ${{ secrets.UPLOAD_SECRET }}
-        run: |
-          curl -fsS --max-time 20 -X POST \
-            -H "Authorization: Bearer $UPLOAD_SECRET" \
-            "$RELAY/ci/fail/$JOB_ID" || true
-
-      - name: Scrub
-        if: always()
-        run: |
-          rm -f "$RUNNER_TEMP/dist.keystore" keystore.properties local.properties || true
