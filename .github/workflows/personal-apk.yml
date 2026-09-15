@@ -131,9 +131,15 @@ jobs:
           # report the signer certificate's SHA-256 for it to verify server-side.
           SDK="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
           BT=$(ls -d "$SDK"/build-tools/* 2>/dev/null | sort -V | tail -1)
-          FP=$("$BT/apksigner" verify --print-certs "$APK" 2>/dev/null \
-                | awk -F': ' '/SHA-256 digest/ {print $2; exit}' | tr -d ':' | tr 'A-F' 'a-f')
-          [ -n "$FP" ] || { echo "could not read the signer fingerprint"; exit 1; }
+          OUT=$("$BT/apksigner" verify --print-certs "$APK" 2>&1 \
+                | sed -e 's/\x1b\[[0-9;]*m//g' || true)
+          FP=$(printf '%s\n' "$OUT" | sed -n 's/.*SHA-256 digest:[[:space:]]*//p' \
+                | head -1 | tr -d ':\r ' | tr 'A-F' 'a-f')
+          if ! printf '%s' "$FP" | grep -Eq '^[0-9a-f]{64}$'; then
+            echo "could not parse the signer fingerprint — raw apksigner output:"
+            printf '%s\n' "$OUT" | head -20
+            exit 1
+          fi
           echo "signer sha256: $FP"
           curl -fsS --max-time 300 -X PUT \
             -H "Authorization: Bearer $UPLOAD_SECRET" \
