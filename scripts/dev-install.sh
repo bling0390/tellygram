@@ -39,6 +39,6 @@ adb -s "$DEV" shell am force-stop "$APP_ID" || true
 adb -s "$DEV" shell am start -n "$ACTIVITY" >/dev/null
 
 # 4. Clear + tail logs
-log "Tailing logcat (filter: Tvgram:V *:S) — Ctrl+C to exit"
+log "Tailing logcat (filter: TellygramApp:V *:S) — Ctrl+C to exit"
 adb -s "$DEV" logcat -c
 exec adb -s "$DEV" logcat -v color "$APP_ID:V" "AndroidRuntime:E" "*:S"
