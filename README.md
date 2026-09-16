@@ -1,91 +1,112 @@
 # Tellygram — Telegram for Android TV
 
-A non-official third-party Telegram client for Android TV, focused on browsing
-**images and videos** in channels, groups, and private chats. Optimized for
-**D-pad navigation** and a **leanback / Google TV** experience.
+An **unofficial, media-first Telegram client for Android TV**. Browse images and
+video from your channels, groups and private chats on the big screen — D-pad
+first, leanback UI, no phone in hand.
 
-> Not affiliated with Telegram FZ-LLC. Built on top of the official
-> [TDLib](https://github.com/tdlib/td) Java bindings.
+> Not affiliated with Telegram FZ-LLC. Built on TDLib, Telegram's own client
+> library, so the app talks to Telegram directly.
 
-## Status
+**Status:** working app, released as `v1.0.0`. Distributed as a self-built APK —
+there is no Play Store listing.
 
-**Pre-MVP / scaffolding.** No code yet — only docs, scripts, and the
-agreed-upon architecture. See [`docs/DECISIONS.md`](docs/DECISIONS.md) for the
-full decision log and [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for
-the architecture.
+## Install (nothing to compile)
 
-## Scope (MVP v0.1.0)
+Build your own signed APK with your own Telegram API credentials:
 
-- ✅ QR-code login (no phone number / SMS code on TV)
+1. Create an `api_id` / `api_hash` for your account (Telegram's *API development
+   tools* page).
+2. Open **<https://tellygram.app/personal/>** and paste them.
+3. Pick an ABI: `arm64-v8a` (~20 MB) suits most TVs, `universal` (~70 MB) if you
+   are unsure.
+
+The build runs on GitHub Actions in a few minutes and returns a **single-use
+download link** (24 hours, downloads once). The APK is signed with this
+project's distribution key, so later builds install straight over it.
+
+Requires Android 5.0+ with leanback. No store account, no phone number.
+
+## What it does
+
+- ✅ QR-code login — no typing a phone number with a remote
 - ✅ Channel / group / private chat list
-- ✅ Browse **image and video messages only** within a chat
-- ✅ Single-user
-- ❌ Text messages (hidden)
-- ❌ Sending messages
-- ❌ Voice / audio messages (muted)
-- ❌ Search, downloads, multi-account
+- ✅ Image and video browsing inside a chat, built for a D-pad
+- ✅ Video player that plays while it downloads (one contiguous window, no holes)
+- ✅ Software decoder fallback for formats TV hardware refuses
+- ✅ English / 简体中文 / 繁體中文, dark TV theme
 
-## Target
+Deliberately out of scope: sending messages, text-only chats, voice messages,
+search, multiple accounts. This is a viewer.
 
-| Spec | Value |
+## Build from source
+
+| Tool | Version |
 |---|---|
-| App label | `Telegram TV` |
-| Package id | `tv.telegram` |
-| Min SDK | 21 (Android 5.0) |
-| Target SDK | 34 |
-| ABIs | `arm64-v8a`, `armeabi-v7a`, `x86_64` |
-| Distribution | Direct APK (no Play Store) |
-
-## Toolchain
-
-| Tool | Version | Why |
-|---|---|---|
-| JDK | **17 (Temurin)** | AGP 8.3+ / Kotlin 2.0 hard requirement |
-| Android SDK | Platform 34, Build-Tools 34.0.0 | compileSdk target |
-| Gradle | 8.5+ | Compatible with AGP 8.3 |
-| AGP | 8.3+ | Modern Compose / TV baseline |
-| Kotlin | 2.0+ | Compose Compiler bundled |
-| UI | Compose for TV (`androidx.tv:tv-foundation` + `tv-material`) | SmartTube-style leanback, modern API |
-| TDLib | `org.drinkless:tdlib:1.8.30` | Official Java bindings, JNI direct to TG DC |
-| ExoPlayer | `androidx.media3:media3-exoplayer:1.4.1` | TV video playback |
-| QR | `com.google.zxing:core:3.5.3` | QR-code rendering for login |
-
-## Repository
-
-```
-https://github.com/bling0390/tellygram
-```
-
-## Quick start
+| JDK | 17 |
+| Android SDK | platform 35, build-tools 34.0.0 |
+| Gradle | 8.6 (wrapper) |
+| AGP / Kotlin | 8.4.2 / 2.0.20 |
+| UI | Compose for TV, Media3 1.7.1 |
+| Telegram | TDLib — vendored Java bindings in `libtd/` |
 
 ```bash
-# 1. Install toolchain (one-time, downloads ~3GB)
-bash scripts/install-sdk.sh
+bash scripts/install-sdk.sh            # SDK + platform-tools (one-off)
 
-# 2. Add your Telegram API credentials
 cp local.properties.example local.properties
-# Edit local.properties and fill TG_API_ID / TG_API_HASH
-# (Never commit local.properties — it's in .gitignore)
+# fill in TG_API_ID / TG_API_HASH — never commit this file
 
-# 3. Build debug APK
-./gradlew assembleDebug
-
-# 4. Develop on real device (Sony Bravia)
-#    See docs/DEV-WORKFLOW.md for full SOP
-bash scripts/dev-install.sh
-
-# 5. Build release APKs (multi-ABI + universal)
-bash scripts/release-apks.sh
+./gradlew :app:assembleDebug -Pabi=arm64-v8a
+bash scripts/dev-install.sh            # install on a connected TV, tail logcat
 ```
+
+`-Pabi=<abi>` builds exactly one artifact: `arm64-v8a`, `armeabi-v7a`, `x86_64`
+or `universal`. Signed release builds need a key first:
+
+```bash
+bash scripts/generate-keystore.sh      # creates keystore/tellygram-release.jks
+bash scripts/release-apks.sh           # signed release APKs
+bash scripts/publish-apks.sh           # copy them to the file host
+```
+
+Credentials and the keystore are git-ignored; builds inject the credentials at
+compile time and they never appear in the repository.
+
+## Releasing
+
+- The version lives in **one place**: `baseVersion` in `app/build.gradle.kts`.
+  `versionCode` is derived from it (`1.0.2` → `10002`), so the two cannot drift.
+- A release is a **tag**:
+
+  ```bash
+  # bump baseVersion first, commit, then:
+  git tag -a v1.0.1 -m "Tellygram v1.0.1"
+  git push origin v1.0.1
+  ```
+
+- The personal-APK service builds **the newest tag**, so the version the site
+  shows is the version that ships; if a tag and the built version disagree, the
+  workflow warns.
+
+## Layout
+
+```
+app/       the Android TV app (Compose + Media3)
+libtd/     TDLib: vendored Java bindings + native libraries per ABI
+scripts/   SDK install, dev install, keystore, release, publish
+docs/      architecture, build, dev workflow, release, decision log
+```
+
+The personal-APK service (the small relay behind tellygram.app) is self-hosted
+and lives outside this repository.
 
 ## Documentation
 
-- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — system architecture
-- [`docs/DEV-WORKFLOW.md`](docs/DEV-WORKFLOW.md) — dev loop (compile → verify → ship)
-- [`docs/BUILD.md`](docs/BUILD.md) — toolchain install, build, troubleshoot
-- [`docs/RELEASE.md`](docs/RELEASE.md) — signing, packaging, distribution
-- [`docs/DECISIONS.md`](docs/DECISIONS.md) — full decision log
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — how the pieces fit together
+- [docs/BUILD.md](docs/BUILD.md) — toolchain, build, troubleshooting
+- [docs/DEV-WORKFLOW.md](docs/DEV-WORKFLOW.md) — the dev loop
+- [docs/RELEASE.md](docs/RELEASE.md) — signing, packaging, distribution
+- [docs/DECISIONS.md](docs/DECISIONS.md) — the decision log
 
 ## License
 
-TBD.
+Not chosen yet.

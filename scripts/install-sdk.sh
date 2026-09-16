@@ -80,9 +80,9 @@ export PATH
 log "Accepting SDK licenses ..."
 yes 2>/dev/null | sdkmanager --licenses >/dev/null 2>&1 || true
 
-log "Installing platform-34, build-tools 34.0.0, platform-tools ..."
+log "Installing platform-35, build-tools 34.0.0, platform-tools ..."
 sdkmanager --install \
-    "platforms;android-34" \
+    "platforms;android-35" \
     "build-tools;34.0.0" \
     "platform-tools" \
     >/dev/null
