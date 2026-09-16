@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  AndroidManifest.xml — Tvgram
+  AndroidManifest.xml — Tellygram
 
   Notes:
   - Leanback launcher category (works on 国行 Bravia; no GMS required)
@@ -33,7 +33,7 @@
         android:banner="@drawable/tv_banner"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.Tvgram"
+        android:theme="@style/Theme.Tellygram"
         android:usesCleartextTraffic="false"
         tools:targetApi="34">
 
@@ -42,7 +42,7 @@
             android:exported="true"
             android:launchMode="singleTop"
             android:screenOrientation="landscape"
-            android:theme="@style/Theme.Tvgram">
+            android:theme="@style/Theme.Tellygram">
 
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

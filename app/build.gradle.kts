@@ -1,5 +1,5 @@
 // ──────────────────────────────────────────────────────────────────────
-// app/build.gradle.kts — Tvgram Android TV app
+// app/build.gradle.kts — Tellygram Android TV app
 // See docs/ARCHITECTURE.md, docs/BUILD.md, docs/RELEASE.md
 // ──────────────────────────────────────────────────────────────────────
 import java.util.Properties
@@ -66,7 +66,7 @@ android {
     val buildNumber = (localProps.getProperty("BUILD_NUMBER", "1").toIntOrNull() ?: 1)
 
     defaultConfig {
-        applicationId = "tv.telegram"
+        applicationId = "app.tellygram"
         minSdk        = 21
         targetSdk     = 34
         versionCode   = buildNumber
@@ -177,10 +177,10 @@ android {
     // approach is simpler, fully version-controlled via build.gradle.kts
     // reads, and survives AGP upgrades.
     //
-    // Final names: tvgram-<version>-<buildType>-<abi|universal>.apk
-    //   - debug builds:   tvgram-1.0.0-debug-arm64-v8a.apk
-    //   - release builds: tvgram-1.0.0-release-arm64-v8a.apk
-    //   - universal:      tvgram-1.0.0-<buildType>-universal.apk
+    // Final names: tellygram-<version>-<buildType>-<abi|universal>.apk
+    //   - debug builds:   tellygram-1.0.0-debug-arm64-v8a.apk
+    //   - release builds: tellygram-1.0.0-release-arm64-v8a.apk
+    //   - universal:      tellygram-1.0.0-<buildType>-universal.apk
 
     packaging {
         resources.excludes += setOf(
@@ -196,7 +196,7 @@ android {
 
     // Auto-bump BUILD_NUMBER in local.properties after each successful
     // assembleDebug. Next build will then be versionCode = buildNumber+1
-    // and APK filename tvgram-1.0.0.<N+1>-debug-<abi>.apk.
+    // and APK filename tellygram-1.0.0.<N+1>-debug-<abi>.apk.
     afterEvaluate {
         // ?.doLast works without the type-inference gotcha of ?.configure { }
         // (configure has multiple overloads; Kotlin can't pick one from a

@@ -9,7 +9,7 @@
 #   app-universal-release.apk
 #
 # Prereqs:
-#   • keystore/tvgram-release.jks exists (run scripts/generate-keystore.sh)
+#   • keystore/tellygram-release.jks exists (run scripts/generate-keystore.sh)
 #   • keystore.properties is filled
 # ──────────────────────────────────────────────────────────────────────
 set -euo pipefail
@@ -17,7 +17,7 @@ set -euo pipefail
 log()  { printf '\033[1;36m[release]\033[0m %s\n' "$*"; }
 fail() { printf '\033[1;31m[release]\033[0m %s\n' "$*" >&2; exit 1; }
 
-[ -f "keystore/tvgram-release.jks" ] || fail "Missing keystore. Run: bash scripts/generate-keystore.sh"
+[ -f "keystore/tellygram-release.jks" ] || fail "Missing keystore. Run: bash scripts/generate-keystore.sh"
 [ -f "keystore.properties" ]        || fail "Missing keystore.properties — see docs/RELEASE.md for template"
 
 log "Cleaning previous build ..."

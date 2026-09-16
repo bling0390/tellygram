@@ -10,6 +10,8 @@ enum class ThemeMode { Dark, Light, System }
 enum class Language { English, SimplifiedChinese, TraditionalChinese }
 
 object SettingsRepository {
+    // Deliberately NOT renamed with the Tellygram rebrand: this string keys the
+    // prefs file, so changing it wipes user settings (theme, language) on upgrade.
     private const val PREFS_NAME = "tvgram_settings"
     private const val KEY_THEME = "theme_mode"
     private const val KEY_LANGUAGE = "language"

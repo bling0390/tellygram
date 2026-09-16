@@ -7,7 +7,7 @@
 // We vendor (instead of pulling from Maven) because:
 //   - The Maven artifact `org.drinkless:tdlib` ships libtdjson.so but
 //     its .so is often stale; the libtdjni.so in our mirror is
-//     versioned per release and matches TDLib 1.8.30 schema.
+//     versioned per release and does NOT match the current TDLib schema (the vendored bindings predate reactions).
 //   - TV-only build doesn't need to depend on upstream's release cadence.
 //
 // License: Boost Software License 1.0 (TDLib). See libtd/src/main/.

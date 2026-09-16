@@ -27,7 +27,7 @@ import androidx.tv.material3.lightColorScheme
 // glyphs, so Chinese copy falls back to the system CJK font automatically —
 // the latin/汉字 mix is expected and accepted (decision 2026-09-11). JetStream
 // ships no light palette, so the light scheme below is kept from the original
-// tvgram theme.
+// tellygram theme.
 
 private val JetStreamDarkColors = darkColorScheme(
     primary = Color(0xFFA8C8FF),
@@ -61,8 +61,8 @@ private val JetStreamDarkColors = darkColorScheme(
     scrim = Color(0xFF000000),
 )
 
-// Kept from the original tvgram scheme (JetStream has no light palette yet).
-private val TvgramLightColors = lightColorScheme(
+// Kept from the original tellygram scheme (JetStream has no light palette yet).
+private val TellygramLightColors = lightColorScheme(
     primary = Color(0xFF5288C1),
     onPrimary = Color.White,
     secondary = Color(0xFF1E5FA8),
@@ -115,7 +115,7 @@ private val JetStreamShapes = Shapes(
 )
 
 @Composable
-fun TvgramTheme(
+fun TellygramTheme(
     themeMode: tv.telegram.ui.ThemeMode = tv.telegram.ui.ThemeMode.Dark,
     content: @Composable () -> Unit,
 ) {
@@ -129,7 +129,7 @@ fun TvgramTheme(
     }
     val scheme = when (themeMode) {
         tv.telegram.ui.ThemeMode.Dark -> JetStreamDarkColors
-        tv.telegram.ui.ThemeMode.Light -> TvgramLightColors
+        tv.telegram.ui.ThemeMode.Light -> TellygramLightColors
         tv.telegram.ui.ThemeMode.System -> JetStreamDarkColors
     }
     MaterialTheme(

@@ -680,7 +680,7 @@ fun PlayerScreen(
                         // appears. TextureView respects both letterboxing and
                         // rotation immediately.
                         (LayoutInflater.from(ctx).inflate(
-                            R.layout.tvgram_player_view, null,
+                            R.layout.tellygram_player_view, null,
                         ) as PlayerView).apply {
                             useController = false // custom compose controller below
                             resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT

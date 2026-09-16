@@ -24,6 +24,6 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "Tvgram"
+rootProject.name = "Tellygram"
 include(":app")
 include(":libtd")

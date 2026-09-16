@@ -22,7 +22,7 @@
 # ──────────────────────────────────────────────────────────────────────
 set -euo pipefail
 
-APP_ID="tv.telegram"
+APP_ID="app.tellygram"
 ACTIVITY="${APP_ID}/.ui.MainActivity"
 
 log()  { printf '\033[1;36m[dev-emulator]\033[0m %s\n' "$*"; }
@@ -84,7 +84,7 @@ if [ -n "$RUNNING_DEV" ]; then
 else
     log "Cold-booting $AVD_NAME ..."
     log "  • first boot: 1-3 min; subsequent boots: ~20-40s"
-    log "  • logs: /tmp/tvgram-emu.log"
+    log "  • logs: /tmp/tellygram-emu.log"
 
     # -no-snapshot     faster cold boot, no saved-state restore
     # -no-audio        no macOS speaker pop on startup
@@ -94,7 +94,7 @@ else
     ARGS=( -avd "$AVD_NAME" -no-snapshot -no-audio -no-boot-anim -gpu host )
     [ "${HEADLESS:-0}" = "1" ] && ARGS+=( -no-window )
 
-    nohup "$EMU" "${ARGS[@]}" >/tmp/tvgram-emu.log 2>&1 &
+    nohup "$EMU" "${ARGS[@]}" >/tmp/tellygram-emu.log 2>&1 &
     EMU_PID=$!
     log "Emulator PID: $EMU_PID"
 
@@ -110,14 +110,14 @@ else
         fi
         sleep 2
         if ! kill -0 $EMU_PID 2>/dev/null; then
-            echo "────────── /tmp/tvgram-emu.log (tail) ──────────" >&2
-            tail -n 40 /tmp/tvgram-emu.log >&2
+            echo "────────── /tmp/tellygram-emu.log (tail) ──────────" >&2
+            tail -n 40 /tmp/tellygram-emu.log >&2
             fail "Emulator process died during boot."
         fi
     done
 
     [ "$BOOT" = "1" ] \
-        || { tail -n 60 /tmp/tvgram-emu.log >&2; fail "Emulator didn't finish boot in 6 min."; }
+        || { tail -n 60 /tmp/tellygram-emu.log >&2; fail "Emulator didn't finish boot in 6 min."; }
 
     DEV=$("$ADB" devices | awk 'NR>1 && $2=="device" {print $1; exit}')
     log "✅ Emulator ready: $DEV"

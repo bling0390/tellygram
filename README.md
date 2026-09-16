@@ -1,4 +1,4 @@
-# Tvgram — Telegram for Android TV
+# Tellygram — Telegram for Android TV
 
 A non-official third-party Telegram client for Android TV, focused on browsing
 **images and videos** in channels, groups, and private chats. Optimized for
@@ -53,7 +53,7 @@ the architecture.
 ## Repository
 
 ```
-https://github.com/bling0390/tvgram
+https://github.com/bling0390/tellygram
 ```
 
 ## Quick start

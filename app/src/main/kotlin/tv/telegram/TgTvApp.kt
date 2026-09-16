@@ -43,6 +43,6 @@ class TgTvApp : Application() {
     }
 
     companion object {
-        private const val TAG = "TvgramApp"
+        private const val TAG = "TellygramApp"
     }
 }

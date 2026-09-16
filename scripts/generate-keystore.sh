@@ -3,7 +3,7 @@
 # generate-keystore.sh — one-time, creates the release signing keystore
 #
 # Generates:
-#   • keystore/tvgram-release.jks  (the key — keep it forever)
+#   • keystore/tellygram-release.jks  (the key — keep it forever)
 #   • keystore.properties          (passwords — keep these too)
 #
 # IMPORTANT: If you lose the keystore or its passwords, you can NEVER
@@ -15,8 +15,8 @@ log()  { printf '\033[1;36m[keystore]\033[0m %s\n' "$*"; }
 fail() { printf '\033[1;31m[keystore]\033[0m %s\n' "$*" >&2; exit 1; }
 
 KEYSTORE_DIR=keystore
-KEYSTORE_FILE=$KEYSTORE_DIR/tvgram-release.jks
-ALIAS=tvgram
+KEYSTORE_FILE=$KEYSTORE_DIR/tellygram-release.jks
+ALIAS=tellygram
 VALIDITY=10000  # ~27 years
 
 [ -f "$KEYSTORE_FILE" ] && fail "Keystore already exists at $KEYSTORE_FILE. Refusing to overwrite."

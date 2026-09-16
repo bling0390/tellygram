@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ──────────────────────────────────────────────────────────────────────
-# publish-apks.sh — sync tvgram APKs to docker-app file-nginx
+# publish-apks.sh — sync tellygram APKs to docker-app file-nginx
 #
 # Run after `./gradlew assembleDebug` (or assembleRelease):
 #   bash scripts/publish-apks.sh                       # debug (default)
@@ -21,8 +21,10 @@ set -euo pipefail
 [ -d /root/docker-app ] || { echo "[publish] not vultr — skipping"; exit 0; }
 
 VARIANT=${VARIANT:-debug}
+# NB: the local checkout keeps its old directory name (projects/tvgram); only the
+# published path and filenames became tellygram-*.
 SRC="/root/.openclaw/workspace/projects/tvgram/app/build/outputs/apk/$VARIANT"
-DST="/root/docker-app/file-data/tvgram/$VARIANT"
+DST="/root/docker-app/file-data/tellygram/$VARIANT"
 
 log()  { printf '\033[1;36m[publish]\033[0m %s\n' "$*"; }
 fail() { printf '\033[1;31m[publish]\033[0m %s\n' "$*" >&2; exit 1; }
@@ -43,10 +45,10 @@ log "Syncing $VARIANT APKs → $DST"
 find "$DST" -maxdepth 1 -name "*.apk" -delete 2>/dev/null || true
 cp -f "${APKS[@]}" "$DST/"
 
-# Rename to: tvgram-<version>-<buildType>-<abi|universal>.apk
-#   - debug:    tvgram-1.0.0-debug-arm64-v8a.apk
-#   - release:  tvgram-1.0.0-release-arm64-v8a.apk
-#   - universal: tvgram-1.0.0-<buildType>-universal.apk
+# Rename to: tellygram-<version>-<buildType>-<abi|universal>.apk
+#   - debug:    tellygram-1.0.0-debug-arm64-v8a.apk
+#   - release:  tellygram-1.0.0-release-arm64-v8a.apk
+#   - universal: tellygram-1.0.0-<buildType>-universal.apk
 # Done in shell rather than Gradle DSL because AGP 8.4's
 # androidComponents.onVariants API exposes VariantOutput as read-only,
 # and the legacy applicationVariants API has Kotlin DSL type-resolution
@@ -66,22 +68,22 @@ fi
 VERSION="${VERSION:-0.0.0}"
 # Strip trailing -debug / -release suffix that BuildConfig.VERSION_NAME
 # already carries (versionNameSuffix is applied at build time). Without
-# this strip, filenames come out as tvgram-1.0.0.2-debug-debug-arm64.apk.
+# this strip, filenames come out as tellygram-1.0.0.2-debug-debug-arm64.apk.
 VERSION="${VERSION%-debug}"
 VERSION="${VERSION%-release}"
 cd "$DST"
 for f in app-*.apk; do
     [ -f "$f" ] || continue
-    # app-<suffix>-<variant>.apk → tvgram-<version>-<variant>-<suffix>.apk
+    # app-<suffix>-<variant>.apk → tellygram-<version>-<variant>-<suffix>.apk
     if [[ "$f" =~ ^app-(.+)-${VARIANT}\.apk$ ]]; then
         suffix="${BASH_REMATCH[1]}"  # arm64-v8a, armeabi-v7a, x86_64, x86, universal
-        mv "$f" "tvgram-${VERSION}-${VARIANT}-${suffix}.apk"
+        mv "$f" "tellygram-${VERSION}-${VARIANT}-${suffix}.apk"
     fi
 done
 
 log "✅ Published:"
 shopt -s nullglob
-for f in "$DST"/tvgram-*.apk; do
+for f in "$DST"/tellygram-*.apk; do
     name=$(basename "$f")
     size=$(stat -c '%s' "$f")
     printf '  %8d  %s\n' "$size" "$f"
@@ -90,9 +92,9 @@ shopt -u nullglob
 
 log "URLs (HTTPS, LE cert via traefik):"
 shopt -s nullglob
-for f in "$DST"/tvgram-*.apk; do
+for f in "$DST"/tellygram-*.apk; do
     name=$(basename "$f")
-    log "  https://file.goatv.org/tvgram/$VARIANT/$name"
+    log "  https://file.goatv.org/tellygram/$VARIANT/$name"
 done
 shopt -u nullglob
 
@@ -101,7 +103,7 @@ shopt -u nullglob
 echo ""
 echo "── copy-paste URLs ─────────────────────────────────────"
 shopt -s nullglob
-for f in "$DST"/tvgram-*.apk; do
-    echo "https://file.goatv.org/tvgram/$VARIANT/$(basename "$f")"
+for f in "$DST"/tellygram-*.apk; do
+    echo "https://file.goatv.org/tellygram/$VARIANT/$(basename "$f")"
 done
 echo "─────────────────────────────────────────────────────────"

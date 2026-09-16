@@ -82,7 +82,7 @@ object TdClient {
             this.apiId = apiId
             this.apiHash = apiHash
             systemLanguageCode = "en"
-            deviceModel = "Tvgram TV"
+            deviceModel = "Tellygram TV"
             systemVersion = "Android TV"
             applicationVersion = BuildConfig.VERSION_NAME
             this.databaseDirectory = databaseDirectory

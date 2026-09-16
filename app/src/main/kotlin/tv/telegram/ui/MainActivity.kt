@@ -79,7 +79,7 @@ import tv.telegram.ui.focus.BackPriority
 import tv.telegram.ui.focus.BackRegistration
 import tv.telegram.ui.focus.LocalBackController
 import tv.telegram.ui.focus.dpadNavigationSounds
-import tv.telegram.ui.theme.TvgramTheme
+import tv.telegram.ui.theme.TellygramTheme
 import androidx.tv.material3.Border
 import androidx.tv.material3.Card
 import androidx.tv.material3.CardDefaults
@@ -96,7 +96,7 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
-            TvgramTheme(themeMode = themeMode) {
+            TellygramTheme(themeMode = themeMode) {
                 val backController = remember { BackController() }
                 CompositionLocalProvider(LocalBackController provides backController) {
                     AppNavHost(viewModel = viewModel, backController = backController)

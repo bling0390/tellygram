@@ -15,7 +15,7 @@
 # ──────────────────────────────────────────────────────────────────────
 set -euo pipefail
 
-APP_ID="tv.telegram"
+APP_ID="app.tellygram"
 ACTIVITY="${APP_ID}/.ui.MainActivity"
 
 log()  { printf '\033[1;36m[dev-install]\033[0m %s\n' "$*"; }

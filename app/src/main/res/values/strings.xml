@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Telegram TV</string>
-    <string name="app_full_name">Telegram for Android TV</string>
+    <string name="app_name">Tellygram</string>
+    <string name="app_full_name">Tellygram for Android TV</string>
 
     <!-- Login screen -->
     <string name="login_title">Scan From Mobile Telegram</string>
@@ -75,7 +75,7 @@
     <string name="settings_account_value_loading">Loading account…</string>
     <string name="settings_language">Language</string>
     <string name="settings_theme">Theme</string>
-    <string name="settings_about">About Tvgram</string>
+    <string name="settings_about">About Tellygram</string>
     <string name="settings_about_value">v%1$s</string>
     <string name="settings_signout">Sign out</string>
     <string name="settings_signout_value">Sign out of this Telegram account</string>
@@ -96,22 +96,22 @@
     <string name="settings_language_traditional_chinese">繁體中文</string>
     <string name="settings_preferred_language">Preferred Language</string>
     <string name="settings_help">Help and Support</string>
-    <string name="settings_help_body">Tvgram is a community TV client for Telegram. Questions, bug reports and feature requests belong in the project repository.</string>
+    <string name="settings_help_body">Tellygram is a community TV client for Telegram. Questions, bug reports and feature requests belong in the project repository.</string>
     <string name="settings_app_version_label">Application Version</string>
     <string name="settings_theme_dark">Dark</string>
     <string name="settings_theme_light">Light</string>
     <string name="settings_theme_system">Follow system</string>
 
     <!-- About dialog -->
-    <string name="about_title">About Tvgram</string>
-    <string name="about_version">Tvgram v%1$s</string>
+    <string name="about_title">About Tellygram</string>
+    <string name="about_version">Tellygram v%1$s</string>
     <string name="about_body">A non-official Telegram client for Android TV, focused on browsing images and videos in your chats.</string>
-    <string name="about_repo">github.com/bling0390/tvgram</string>
+    <string name="about_repo">github.com/bling0390/tellygram</string>
     <string name="about_close_hint">Press OK to close</string>
 
     <!-- Exit confirmation (Back on the rail) -->
     <string name="exit_confirm_title">Exit app?</string>
-    <string name="exit_confirm_text">Are you sure you want to exit Tvgram?</string>
+    <string name="exit_confirm_text">Are you sure you want to exit Tellygram?</string>
     <string name="exit_confirm_confirm">Exit</string>
     <string name="exit_confirm_cancel">Cancel</string>
 

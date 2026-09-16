@@ -292,7 +292,7 @@ class TdChatRepository(
     }
 
     /**
-     * Summary for the chat list second line. tvgram is a photo/video-focused
+     * Summary for the chat list second line. tellygram is a photo/video-focused
      * TV app, so only media messages produce a summary; everything else
      * returns null and the UI falls back to the chat type name.
      */

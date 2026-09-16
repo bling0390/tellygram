@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Telegram TV</string>
-    <string name="app_full_name">Telegram for Android TV</string>
+    <string name="app_name">Tellygram</string>
+    <string name="app_full_name">Tellygram for Android TV</string>
 
     <string name="login_title">用手機 Telegram 掃碼登入</string>
     <string name="login_subtitle">1. 在手機上開啟 Telegram\n2. 進入 設定 &gt; 裝置 &gt; 掃描 QR code\n3. 掃描此 QR code 登入</string>
@@ -66,7 +66,7 @@
     <string name="settings_account_value_loading">正在載入帳戶…</string>
     <string name="settings_language">語言</string>
     <string name="settings_theme">主題</string>
-    <string name="settings_about">關於 Tvgram</string>
+    <string name="settings_about">關於 Tellygram</string>
     <string name="settings_about_value">v%1$s</string>
     <string name="settings_signout">登出</string>
     <string name="settings_signout_value">登出目前的 Telegram 帳戶</string>
@@ -83,21 +83,21 @@
     <string name="settings_language_traditional_chinese">繁體中文</string>
     <string name="settings_preferred_language">偏好語言</string>
     <string name="settings_help">幫助與支援</string>
-    <string name="settings_help_body">Tvgram 是一個社群維護的 Telegram 電視用戶端。使用問題、缺陷回報與功能建議請提交到專案倉庫。</string>
+    <string name="settings_help_body">Tellygram 是一個社群維護的 Telegram 電視用戶端。使用問題、缺陷回報與功能建議請提交到專案倉庫。</string>
     <string name="settings_app_version_label">應用版本</string>
     <string name="settings_theme_dark">深色</string>
     <string name="settings_theme_light">淺色</string>
     <string name="settings_theme_system">跟隨系統</string>
 
-    <string name="about_title">關於 Tvgram</string>
-    <string name="about_version">Tvgram v%1$s</string>
-    <string name="about_body">Tvgram 是一款非官方的 Telegram Android TV 客戶端,專注於瀏覽聊天中的圖片和影片。</string>
-    <string name="about_repo">github.com/bling0390/tvgram</string>
+    <string name="about_title">關於 Tellygram</string>
+    <string name="about_version">Tellygram v%1$s</string>
+    <string name="about_body">Tellygram 是一款非官方的 Telegram Android TV 客戶端,專注於瀏覽聊天中的圖片和影片。</string>
+    <string name="about_repo">github.com/bling0390/tellygram</string>
     <string name="about_close_hint">按 OK 關閉</string>
 
     <!-- Exit confirmation (Back on the rail) -->
     <string name="exit_confirm_title">退出應用？</string>
-    <string name="exit_confirm_text">確定要退出 Tvgram 嗎？</string>
+    <string name="exit_confirm_text">確定要退出 Tellygram 嗎？</string>
     <string name="exit_confirm_confirm">退出</string>
     <string name="exit_confirm_cancel">取消</string>
 
