@@ -103,7 +103,7 @@ jobs:
           EOF
           # A minimal local.properties: BUILD_NUMBER bookkeeping needs the file,
           # and it must NOT carry credentials (they come from the environment).
-          printf 'BUILD_NUMBER=1\nsdk.dir=%s\n' "$ANDROID_SDK_ROOT" > local.properties
+          printf 'BUILD_NUMBER=%s\nsdk.dir=%s\n' "${GITHUB_RUN_NUMBER:-1}" "$ANDROID_SDK_ROOT" > local.properties
 
       - name: Build release APK
         id: build
@@ -141,9 +141,17 @@ jobs:
             exit 1
           fi
           echo "signer sha256: $FP"
+          # Version comes from the APK itself, so the relay can name the file
+          # and the page can show which build this is.
+          BADGING=$("$BT/aapt2" dump badging "$APK" 2>/dev/null | head -1)
+          VER=$(printf '%s' "$BADGING" | sed -n "s/.*versionName='\([^']*\)'.*/\1/p")
+          VCODE=$(printf '%s' "$BADGING" | sed -n "s/.*versionCode='\([^']*\)'.*/\1/p")
+          echo "apk version: $VER (code $VCODE), abi $ABI"
           curl -fsS --max-time 300 -X PUT \
             -H "Authorization: Bearer $UPLOAD_SECRET" \
             -H "Content-Type: application/vnd.android.package-archive" \
             -H "X-Apk-Cert-Sha256: $FP" \
+            -H "X-Apk-Version: $VER" \
+            -H "X-Apk-Version-Code: $VCODE" \
             --data-binary @"$APK" \
             "$RELAY/ci/upload/$JOB_ID"

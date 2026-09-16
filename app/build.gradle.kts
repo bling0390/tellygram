@@ -58,11 +58,15 @@ android {
     val proxyUser = localProps.getProperty("PROXY_USER", "")
     val proxyPass = localProps.getProperty("PROXY_PASS", "")
 
-    // Auto-incrementing build number. Each successful assembleDebug
-    // bumps BUILD_NUMBER in local.properties via the doLast block at
-    // the bottom of this file. versionCode + versionName both use it,
-    // so APK filenames stay unique across rebuilds without manual edits.
-    // Default 1 if BUILD_NUMBER is missing from local.properties.
+    // Human-facing version: three parts, bumped by hand when a release goes out.
+    // It deliberately stays out of the build number — personal builds share a
+    // version, and folding the number in made every APK claim to be 1.0.0.<n>.
+    val baseVersion = "1.0.0"
+
+    // The build number is what Android actually compares (and what tells one
+    // build from another). Local builds bump BUILD_NUMBER in local.properties
+    // after each assembleDebug (doLast block below); CI passes the workflow run
+    // number, so every personal build is monotonically newer than the last.
     val buildNumber = (localProps.getProperty("BUILD_NUMBER", "1").toIntOrNull() ?: 1)
 
     defaultConfig {
@@ -70,12 +74,15 @@ android {
         minSdk        = 21
         targetSdk     = 34
         versionCode   = buildNumber
-        versionName   = "1.0.0.$buildNumber"
+        versionName   = baseVersion
 
         // Telegram API credentials — applied to both debug AND release
         // (same Telegram app, same credentials regardless of build type).
         buildConfigField("int",    "TG_API_ID",   tgApiId)
         buildConfigField("String", "TG_API_HASH", "\"$tgApiHash\"")
+        // Surfaced in the About screen / logs so a build can be identified
+        // without parsing the APK.
+        buildConfigField("int",    "BUILD_NUMBER", buildNumber.toString())
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
@@ -196,7 +203,7 @@ android {
 
     // Auto-bump BUILD_NUMBER in local.properties after each successful
     // assembleDebug. Next build will then be versionCode = buildNumber+1
-    // and APK filename tellygram-1.0.0.<N+1>-debug-<abi>.apk.
+    // and the next build reports versionCode = N+1.
     afterEvaluate {
         // ?.doLast works without the type-inference gotcha of ?.configure { }
         // (configure has multiple overloads; Kotlin can't pick one from a
@@ -211,7 +218,7 @@ android {
             propsFile.outputStream().use {
                 updatedProps.store(it, null)
             }
-            logger.lifecycle("🔢 Bumped BUILD_NUMBER to $newBuildNumber (next APK will be 1.0.0.$newBuildNumber-debug-*.apk)")
+            logger.lifecycle("🔢 Bumped BUILD_NUMBER to $newBuildNumber (next build: versionCode = $newBuildNumber)")
         }
     }
 }

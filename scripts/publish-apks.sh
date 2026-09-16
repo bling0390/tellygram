@@ -66,6 +66,10 @@ else
     VERSION=$(grep -oP 'versionName\s*=\s*"\K[^"]+' "$ROOT/app/build.gradle.kts" | head -1)
 fi
 VERSION="${VERSION:-0.0.0}"
+# The version stays 1.0.0 across builds, so the build number is what makes
+# filenames unique (and it is what Android compares when updating).
+BUILDNUM=$(grep -oP 'BUILD_NUMBER\s*=\s*\K[0-9]+' "$BUILD_CONFIG" 2>/dev/null | head -1)
+BUILDNUM="${BUILDNUM:-0}"
 # Strip trailing -debug / -release suffix that BuildConfig.VERSION_NAME
 # already carries (versionNameSuffix is applied at build time). Without
 # this strip, filenames come out as tellygram-1.0.0.2-debug-debug-arm64.apk.
@@ -77,7 +81,7 @@ for f in app-*.apk; do
     # app-<suffix>-<variant>.apk → tellygram-<version>-<variant>-<suffix>.apk
     if [[ "$f" =~ ^app-(.+)-${VARIANT}\.apk$ ]]; then
         suffix="${BASH_REMATCH[1]}"  # arm64-v8a, armeabi-v7a, x86_64, x86, universal
-        mv "$f" "tellygram-${VERSION}-${VARIANT}-${suffix}.apk"
+        mv "$f" "tellygram-${VERSION}-b${BUILDNUM}-${VARIANT}-${suffix}.apk"
     fi
 done
 
