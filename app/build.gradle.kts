@@ -67,13 +67,23 @@ android {
     // build from another). Local builds bump BUILD_NUMBER in local.properties
     // after each assembleDebug (doLast block below); CI passes the workflow run
     // number, so every personal build is monotonically newer than the last.
-    val buildNumber = (localProps.getProperty("BUILD_NUMBER", "1").toIntOrNull() ?: 1)
+    // Android only compares versionCode, and it must never go backwards.
+    // Deriving it from the version keeps the two from drifting: 1.0.2 -> 10002.
+    val versionParts = baseVersion.split(".").mapNotNull { it.toIntOrNull() }
+    require(versionParts.isNotEmpty()) { "baseVersion must look like 1.2.3" }
+    val derivedVersionCode = versionParts[0] * 10000 +
+        (versionParts.getOrNull(1) ?: 0) * 100 +
+        (versionParts.getOrNull(2) ?: 0)
+
+    // Diagnostics only (About screen / logs): the local build counter, or the
+    // CI run number when the build comes from the personal-APK workflow.
+    val buildNumber = (localProps.getProperty("BUILD_NUMBER", "0").toIntOrNull() ?: 0)
 
     defaultConfig {
         applicationId = "app.tellygram"
         minSdk        = 21
         targetSdk     = 34
-        versionCode   = buildNumber
+        versionCode   = derivedVersionCode
         versionName   = baseVersion
 
         // Telegram API credentials — applied to both debug AND release

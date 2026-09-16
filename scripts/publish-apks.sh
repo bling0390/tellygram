@@ -81,7 +81,7 @@ for f in app-*.apk; do
     # app-<suffix>-<variant>.apk → tellygram-<version>-<variant>-<suffix>.apk
     if [[ "$f" =~ ^app-(.+)-${VARIANT}\.apk$ ]]; then
         suffix="${BASH_REMATCH[1]}"  # arm64-v8a, armeabi-v7a, x86_64, x86, universal
-        mv "$f" "tellygram-${VERSION}-b${BUILDNUM}-${VARIANT}-${suffix}.apk"
+        mv "$f" "tellygram-${VERSION}-${VARIANT}-${suffix}.apk"
     fi
 done
 
