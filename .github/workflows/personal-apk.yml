@@ -63,7 +63,21 @@ jobs:
           echo "abi=${ABI:-arm64-v8a}" >> "$GITHUB_OUTPUT"
         id: creds
 
+      - name: Resolve the ref to build
+        id: ref
+        run: |
+          set -euo pipefail
+          REF="${{ github.event.client_payload.ref }}"
+          # Only a plain vX.Y.Z tag is accepted; anything else (empty, or a value
+          # someone managed to smuggle in) falls back to the default branch.
+          case "$REF" in
+            v[0-9]*.[0-9]*.[0-9]*) echo "ref=$REF" >> "$GITHUB_OUTPUT"; echo "building release $REF" ;;
+            *) echo "ref="; echo "no release tag in the dispatch payload - building the default branch" ;;
+          esac
+
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.ref.outputs.ref || github.event.repository.default_branch }}
 
       - uses: actions/setup-java@v4
         with:
@@ -147,6 +161,10 @@ jobs:
           VER=$(printf '%s' "$BADGING" | sed -n "s/.*versionName='\([^']*\)'.*/\1/p")
           VCODE=$(printf '%s' "$BADGING" | sed -n "s/.*versionCode='\([^']*\)'.*/\1/p")
           echo "apk version: $VER (code $VCODE), abi $ABI"
+          REF="${{ steps.ref.outputs.ref }}"
+          if [ -n "$REF" ] && [ "$REF" != "v$VER" ]; then
+            echo "::warning::tag $REF does not match the APK version $VER - bump baseVersion before tagging"
+          fi
           curl -fsS --max-time 300 -X PUT \
             -H "Authorization: Bearer $UPLOAD_SECRET" \
             -H "Content-Type: application/vnd.android.package-archive" \
