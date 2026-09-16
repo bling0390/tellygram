@@ -17,7 +17,7 @@
 #
 # Usage:
 #   bash scripts/dev-emulator.sh
-#   AVD_NAME="Tvgram_API_34" bash scripts/dev-emulator.sh
+#   AVD_NAME="Tellygram_API_34" bash scripts/dev-emulator.sh
 #   SKIP_BUILD=1 bash scripts/dev-emulator.sh         # hot-iteration: no rebuild
 # ──────────────────────────────────────────────────────────────────────
 set -euo pipefail

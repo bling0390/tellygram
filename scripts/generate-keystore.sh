@@ -48,7 +48,7 @@ keytool -genkey -v \
     -alias "$ALIAS" \
     -storepass "$STORE_PASS" \
     -keypass "$KEY_PASS" \
-    -dname "CN=Tvgram, OU=Mobile, O=Tvgram, L=City, S=State, C=CN"
+    -dname "CN=Tellygram, OU=Mobile, O=Tellygram, L=City, S=State, C=CN"
 
 chmod 600 "$KEYSTORE_FILE"
 

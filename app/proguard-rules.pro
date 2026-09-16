@@ -1,5 +1,5 @@
 # ──────────────────────────────────────────────────────────────────────
-# proguard-rules.pro — R8/ProGuard rules for Tvgram
+# proguard-rules.pro — R8/ProGuard rules for Tellygram
 # ──────────────────────────────────────────────────────────────────────
 
 # Keep TDLib classes (JNI uses reflection) — no longer used (D-027 JSON interface)
