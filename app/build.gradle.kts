@@ -58,10 +58,13 @@ android {
     val proxyUser = localProps.getProperty("PROXY_USER", "")
     val proxyPass = localProps.getProperty("PROXY_PASS", "")
 
-    // Human-facing version: three parts, bumped by hand when a release goes out.
-    // It deliberately stays out of the build number — personal builds share a
-    // version, and folding the number in made every APK claim to be 1.0.0.<n>.
+    // Release version: three parts, bumped by hand when a release goes out (the git
+    // tag mirrors it). Local builds never touch it, so the repo does not churn.
     val baseVersion = "1.0.0"
+    val baseParts = baseVersion.split(".").mapNotNull { it.toIntOrNull() }
+    val baseMajor = baseParts.getOrNull(0) ?: 1
+    val baseMinor = baseParts.getOrNull(1) ?: 0
+    val basePatch = baseParts.getOrNull(2) ?: 0
 
     // The build number is what Android actually compares (and what tells one
     // build from another). Local builds bump BUILD_NUMBER in local.properties
@@ -75,15 +78,33 @@ android {
         (versionParts.getOrNull(1) ?: 0) * 100 +
         (versionParts.getOrNull(2) ?: 0)
 
-    // Diagnostics only (About screen / logs): the local build counter, or the
-    // CI run number when the build comes from the personal-APK workflow.
+    // Local dev counter: lives in local.properties (untracked) and is bumped after
+    // every assembleDebug. Debug builds iterate the patch on top of the release's
+    // major.minor — 1.0.3-debug, 1.0.4-debug … — so consecutive local installs are
+    // distinguishable, while release builds keep using baseVersion. It is also the
+    // About screen / log diagnostic, and CI passes its run number in its place.
     val buildNumber = (localProps.getProperty("BUILD_NUMBER", "0").toIntOrNull() ?: 0)
+
+    // Debug builds carry the local counter: 1.0.<counter>-debug with a matching
+    // versionCode, so consecutive local installs are distinguishable and compare
+    // correctly. Release builds are left exactly as defaultConfig defines them, so
+    // the hand-bumped version and the git tag stay in charge there.
+    androidComponents {
+        onVariants { variant ->
+            if (variant.buildType == "debug") {
+                variant.outputs.forEach { output ->
+                    output.versionCode.set(baseMajor * 10000 + baseMinor * 100 + buildNumber)
+                    output.versionName.set("$baseMajor.$baseMinor.$buildNumber-debug")
+                }
+            }
+        }
+    }
 
     defaultConfig {
         applicationId = "app.tellygram"
         minSdk        = 21
         targetSdk     = 34
-        versionCode   = derivedVersionCode
+        versionCode   = baseMajor * 10000 + baseMinor * 100 + basePatch
         versionName   = baseVersion
 
         // Telegram API credentials — applied to both debug AND release
@@ -135,7 +156,6 @@ android {
         debug {
             isMinifyEnabled = false
             applicationIdSuffix = ".debug"
-            versionNameSuffix = "-debug"
 
             // Proxy ONLY in debug builds. PROXY_HOST comes from
             // local.properties; from inside an Android emulator the host

@@ -83,6 +83,8 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.ui.draw.rotate
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.offset
 import tv.telegram.ui.MainViewModel
 import tv.telegram.ui.components.Avatar
 
@@ -111,6 +113,10 @@ private object HomeSpec {
     val RowFillStrong = Color(0x99D9D9D9)     // rgba(217,217,217,0.6) — pinned row
     val ChipOutline = Color(0x33FFFFFF)       // rgba(255,255,255,0.2)
     val White = Color(0xFFFFFFFF)
+    // Figma "primary-fixed": the verified badge switches to this while the
+    // row is focused. The unfocused/pinned colour is the theme's primary
+    // (#A8C8FF), which is what the design draws in those rows.
+    val PrimaryFixed = Color(0xFFD6E3FF)
 
     val ListWidth = 268.dp
     val ListHeight = 412.dp
@@ -273,81 +279,106 @@ private fun ChatRow(
         else -> HomeSpec.OnSurface
     }
 
-    Row(
+    // A Box rather than a Row: the design positions the pin absolutely
+    // (right: 16dp, vertically centred), so it overlays the row instead of taking
+    // part in the text flow — hence no spacer in front of it.
+    Box(
         modifier = Modifier
             .fillMaxSizeWidth()
             .clip(RoundedCornerShape(HomeSpec.Corner))
             .background(fill)
             .focusable()
-            .onFocusChanged { focused = it.isFocused }
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        // Measured from the design's exported rows (4x PNG, 268x48dp): the avatar
-        // ink sits at y 8..39 (centre 23.9 = the row's centre) while the title and
-        // its trailing icons sit at y 11..24 (centre ~18) — i.e. the name line is
-        // pinned to the TOP of the 32dp content box, not centred on the avatar.
-        // Top alignment reproduces both: the 32dp avatar fills the content box
-        // (top-aligned == centred), and the 20dp title line lands at y 8..28.
-        verticalAlignment = Alignment.Top,
+            .onFocusChanged { focused = it.isFocused },
     ) {
-        Box {
-            Avatar(
-                photoFileId = chat.photoSmallFileId,
-                name = chat.title,
-                id = chat.id,
-                viewModel = viewModel,
-                fallbackIcon = chat.type.typeIcon(),
-            )
-            if (chat.unreadCount > 0) {
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .size(6.dp)
-                        .clip(CircleShape)
-                        .background(if (highlighted) HomeSpec.TertiaryFixed else HomeSpec.Tertiary),
-                )
-            }
-        }
-
-        Spacer(Modifier.width(8.dp))
-
         Row(
-            modifier = Modifier.weight(1f),
-            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            // Measured from the design's exported rows (4x PNG, 268x48dp): the avatar
+            // ink sits at y 8..39 (centre 23.9 = the row's centre) while the title and
+            // its trailing icons sit at y 11..24 (centre ~18) — i.e. the name line is
+            // pinned to the TOP of the 32dp content box, not centred on the avatar.
+            verticalAlignment = Alignment.Top,
         ) {
-            Text(
-                text = chat.title,
-                style = MaterialTheme.typography.titleSmall,
-                color = textColor,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f, fill = false),
-            )
-            // Order and spacing follow the design's three row examples, where the
-            // icons sit at fixed x offsets: Verified first, then the chat-type
-            // glyph, then mute — 12dp apart on 12dp icons, i.e. a 2dp gap.
-            if (chat.isVerified) {
-                Spacer(Modifier.width(2.dp))
-                Icon(Icons.Outlined.Verified, null, tint = textColor, modifier = Modifier.size(12.dp))
+            Box {
+                Avatar(
+                    photoFileId = chat.photoSmallFileId,
+                    name = chat.title,
+                    id = chat.id,
+                    viewModel = viewModel,
+                    fallbackIcon = chat.type.typeIcon(),
+                )
+                if (chat.unreadCount > 0) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            // The design puts the dot at (18,10) inside a row whose
+                            // content starts at (16,8) and whose avatar is 32dp, so
+                            // it sits 2dp inside the avatar's top-left corner.
+                            .offset(x = 2.dp, y = 2.dp)
+                            .size(6.dp)
+                            .clip(CircleShape)
+                            .background(if (highlighted) HomeSpec.TertiaryFixed else HomeSpec.Tertiary),
+                    )
+                }
             }
-            chat.type.typeIcon()?.let {
-                Spacer(Modifier.width(2.dp))
-                Icon(it, null, tint = textColor, modifier = Modifier.size(12.dp))
-            }
-            if (chat.isMuted) {
-                Spacer(Modifier.width(2.dp))
-                Icon(Icons.Outlined.VolumeOff, null, tint = textColor, modifier = Modifier.size(12.dp))
+
+            Spacer(Modifier.width(8.dp))
+
+            Row(
+                modifier = Modifier.weight(1f),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = chat.title,
+                    style = MaterialTheme.typography.titleSmall,
+                    color = textColor,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    // The design caps the name at 130dp ("最长130dp超过省略"), which is
+                    // also what keeps it clear of the absolutely positioned pin.
+                    modifier = Modifier
+                        .weight(1f, fill = false)
+                        .widthIn(max = 130.dp),
+                )
+                // Order and spacing follow the design's three row examples, where the
+                // icons sit at fixed x offsets: Verified first, then the chat-type
+                // glyph, then mute — 12dp apart on 12dp icons, i.e. a 2dp gap.
+                if (chat.isVerified) {
+                    Spacer(Modifier.width(2.dp))
+                    // Verified keeps its own colour scale: primary while the row is
+                    // plain or pinned, primary-fixed once it is focused or selected.
+                    Icon(
+                        Icons.Outlined.Verified,
+                        null,
+                        tint = if (highlighted) HomeSpec.PrimaryFixed else MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(12.dp),
+                    )
+                }
+                chat.type.typeIcon()?.let {
+                    Spacer(Modifier.width(2.dp))
+                    Icon(it, null, tint = textColor, modifier = Modifier.size(12.dp))
+                }
+                if (chat.isMuted) {
+                    Spacer(Modifier.width(2.dp))
+                    Icon(Icons.Outlined.VolumeOff, null, tint = textColor, modifier = Modifier.size(12.dp))
+                }
             }
         }
 
         if (chat.isPinned) {
-            Spacer(Modifier.width(8.dp))
             Icon(
                 imageVector = Icons.Outlined.PushPin,
                 contentDescription = null,
                 tint = textColor,
-                // The design draws the pin at 22.63dp (an absolute 231.69..254.31
-                // that overlaps the mute glyph). Linear layout keeps them apart.
-                modifier = Modifier.size(22.63.dp),
+                // Absolute placement per the design: 16dp from the row's right edge,
+                // vertically centred, 16dp glyph rotated -45°. (16 * sqrt(2) = 22.63 —
+                // that bounding box is where Figma's "22.63 x 22.63" reading came from.)
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .padding(end = 16.dp)
+                    .size(16.dp)
+                    .rotate(45f),
             )
         }
     }
