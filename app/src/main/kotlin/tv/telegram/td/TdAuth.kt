@@ -128,6 +128,10 @@ class TdAuth(
             lastName    = resp.lastName,
             username    = resp.username ?: "",
             phoneNumber = resp.phoneNumber ?: "",
+            // TDLib hands the photo over as a file descriptor; the avatar loads
+            // it lazily and falls back to the initial when this is null or the
+            // download fails.
+            photoFileId = resp.profilePhoto?.small?.id,
         )
     }
 
@@ -167,6 +171,8 @@ data class TdUser(
     val id: Long,
     val firstName: String,
     val lastName: String,
+    /** Small profile-photo file id, or null when the account has no photo (yet). */
+    val photoFileId: Int? = null,
     val username: String,
     val phoneNumber: String,
 ) {

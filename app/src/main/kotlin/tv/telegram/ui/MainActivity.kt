@@ -25,6 +25,8 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
@@ -72,8 +74,15 @@ import tv.telegram.ui.login.QrCodeScreen
 import tv.telegram.ui.player.PlayerScreen
 import tv.telegram.ui.search.SearchScreen
 import tv.telegram.ui.settings.SettingsScreen
+import tv.telegram.ui.home.HomeScreen
 import tv.telegram.ui.nav.Routes
+import tv.telegram.ui.components.Avatar
 import tv.telegram.ui.components.ConfirmDialog
+import tv.telegram.ui.components.TopNavBar
+import tv.telegram.ui.components.TopNavBarBottomGap
+import tv.telegram.ui.components.TopNavBarSideMargin
+import tv.telegram.ui.components.TopNavBarTopMargin
+import tv.telegram.ui.components.TopNavTab
 import tv.telegram.ui.focus.BackController
 import tv.telegram.ui.focus.BackPriority
 import tv.telegram.ui.focus.BackRegistration
@@ -113,7 +122,12 @@ private fun AppNavHost(viewModel: MainViewModel, backController: BackController)
     val navController = rememberNavController()
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
-    val inHome = currentRoute?.startsWith(Routes.HOME) == true
+    // Exact match on the three rail destinations: a route that merely starts
+    // with "home" (the new HomeScreen) must not reserve rail width or show
+    // the rail — that screen brings its own top nav.
+    val inHome = currentRoute == Routes.HOME_CHATS ||
+        currentRoute == Routes.HOME_SEARCH ||
+        currentRoute == Routes.HOME_SETTINGS
 
     // Settings is a NavHost page now (Figma 623:1208 lays the section list and
     // the detail pane out side by side), not a drawer overlay: the rail
@@ -167,7 +181,7 @@ private fun AppNavHost(viewModel: MainViewModel, backController: BackController)
         viewModel.navEvents.collect { event ->
             val target = when (event) {
                 NavEvent.GoToQrCode -> Routes.QR_LOGIN
-                NavEvent.GoToHome -> Routes.HOME
+                NavEvent.GoToHome -> Routes.HOME_SCREEN
             }
             navController.navigate(target) {
                 popUpTo(navController.graph.id) {
@@ -205,7 +219,7 @@ private fun AppNavHost(viewModel: MainViewModel, backController: BackController)
     // racing the GoToQrCode/GoToHome events. Navigation is event-driven only.
     val startDestination = remember {
         when {
-            authState is AuthState.Ready -> Routes.HOME
+            authState is AuthState.Ready -> Routes.HOME_SCREEN
             authState is AuthState.WaitTdlibParams ||
                 authState is AuthState.WaitEncryptionKey ||
                 authState is AuthState.Idle -> Routes.COLD_START
@@ -218,20 +232,71 @@ private fun AppNavHost(viewModel: MainViewModel, backController: BackController)
     // jumps when focus moves between the rail and the content area.
     val railWidth = 84.dp
 
+    // Pages that render inside the app shell: they get the shared top bar and
+    // the design's content box (y=96, x=58). Everything else (login, player)
+    // keeps the whole window.
+    val isShellPage = currentRoute == Routes.HOME_SCREEN
+
     // D-pad presses play the platform's navigation sounds for the whole
     // activity window (rail, pages, in-tree overlays). Dialog / Popup windows
     // own separate input pipelines and carry their own copy.
     Box(modifier = Modifier.fillMaxSize().dpadNavigationSounds()) {
-        NavHost(
+        // The shell keeps the top bar outside the NavHost, so it survives
+        // navigation: pages swap below it while the bar keeps its focus and
+        // state. It also owns the design's content box for those pages.
+        Column(modifier = Modifier.fillMaxSize()) {
+            if (isShellPage) {
+                Spacer(Modifier.height(TopNavBarTopMargin))
+                val me by viewModel.currentUser.collectAsStateWithLifecycle()
+                // Telegram can deliver the profile photo a beat after login; one
+                // retry covers that without polling. Until it lands (or if the
+                // account has no photo) Avatar draws the initial instead.
+                LaunchedEffect(Unit) {
+                    if (me?.photoFileId == null) viewModel.refreshMe()
+                }
+                TopNavBar(
+                    selectedTab = TopNavTab.Chat,
+                    onTabSelected = { },
+                    onSearchClick = { },
+                    modifier = Modifier.padding(horizontal = TopNavBarSideMargin),
+                    avatar = {
+                        Avatar(
+                            // Real photo when available, initial otherwise.
+                            photoFileId = me?.photoFileId,
+                            name = me?.displayName ?: "",
+                            id = me?.id ?: 0L,
+                            viewModel = viewModel,
+                        )
+                    },
+                )
+                Spacer(Modifier.height(TopNavBarBottomGap))
+            }
+
+            NavHost(
             navController = navController,
             startDestination = startDestination,
             modifier = Modifier
-                .fillMaxSize()
+                .weight(1f)
+                .fillMaxWidth()
+                .then(
+                    if (isShellPage) {
+                        Modifier.padding(horizontal = TopNavBarSideMargin)
+                    } else {
+                        Modifier
+                    },
+                )
                 .padding(start = if (inHome) railWidth else 0.dp),
         ) {
             composable(Routes.COLD_START) { ColdStartScreen(viewModel = viewModel) }
 
             composable(Routes.QR_LOGIN) { QrCodeScreen(viewModel = viewModel) }
+
+            composable(Routes.HOME_SCREEN) {
+                HomeScreen(
+                    viewModel = viewModel,
+                    onOpenPlayer = { index -> navController.navigate(Routes.player(index)) },
+                )
+            }
 
             navigation(startDestination = Routes.HOME_CHATS, route = Routes.HOME) {
                 composable(
@@ -302,6 +367,7 @@ private fun AppNavHost(viewModel: MainViewModel, backController: BackController)
                         }
                     },
                 )
+            }
             }
         }
 
