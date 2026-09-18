@@ -1,6 +1,6 @@
 package tv.telegram.td
 
-enum class MediaType { Photo, Video, Animation, Unknown }
+enum class MediaType { Photo, Video, Animation, Audio, Text, Unknown }
 
 data class MediaItem(
     val messageId: Long,
@@ -22,4 +22,9 @@ data class MediaItem(
     // Video duration in seconds (0 for non-video / unknown). Displayed as a
     // badge on video cards only.
     val duration: Int = 0,
+    // Album grouping: messages sharing a mediaAlbumId collapse into one card.
+    // albumId == 0 means "not part of an album"; albumSize is the number of
+    // messages the album holds, which is what the card's "+N" shows.
+    val albumId: Long = 0,
+    val albumSize: Int = 1,
 )

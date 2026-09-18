@@ -54,6 +54,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import tv.telegram.td.ChatItem
 import tv.telegram.td.ChatType
+import tv.telegram.td.MediaFilter
 import tv.telegram.td.MediaItem
 import tv.telegram.td.MediaType
 import androidx.annotation.DrawableRes
@@ -155,6 +156,9 @@ fun HomeScreen(
                     viewModel = viewModel,
                     onSelect = { chat ->
                         selectedChatId = chat.id
+                        // A chat opens on the unfiltered first page, so the chip state and the
+                        // query state stay in step.
+                        filter = MediaFilter.All
                         viewModel.openChat(chat.id)
                     },
                 )
@@ -162,10 +166,20 @@ fun HomeScreen(
                 Spacer(Modifier.width(HomeSpec.GutterBetweenColumns))
 
                 Column(modifier = Modifier.width(HomeSpec.GridWidth)) {
-                    MediaFilterRow(selected = filter, onSelect = { filter = it })
+                    MediaFilterRow(
+                        selected = filter,
+                        onSelect = { picked ->
+                            // Chips are server-side queries: switching one re-queries the wall
+                            // from page one instead of sifting whatever happens to be loaded.
+                            if (picked != filter) {
+                                filter = picked
+                                viewModel.setMediaFilter(picked)
+                            }
+                        },
+                    )
                     Spacer(Modifier.height(HomeSpec.ChipsToGrid))
                     MediaGrid(
-                        items = media.filteredBy(filter),
+                        items = media,
                         viewModel = viewModel,
                         onOpen = onOpenPlayer,
                     )
@@ -350,14 +364,6 @@ private fun ChatType.typeIcon() = when (this) {
 // Filter chips — Figma row 1243:1727 at (358,96), 12dp gaps
 // ---------------------------------------------------------------------------
 
-enum class MediaFilter(val label: String) {
-    All("ALL"),
-    Video("Video"),
-    Audio("Audio"),
-    Image("Image"),
-    Text("Text"),
-}
-
 @Composable
 private fun MediaFilterRow(selected: MediaFilter, onSelect: (MediaFilter) -> Unit) {
     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -427,16 +433,6 @@ private fun FilterChip(
 // Media grid — Figma "Grid" (1243:1726): 544x344 at (358,164), 160x120 cells
 // ---------------------------------------------------------------------------
 
-private fun List<MediaItem>.filteredBy(selected: MediaFilter): List<MediaItem> = when (selected) {
-    MediaFilter.All -> this
-    MediaFilter.Video -> filter { it.type == MediaType.Video || it.type == MediaType.Animation }
-    MediaFilter.Image -> filter { it.type == MediaType.Photo }
-    // The data layer only carries photo/video/animation today, so the Audio and
-    // Text chips are rendered for fidelity but cannot match anything yet.
-    MediaFilter.Audio -> emptyList()
-    MediaFilter.Text -> emptyList()
-}
-
 @Composable
 private fun MediaGrid(items: List<MediaItem>, viewModel: MainViewModel, onOpen: (Int) -> Unit) {
     val gridState = rememberLazyGridState()
@@ -493,10 +489,14 @@ private sealed interface MediaCellKind {
  * their own collection pass, and album membership needs the mediaAlbumId
  * grouping. The mapping below is the only place that has to change then.
  */
-private fun MediaItem.cellKind(): MediaCellKind = when (type) {
-    MediaType.Photo -> MediaCellKind.Photo
-    MediaType.Video, MediaType.Animation -> MediaCellKind.Video
-    MediaType.Unknown -> MediaCellKind.Photo
+private fun MediaItem.cellKind(): MediaCellKind = when {
+    // The repository collapses whole albums into one item, so a member count
+    // above one is what turns a card into an album card with its "+N".
+    albumSize > 1 -> MediaCellKind.Album(albumSize)
+    type == MediaType.Audio -> MediaCellKind.Audio
+    type == MediaType.Text -> MediaCellKind.Text
+    type == MediaType.Video || type == MediaType.Animation -> MediaCellKind.Video
+    else -> MediaCellKind.Photo
 }
 
 /** How long a card waits for its thumbnail before falling back to the glyph. */
@@ -508,7 +508,7 @@ private fun MediaCell(
     viewModel: MainViewModel,
     onClick: () -> Unit,
 ) {
-    val kind = remember(item.messageId, item.type) { item.cellKind() }
+    val kind = remember(item.messageId, item.type, item.albumSize) { item.cellKind() }
     var focused by remember { mutableStateOf(false) }
 
     Box(

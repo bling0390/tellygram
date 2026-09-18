@@ -19,6 +19,7 @@ import tv.telegram.TgTvApp
 import tv.telegram.td.AuthState
 import tv.telegram.td.ChatItem
 import tv.telegram.td.FileDownloadState
+import tv.telegram.td.MediaFilter
 import tv.telegram.td.MediaItem
 import tv.telegram.td.TdAuth
 import tv.telegram.td.TdChatRepository
@@ -326,6 +327,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun loadMoreMedia() {
         viewModelScope.launch { mediaRepo.loadMore() }
+    }
+
+    /** Switching a filter chip re-queries the media wall from page one. */
+    fun setMediaFilter(filter: MediaFilter) {
+        val chatId = mediaRepo.currentChatId.value ?: return
+        viewModelScope.launch { mediaRepo.openAndLoad(chatId, filter) }
     }
 
     fun closeChat() {
