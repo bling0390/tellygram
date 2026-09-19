@@ -28,7 +28,7 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import java.io.File
 import tv.telegram.td.FileDownloadState
-import tv.telegram.ui.MainViewModel
+import tv.telegram.ui.home.HomeState
 
 /**
  * Telegram-style avatar, shared by the chat list and the top bar.
@@ -60,11 +60,11 @@ fun avatarColorFor(id: Long): Color {
 }
 
 @Composable
-fun Avatar(
+internal fun Avatar(
     photoFileId: Int?,
     name: String,
     id: Long,
-    viewModel: MainViewModel,
+    state: HomeState,
     modifier: Modifier = Modifier,
     size: Dp = 32.dp,
     fallbackIcon: ImageVector? = null,
@@ -75,13 +75,13 @@ fun Avatar(
     // file lands. A one-shot read never recomposed, which made a freshly
     // downloaded avatar appear only when something else happened to recompose
     // the row (it read as the list flashing during focus navigation).
-    val fileStates by viewModel.fileRepo.states.collectAsStateWithLifecycle()
+    val fileStates by state.fileStates.collectAsStateWithLifecycle()
     val localPath = photoFileId?.let { (fileStates[it] as? FileDownloadState.Local)?.path }
     var imageFailed by remember(photoFileId, localPath) { mutableStateOf(false) }
 
     LaunchedEffect(photoFileId) {
         if (photoFileId != null && localPath == null) {
-            viewModel.ensureMediaFile(photoFileId, priority = 16)
+            state.ensureMediaFile(photoFileId, priority = 16)
         }
     }
 

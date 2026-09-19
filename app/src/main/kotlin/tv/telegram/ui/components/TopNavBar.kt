@@ -1,3 +1,4 @@
+@file:OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 package tv.telegram.ui.components
 
 import androidx.compose.foundation.background
@@ -15,6 +16,16 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.outlined.Search
+import androidx.compose.foundation.border
+import androidx.compose.foundation.focusable
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -44,6 +55,9 @@ val TopNavBarTopMargin = 32.dp
 val TopNavBarBottomGap = 32.dp
 val TopNavBarSideMargin = 58.dp
 
+/** The bar's focusable entries, in left-to-right order. */
+internal enum class TopNavItem { Chat, Setting, Search }
+
 @Composable
 fun TopNavBar(
     selectedTab: TopNavTab,
@@ -53,7 +67,28 @@ fun TopNavBar(
     // The signed-in user's avatar. Injected rather than loaded here so the bar
     // stays free of data dependencies and can render in previews/tests.
     avatar: @Composable () -> Unit = { TopNavDefaultAvatar() },
+    // (rule lives in activeNavItem below so it can be unit tested)
+    // The bar highlights whichever entry holds focus (the menu state follows the
+    // D-pad), falling back to the shell's selected tab — Chat, the home — once focus
+    // leaves the bar. Nothing here navigates: OK on Setting or the search icon is
+    // deliberately inert for now.
+
+    // Focus bridge across the shell boundary. The bar lives outside the NavHost and
+    // the chat list inside it, so the shell owns both requesters and hands them to
+    // both sides: Down from the bar lands on the selected chat row, and Back from
+    // the chat list returns to the bar's selected tab.
+    selectedTabFocus: FocusRequester? = null,
+    contentFocus: FocusRequester? = null,
 ) {
+    var activeItem by remember { mutableStateOf<TopNavItem?>(null) }
+    val active = activeNavItem(activeItem, selectedTab)
+
+    // Blur only clears the item that is still recorded, so a gain/loss pair arriving
+    // in either order ends with the newly focused item active.
+    fun onItemFocus(item: TopNavItem, focused: Boolean) {
+        if (focused) activeItem = item else if (activeItem == item) activeItem = null
+    }
+
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -67,20 +102,36 @@ fun TopNavBar(
             Spacer(Modifier.width(20.dp))
             TopNavTabButton(
                 label = "Chat",
-                selected = selectedTab == TopNavTab.Chat,
+                active = active == TopNavItem.Chat,
                 onClick = { onTabSelected(TopNavTab.Chat) },
+                downFocus = contentFocus,
+                requester = selectedTabFocus,
+                onItemFocus = ::onItemFocus,
+                item = TopNavItem.Chat,
             )
             Spacer(Modifier.width(8.dp))
             TopNavTabButton(
                 label = "Setting",
-                selected = selectedTab == TopNavTab.Setting,
+                active = active == TopNavItem.Setting,
                 onClick = { onTabSelected(TopNavTab.Setting) },
+                downFocus = contentFocus,
+                onItemFocus = ::onItemFocus,
+                item = TopNavItem.Setting,
             )
             Spacer(Modifier.width(8.dp))
             Box(
                 modifier = Modifier
                     .size(width = 42.dp, height = TopNavBarHeight)
-                    .clip(RoundedCornerShape(4.dp)),
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(if (active == TopNavItem.Search) TopNavColors.SecondaryContainer else Color.Transparent)
+                    .focusProperties {
+                        // The bar only moves sideways and down (design annotations
+                        // #1-#3): Down leaves for the chat list, Up does nothing.
+                        down = contentFocus ?: FocusRequester.Default
+                        up = FocusRequester.Cancel
+                    }
+                    .focusable()
+                    .onFocusChanged { onItemFocus(TopNavItem.Search, it.isFocused) },
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
@@ -123,19 +174,34 @@ private fun TopNavDefaultAvatar() {
 }
 
 @Composable
-private fun TopNavTabButton(label: String, selected: Boolean, onClick: () -> Unit) {
+private fun TopNavTabButton(
+    label: String,
+    active: Boolean,
+    onClick: () -> Unit,
+    downFocus: FocusRequester? = null,
+    requester: FocusRequester? = null,
+    onItemFocus: (TopNavItem, Boolean) -> Unit,
+    item: TopNavItem,
+) {
     Box(
         modifier = Modifier
             .height(TopNavBarHeight)
             .clip(RoundedCornerShape(4.dp))
-            .background(if (selected) TopNavColors.SecondaryContainer else Color.Transparent)
+            .background(if (active) TopNavColors.SecondaryContainer else Color.Transparent)
+            .focusProperties {
+                down = downFocus ?: FocusRequester.Default
+                up = FocusRequester.Cancel
+            }
+            .let { if (requester != null) it.focusRequester(requester) else it }
+            .focusable()
+            .onFocusChanged { onItemFocus(item, it.isFocused) }
             .padding(horizontal = 16.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(
             text = label,
             style = MaterialTheme.typography.titleSmall,
-            color = if (selected) TopNavColors.OnSecondaryContainer else TopNavColors.OnBackground,
+            color = if (active) TopNavColors.OnSecondaryContainer else TopNavColors.OnBackground,
         )
     }
 }
@@ -145,3 +211,10 @@ private object TopNavColors {
     val SecondaryContainer = Color(0x66484459)   // 40% of #484459
     val OnSecondaryContainer = Color(0xFFE5DFF9)
 }
+
+/**
+ * The bar highlights the entry that holds focus; with focus elsewhere it falls back
+ * to the shell's selected tab — Chat, the home. Annotated behaviour, unit tested.
+ */
+internal fun activeNavItem(focused: TopNavItem?, selectedTab: TopNavTab): TopNavItem =
+    focused ?: if (selectedTab == TopNavTab.Chat) TopNavItem.Chat else TopNavItem.Setting

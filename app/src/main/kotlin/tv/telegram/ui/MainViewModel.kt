@@ -16,6 +16,7 @@ import kotlinx.coroutines.launch
 import android.util.Log
 import tv.telegram.BuildConfig
 import tv.telegram.TgTvApp
+import tv.telegram.ui.home.HomeState
 import tv.telegram.td.AuthState
 import tv.telegram.td.ChatItem
 import tv.telegram.td.FileDownloadState
@@ -33,7 +34,7 @@ sealed class NavEvent {
     data object GoToHome : NavEvent()
 }
 
-class MainViewModel(app: Application) : AndroidViewModel(app) {
+class MainViewModel(app: Application) : AndroidViewModel(app), HomeState {
 
     val auth = TdAuth(client = TdClient, scope = viewModelScope)
     val chatRepo = TdChatRepository(client = TdClient, scope = viewModelScope)
@@ -50,7 +51,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     )
 
     val authState: StateFlow<AuthState> = auth.state
-    val chatList = chatRepo.items
+    override val chatList = chatRepo.items
     val chatListLoaded = chatRepo.loaded
     val chatListError = chatRepo.error
     val archiveChats = chatRepo.archiveChats
@@ -136,11 +137,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         TdClient.resetCacheClearProgress()
     }
 
-    val mediaItems = mediaRepo.items
+    override val fileStates: StateFlow<Map<Int, FileDownloadState>> get() = fileRepo.states
+
+    override val mediaItems = mediaRepo.items
     val mediaLoaded = mediaRepo.loaded
     val mediaError = mediaRepo.error
-    val mediaLoadingMore = mediaRepo.loadingMore
-    val mediaExhausted = mediaRepo.exhausted
+    override val mediaLoadingMore = mediaRepo.loadingMore
+    override val mediaExhausted = mediaRepo.exhausted
     val currentChatId = mediaRepo.currentChatId
 
     private val _playerPlaybackSpeed = MutableStateFlow(1.0f)
@@ -321,16 +324,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun openChat(chatId: Long) {
+    override fun openChat(chatId: Long) {
         viewModelScope.launch { mediaRepo.openAndLoad(chatId) }
     }
 
-    fun loadMoreMedia() {
+    override fun loadMoreMedia() {
         viewModelScope.launch { mediaRepo.loadMore() }
     }
 
     /** Switching a filter chip re-queries the media wall from page one. */
-    fun setMediaFilter(filter: MediaFilter) {
+    override fun setMediaFilter(filter: MediaFilter) {
         val chatId = mediaRepo.currentChatId.value ?: return
         viewModelScope.launch { mediaRepo.openAndLoad(chatId, filter) }
     }
@@ -345,7 +348,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun fileStateFor(fileId: Int): FileDownloadState? = fileRepo.stateFor(fileId)
 
-    fun ensureMediaFile(fileId: Int, priority: Int = 16) {
+    override fun ensureMediaFile(fileId: Int, priority: Int) {
         viewModelScope.launch { fileRepo.ensureLocal(fileId, priority) }
     }
 

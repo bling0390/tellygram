@@ -237,6 +237,13 @@ private fun AppNavHost(viewModel: MainViewModel, backController: BackController)
     // keeps the whole window.
     val isShellPage = currentRoute == Routes.HOME_SCREEN
 
+    // Focus bridge between the shell's top bar and the home screen's chat list: Down
+    // from the bar lands on the selected chat row, and Back from that list returns to
+    // the bar. Both live outside this function's branches so the bar and the NavHost
+    // destination share the same objects.
+    val homeContentFocus = remember { androidx.compose.ui.focus.FocusRequester() }
+    val homeTopBarFocus = remember { androidx.compose.ui.focus.FocusRequester() }
+
     // D-pad presses play the platform's navigation sounds for the whole
     // activity window (rail, pages, in-tree overlays). Dialog / Popup windows
     // own separate input pipelines and carry their own copy.
@@ -248,6 +255,9 @@ private fun AppNavHost(viewModel: MainViewModel, backController: BackController)
             if (isShellPage) {
                 Spacer(Modifier.height(TopNavBarTopMargin))
                 val me by viewModel.currentUser.collectAsStateWithLifecycle()
+                // Focus bridge between the shell's top bar and the home screen's chat
+                // list: Down from the bar lands on the selected chat row, and Back from
+                // that list returns to the bar.
                 // Telegram can deliver the profile photo a beat after login; one
                 // retry covers that without polling. Until it lands (or if the
                 // account has no photo) Avatar draws the initial instead.
@@ -259,13 +269,15 @@ private fun AppNavHost(viewModel: MainViewModel, backController: BackController)
                     onTabSelected = { },
                     onSearchClick = { },
                     modifier = Modifier.padding(horizontal = TopNavBarSideMargin),
+                    selectedTabFocus = homeTopBarFocus,
+                    contentFocus = homeContentFocus,
                     avatar = {
                         Avatar(
                             // Real photo when available, initial otherwise.
                             photoFileId = me?.photoFileId,
                             name = me?.displayName ?: "",
                             id = me?.id ?: 0L,
-                            viewModel = viewModel,
+                            state = viewModel,
                         )
                     },
                 )
@@ -293,8 +305,10 @@ private fun AppNavHost(viewModel: MainViewModel, backController: BackController)
 
             composable(Routes.HOME_SCREEN) {
                 HomeScreen(
-                    viewModel = viewModel,
+                    state = viewModel,
                     onOpenPlayer = { index -> navController.navigate(Routes.player(index)) },
+                    contentEntryFocus = homeContentFocus,
+                    topBarFocus = homeTopBarFocus,
                 )
             }
 

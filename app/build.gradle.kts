@@ -89,6 +89,13 @@ android {
     // versionCode, so consecutive local installs are distinguishable and compare
     // correctly. Release builds are left exactly as defaultConfig defines them, so
     // the hand-bumped version and the git tag stay in charge there.
+    // Robolectric renders Compose in JVM tests, so it needs the app's resources.
+    testOptions {
+        unitTests {
+            isIncludeAndroidResources = true
+        }
+    }
+
     androidComponents {
         onVariants { variant ->
             if (variant.buildType == "debug") {
@@ -306,7 +313,9 @@ dependencies {
     testImplementation(libs.androidx.test.ext.junit)
     testImplementation(platform(libs.androidx.compose.bom))
     testImplementation(libs.androidx.compose.ui.test.junit4)
-    testImplementation(libs.androidx.compose.ui.test.manifest)
+    // Robolectric unit tests also need the test-host Activity declared in the
+    // debug manifest, which is what this artifact contributes.
+    debugImplementation(libs.androidx.compose.ui.test.manifest)
 
     // Instrumented tests (won't run on vultr — they're for completeness)
     androidTestImplementation(libs.androidx.test.ext.junit)

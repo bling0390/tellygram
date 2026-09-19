@@ -48,24 +48,6 @@ class TdMediaRepository(
     // what happens to be loaded.
     private var currentFilter: MediaFilter = MediaFilter.All
 
-    private fun MediaFilter.searchFilter(): TdApi.SearchMessagesFilter = when (this) {
-        MediaFilter.All, MediaFilter.Text -> TdApi.SearchMessagesFilterEmpty()
-        MediaFilter.Video -> TdApi.SearchMessagesFilterVideo()
-        MediaFilter.Image -> TdApi.SearchMessagesFilterPhoto()
-        MediaFilter.Audio -> TdApi.SearchMessagesFilterAudio()
-    }
-
-    /**
-     * Belt-and-braces type guard. The server already scopes everything except
-     * Text, and Text is precisely the case that needs a client-side check.
-     */
-    private fun MediaItem.matches(filter: MediaFilter): Boolean = when (filter) {
-        MediaFilter.All -> true
-        MediaFilter.Video -> type == MediaType.Video || type == MediaType.Animation
-        MediaFilter.Image -> type == MediaType.Photo
-        MediaFilter.Audio -> type == MediaType.Audio
-        MediaFilter.Text -> type == MediaType.Text
-    }
 
     init {
         scope.launch {

@@ -1,3 +1,4 @@
+@file:OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 package tv.telegram.ui.home
 
 import androidx.compose.foundation.Image
@@ -47,6 +48,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.text.style.TextOverflow
@@ -85,7 +87,14 @@ import androidx.compose.animation.core.tween
 import androidx.compose.ui.draw.rotate
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.offset
-import tv.telegram.ui.MainViewModel
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
+import androidx.compose.foundation.lazy.grid.LazyGridState
+import tv.telegram.ui.focus.BackPriority
+import tv.telegram.ui.focus.BackRegistration
 import tv.telegram.ui.components.Avatar
 
 /**
@@ -135,16 +144,97 @@ private object HomeSpec {
     val Corner = 4.dp
 }
 
-@Composable
-fun HomeScreen(
-    viewModel: MainViewModel,
-    onOpenPlayer: (Int) -> Unit = {},
+/** Which of the home screen's three content regions currently holds focus. */
+internal enum class HomeRegion { ChatList, Chips, Grid }
+
+/**
+ * Focus targets for the D-pad graph the design annotates. `selectedChat` and
+ * `topBar` are supplied by the shell: the top bar lives outside the NavHost, so
+ * the two sides have to share the same requester objects.
+ */
+internal class HomeFocus(
+    val selectedChat: FocusRequester,
+    val topBar: FocusRequester?,
+    val selectedChip: FocusRequester,
+    val firstGrid: FocusRequester,
+    val rememberedGrid: FocusRequester,
 ) {
-    val chats by viewModel.chatList.collectAsStateWithLifecycle()
-    val media by viewModel.mediaItems.collectAsStateWithLifecycle()
+    /**
+     * The cell the chips' Down returns to. A plain field rather than a constructor
+     * value on purpose: focusProperties blocks run outside composition, so a lambda
+     * that captured a recreated HomeFocus would keep pointing at the old target.
+     * Reading the field at focus time always sees the current one.
+     */
+    var gridEntry: FocusRequester = firstGrid
+}
+
+@Composable
+internal fun HomeScreen(
+    state: HomeState,
+    onOpenPlayer: (Int) -> Unit = {},
+    // Focus bridge from the shell: Down from the top bar lands on the selected chat
+    // row, and Back from the chat list returns to the bar's selected tab.
+    contentEntryFocus: FocusRequester? = null,
+    topBarFocus: FocusRequester? = null,
+) {
+    val chats by state.chatList.collectAsStateWithLifecycle()
+    val media by state.mediaItems.collectAsStateWithLifecycle()
 
     var selectedChatId by rememberSaveable { mutableStateOf<Long?>(null) }
     var filter by rememberSaveable { mutableStateOf(MediaFilter.All) }
+
+    // D-pad graph: the edges of each region are routed explicitly rather than left to
+    // Compose's nearest-candidate search (design annotations 1-4).
+    val selectedChatFocus = remember(contentEntryFocus) { contentEntryFocus ?: FocusRequester() }
+    val selectedChipFocus = remember { FocusRequester() }
+    val firstGridFocus = remember { FocusRequester() }
+    val rememberedGridFocus = remember { FocusRequester() }
+    val gridState = rememberLazyGridState()
+    val scope = rememberCoroutineScope()
+    var region by remember { mutableStateOf<HomeRegion?>(null) }
+    var gridIndex by remember { mutableStateOf(0) }
+    var rememberedGridIndex by remember { mutableStateOf(0) }
+
+    // Row 0's cell doubles as the "remembered" target, so point the chips' Down at the
+    // same requester when the remembered cell is [0,0].
+    val focus = remember(contentEntryFocus, topBarFocus) {
+        HomeFocus(
+            selectedChat = selectedChatFocus,
+            topBar = topBarFocus,
+            selectedChip = selectedChipFocus,
+            firstGrid = firstGridFocus,
+            rememberedGrid = rememberedGridFocus,
+        )
+    }
+    // Re-pointed every recomposition; focusProperties lambdas read it live.
+    focus.gridEntry = if (rememberedGridIndex == 0) firstGridFocus else rememberedGridFocus
+
+    // A requester whose cell is scrolled away is not attached, and requesting one
+    // throws; scrolling first also makes the cell exist. Every grid jump goes here.
+    fun jumpToGrid(index: Int) {
+        // Straight there when the cell is already composed — the common case, and the
+        // one the D-pad needs to feel instant. Only a cell that is scrolled away (its
+        // requester therefore unattached) needs the scroll-then-request detour.
+        val target = { if (index == 0) firstGridFocus else rememberedGridFocus }
+        if (runCatching { target().requestFocus() }.isSuccess) return
+        scope.launch {
+            runCatching { gridState.scrollToItem(index.coerceAtLeast(0)) }
+            delay(16L)
+            val ok = runCatching { target().requestFocus() }.isSuccess
+            if (!ok) runCatching { firstGridFocus.requestFocus() }
+        }
+    }
+
+    // Back rules (design): grid [0,0] -> selected chat, any other grid cell -> [0,0],
+    // chips -> selected chat, chat list -> the bar's selected tab.
+    BackRegistration(BackPriority.CHATS, enabled = region != null) {
+        when (backTarget(region, gridIndex)) {
+            HomeBackTarget.SelectedChat -> runCatching { selectedChatFocus.requestFocus() }
+            HomeBackTarget.FirstGridCell -> jumpToGrid(0)
+            HomeBackTarget.TopBar -> focus.topBar?.let { runCatching { it.requestFocus() } }
+            null -> Unit
+        }
+    }
 
     Box(
         modifier = Modifier
@@ -159,13 +249,15 @@ fun HomeScreen(
                 ChatList(
                     chats = chats,
                     selectedChatId = selectedChatId,
-                    viewModel = viewModel,
+                    state = state,
+                    focus = focus,
+                    onRegion = { region = it },
                     onSelect = { chat ->
                         selectedChatId = chat.id
                         // A chat opens on the unfiltered first page, so the chip state and the
                         // query state stay in step.
                         filter = MediaFilter.All
-                        viewModel.openChat(chat.id)
+                        state.openChat(chat.id)
                     },
                 )
 
@@ -174,19 +266,29 @@ fun HomeScreen(
                 Column(modifier = Modifier.width(HomeSpec.GridWidth)) {
                     MediaFilterRow(
                         selected = filter,
+                        focus = focus,
+                        onRegion = { region = it },
                         onSelect = { picked ->
                             // Chips are server-side queries: switching one re-queries the wall
                             // from page one instead of sifting whatever happens to be loaded.
                             if (picked != filter) {
                                 filter = picked
-                                viewModel.setMediaFilter(picked)
+                                state.setMediaFilter(picked)
                             }
                         },
                     )
                     Spacer(Modifier.height(HomeSpec.ChipsToGrid))
                     MediaGrid(
                         items = media,
-                        viewModel = viewModel,
+                        state = state,
+                        focus = focus,
+                        gridState = gridState,
+                        rememberedIndex = rememberedGridIndex,
+                        onGridFocus = { index ->
+                            region = HomeRegion.Grid
+                            gridIndex = index
+                            rememberedIndexFor(index)?.let { rememberedGridIndex = it }
+                        },
                         onOpen = onOpenPlayer,
                     )
                 }
@@ -203,7 +305,9 @@ fun HomeScreen(
 private fun ChatList(
     chats: List<ChatItem>,
     selectedChatId: Long?,
-    viewModel: MainViewModel,
+    state: HomeState,
+    focus: HomeFocus,
+    onRegion: (HomeRegion) -> Unit,
     onSelect: (ChatItem) -> Unit,
 ) {
     // The design's 268x412 box is exactly eight rows of (48 + 4), so anything
@@ -219,10 +323,16 @@ private fun ChatList(
     ) {
         item(key = "archived") { ArchivedChatsRow() }
         items(items = chats, key = { it.id }) { chat ->
+            // The row the bar's Down lands on and Back returns to: the selected chat,
+            // or the first row before anything is selected.
+            val isEntry = chat.id == selectedChatId || (selectedChatId == null && chat.id == chats.firstOrNull()?.id)
             ChatRow(
                 chat = chat,
                 selected = chat.id == selectedChatId,
-                viewModel = viewModel,
+                state = state,
+                focus = focus,
+                isEntry = isEntry,
+                onRegion = onRegion,
                 onClick = { onSelect(chat) },
             )
         }
@@ -263,19 +373,28 @@ private fun ArchivedChatsRow() {
 private fun ChatRow(
     chat: ChatItem,
     selected: Boolean,
-    viewModel: MainViewModel,
+    state: HomeState,
+    focus: HomeFocus,
+    isEntry: Boolean,
+    onRegion: (HomeRegion) -> Unit,
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
     // Figma shows three row states: plain, pinned (60% fill, dark text) and
     // focused/selected (full fill, dark text).
     val highlighted = focused || selected
+    // Three row states in the design: plain, pinned (60% fill + dark text, node
+    // 3209:2083) and focused/selected (solid #C7C6CA + dark text, node 3209:2087).
+    // Pinned rows used to fall through to the plain styling — RowFillStrong was
+    // defined for them and never read.
+    val pinned = chat.isPinned
     val fill = when {
         highlighted -> HomeSpec.OnSurface
+        pinned -> HomeSpec.RowFillStrong
         else -> HomeSpec.RowFill
     }
     val textColor = when {
-        highlighted -> HomeSpec.InverseOnSurface
+        highlighted || pinned -> HomeSpec.InverseOnSurface
         else -> HomeSpec.OnSurface
     }
 
@@ -285,10 +404,20 @@ private fun ChatRow(
     Box(
         modifier = Modifier
             .fillMaxSizeWidth()
+            // Stable handle for the UI tests that drive the D-pad graph.
+            .testTag("home-chat-row-${chat.id}")
             .clip(RoundedCornerShape(HomeSpec.Corner))
             .background(fill)
+            .focusProperties {
+                // Chat list: up/down plus Right into the media grid; Left does nothing,
+                // and only the entry row reaches the top bar (annotations 2, 6, 7).
+                left = FocusRequester.Cancel
+                right = focus.gridEntry
+                up = if (isEntry && focus.topBar != null) focus.topBar else FocusRequester.Default
+            }
+            .let { if (isEntry) it.focusRequester(focus.selectedChat) else it }
             .focusable()
-            .onFocusChanged { focused = it.isFocused },
+            .onFocusChanged { focused = it.isFocused; if (it.isFocused) onRegion(HomeRegion.ChatList) },
     ) {
         Row(
             modifier = Modifier
@@ -305,7 +434,7 @@ private fun ChatRow(
                     photoFileId = chat.photoSmallFileId,
                     name = chat.title,
                     id = chat.id,
-                    viewModel = viewModel,
+                    state = state,
                     fallbackIcon = chat.type.typeIcon(),
                 )
                 if (chat.unreadCount > 0) {
@@ -318,7 +447,7 @@ private fun ChatRow(
                             .offset(x = 2.dp, y = 2.dp)
                             .size(6.dp)
                             .clip(CircleShape)
-                            .background(if (highlighted) HomeSpec.TertiaryFixed else HomeSpec.Tertiary),
+                            .background(if (highlighted || pinned) HomeSpec.TertiaryFixed else HomeSpec.Tertiary),
                     )
                 }
             }
@@ -396,13 +525,22 @@ private fun ChatType.typeIcon() = when (this) {
 // ---------------------------------------------------------------------------
 
 @Composable
-private fun MediaFilterRow(selected: MediaFilter, onSelect: (MediaFilter) -> Unit) {
+internal fun MediaFilterRow(
+    selected: MediaFilter,
+    focus: HomeFocus,
+    onRegion: (HomeRegion) -> Unit,
+    onSelect: (MediaFilter) -> Unit,
+) {
     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        MediaFilter.entries.forEach { entry ->
+        MediaFilter.entries.forEachIndexed { index, entry ->
             FilterChip(
                 label = entry.label,
                 selected = entry == selected,
                 showCheck = entry == MediaFilter.All && entry == selected,
+                isFirst = index == 0,
+                isLast = index == MediaFilter.entries.lastIndex,
+                focus = focus,
+                onRegion = onRegion,
                 onClick = { onSelect(entry) },
             )
         }
@@ -414,6 +552,10 @@ private fun FilterChip(
     label: String,
     selected: Boolean,
     showCheck: Boolean,
+    isFirst: Boolean,
+    isLast: Boolean,
+    focus: HomeFocus,
+    onRegion: (HomeRegion) -> Unit,
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
@@ -428,8 +570,17 @@ private fun FilterChip(
                 color = if (active) Color.Transparent else HomeSpec.ChipOutline,
                 shape = RoundedCornerShape(HomeSpec.Corner),
             )
+            .focusProperties {
+                // Chips: sideways plus Down to the remembered grid cell. The first chip
+                // reaches the selected chat, the last one stops (annotations 4, 5).
+                left = if (isFirst) focus.selectedChat else FocusRequester.Default
+                right = if (isLast) FocusRequester.Cancel else FocusRequester.Default
+                up = FocusRequester.Cancel
+                down = focus.gridEntry
+            }
+            .let { if (selected) it.focusRequester(focus.selectedChip) else it }
             .focusable()
-            .onFocusChanged { focused = it.isFocused }
+            .onFocusChanged { focused = it.isFocused; if (it.isFocused) onRegion(HomeRegion.Chips) }
             // Horizontal padding only. The chip is a fixed 32dp tall as drawn and
             // the content is centred inside it; keeping the design's 10dp of
             // vertical padding on top of that left a 12dp content box for a 16dp
@@ -465,10 +616,17 @@ private fun FilterChip(
 // ---------------------------------------------------------------------------
 
 @Composable
-private fun MediaGrid(items: List<MediaItem>, viewModel: MainViewModel, onOpen: (Int) -> Unit) {
-    val gridState = rememberLazyGridState()
-    val exhausted by viewModel.mediaExhausted.collectAsStateWithLifecycle()
-    val loadingMore by viewModel.mediaLoadingMore.collectAsStateWithLifecycle()
+private fun MediaGrid(
+    items: List<MediaItem>,
+    state: HomeState,
+    focus: HomeFocus,
+    gridState: LazyGridState,
+    rememberedIndex: Int,
+    onGridFocus: (Int) -> Unit,
+    onOpen: (Int) -> Unit,
+) {
+    val exhausted by state.mediaExhausted.collectAsStateWithLifecycle()
+    val loadingMore by state.mediaLoadingMore.collectAsStateWithLifecycle()
 
     // The repository pages 100 messages at a time, so without this the grid would
     // simply stop at the first page and read as "that is all the media there is".
@@ -482,7 +640,7 @@ private fun MediaGrid(items: List<MediaItem>, viewModel: MainViewModel, onOpen: 
         }
             .distinctUntilChanged()
             .collect { atEnd ->
-                if (atEnd && !exhausted && !loadingMore) viewModel.loadMoreMedia()
+                if (atEnd && !exhausted && !loadingMore) state.loadMoreMedia()
             }
     }
 
@@ -497,38 +655,23 @@ private fun MediaGrid(items: List<MediaItem>, viewModel: MainViewModel, onOpen: 
         contentPadding = PaddingValues(0.dp),
     ) {
         itemsIndexed(items, key = { _, item -> item.messageId }) { index, item ->
-            MediaCell(item = item, viewModel = viewModel, onClick = { onOpen(index) })
+            MediaCell(
+                item = item,
+                state = state,
+                index = index,
+                isFirstCol = isFirstColumn(index),
+                isLastCol = isLastColumn(index),
+                isFirstRow = isFirstRow(index),
+                isFirst = index == 0,
+                isRemembered = rememberedIndex != 0 && index == rememberedIndex,
+                focus = focus,
+                onGridFocus = onGridFocus,
+                onClick = { onOpen(index) },
+            )
         }
     }
 }
 
-/** How a media card is drawn. Album carries its member count for the "+N". */
-private sealed interface MediaCellKind {
-    data object Photo : MediaCellKind
-    data object Video : MediaCellKind
-    data object Audio : MediaCellKind
-    data object Text : MediaCellKind
-    data class Album(val count: Int) : MediaCellKind
-}
-
-/**
- * Repository item -> card kind.
- *
- * TdMediaRepository only produces photo / video / animation items today, so the
- * audio, text and album kinds are fully implemented in the UI but cannot be
- * reached until the repository surfaces those messages: audio and document need
- * their own collection pass, and album membership needs the mediaAlbumId
- * grouping. The mapping below is the only place that has to change then.
- */
-private fun MediaItem.cellKind(): MediaCellKind = when {
-    // The repository collapses whole albums into one item, so a member count
-    // above one is what turns a card into an album card with its "+N".
-    albumSize > 1 -> MediaCellKind.Album(albumSize)
-    type == MediaType.Audio -> MediaCellKind.Audio
-    type == MediaType.Text -> MediaCellKind.Text
-    type == MediaType.Video || type == MediaType.Animation -> MediaCellKind.Video
-    else -> MediaCellKind.Photo
-}
 
 /** How long a card waits for its thumbnail before falling back to the glyph. */
 private const val ThumbnailTimeoutMs = 6_000L
@@ -536,7 +679,15 @@ private const val ThumbnailTimeoutMs = 6_000L
 @Composable
 private fun MediaCell(
     item: MediaItem,
-    viewModel: MainViewModel,
+    state: HomeState,
+    index: Int,
+    isFirstCol: Boolean,
+    isLastCol: Boolean,
+    isFirstRow: Boolean,
+    isFirst: Boolean,
+    isRemembered: Boolean,
+    focus: HomeFocus,
+    onGridFocus: (Int) -> Unit,
     onClick: () -> Unit,
 ) {
     val kind = remember(item.messageId, item.type, item.albumSize) { item.cellKind() }
@@ -545,6 +696,8 @@ private fun MediaCell(
     Box(
         modifier = Modifier
             .size(width = HomeSpec.CellWidth, height = HomeSpec.CellHeight)
+            // Stable handle for the UI tests that drive the D-pad graph.
+            .testTag("home-media-cell-$index")
             .clip(RoundedCornerShape(HomeSpec.Corner))
             .background(HomeSpec.RowFill)
             .then(
@@ -554,8 +707,18 @@ private fun MediaCell(
                     Modifier
                 },
             )
+            .focusProperties {
+                // Media grid: four-way with explicit edges (annotation 3) — column 0
+                // reaches the selected chat, column 2 stops, row 0 goes up to the
+                // active chip.
+                left = if (isFirstCol) focus.selectedChat else FocusRequester.Default
+                right = if (isLastCol) FocusRequester.Cancel else FocusRequester.Default
+                up = if (isFirstRow) focus.selectedChip else FocusRequester.Default
+            }
+            .let { if (isFirst) it.focusRequester(focus.firstGrid) else it }
+            .let { if (isRemembered) it.focusRequester(focus.rememberedGrid) else it }
             .focusable()
-            .onFocusChanged { focused = it.isFocused },
+            .onFocusChanged { focused = it.isFocused; if (it.isFocused) onGridFocus(index) },
     ) {
         when (kind) {
             // Placeholder-only kinds: the design draws one glyph, centred.
@@ -571,8 +734,8 @@ private fun MediaCell(
 
             // Photo / video: the thumbnail is the card; the Image / Video file
             // glyph only stands in when there is nothing to show.
-            is MediaCellKind.Photo -> MediaThumbnail(item, viewModel, isVideo = false)
-            is MediaCellKind.Video -> MediaThumbnail(item, viewModel, isVideo = true)
+            is MediaCellKind.Photo -> MediaThumbnail(item, state, isVideo = false)
+            is MediaCellKind.Video -> MediaThumbnail(item, state, isVideo = true)
         }
     }
 }
@@ -633,8 +796,8 @@ private fun BoxScope.MediaAlbumCell(count: Int) {
  * a broken one.
  */
 @Composable
-private fun BoxScope.MediaThumbnail(item: MediaItem, viewModel: MainViewModel, isVideo: Boolean) {
-    val fileStates by viewModel.fileRepo.states.collectAsStateWithLifecycle()
+private fun BoxScope.MediaThumbnail(item: MediaItem, state: HomeState, isVideo: Boolean) {
+    val fileStates by state.fileStates.collectAsStateWithLifecycle()
     val thumbFileId = item.thumbnailFileId ?: item.fileId
     val localPath = (fileStates[thumbFileId] as? FileDownloadState.Local)?.path
         ?: item.thumbnailLocalPath
@@ -644,7 +807,7 @@ private fun BoxScope.MediaThumbnail(item: MediaItem, viewModel: MainViewModel, i
     var waitOver by remember(item.messageId) { mutableStateOf(false) }
 
     LaunchedEffect(thumbFileId) {
-        if (localPath == null) viewModel.ensureMediaFile(thumbFileId, priority = 24)
+        if (localPath == null) state.ensureMediaFile(thumbFileId, priority = 24)
     }
     LaunchedEffect(item.messageId) {
         delay(ThumbnailTimeoutMs)
@@ -730,14 +893,6 @@ private fun BoxScope.MediaThumbnail(item: MediaItem, viewModel: MainViewModel, i
     }
 }
 
-/** Seconds -> "m:ss", or "h:mm:ss" past an hour (matches the design's 01:59:59). */
-private fun formatDuration(totalSeconds: Int): String {
-    val s = totalSeconds.coerceAtLeast(0)
-    val h = s / 3600
-    val m = (s % 3600) / 60
-    val sec = s % 60
-    return if (h > 0) "%d:%02d:%02d".format(h, m, sec) else "%d:%02d".format(m, sec)
-}
 
 /** Every list row in the design spans the full 268dp column. */
 private fun Modifier.fillMaxSizeWidth(): Modifier = this.then(Modifier.width(HomeSpec.ListWidth))

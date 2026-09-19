@@ -1,5 +1,7 @@
 package tv.telegram.td
 
+import org.drinkless.td.libcore.telegram.TdApi
+
 /**
  * The media wall's filter chips. Declaration order is the order the design draws
  * them in.
@@ -16,4 +18,22 @@ enum class MediaFilter(val label: String) {
     Audio("Audio"),
     Image("Image"),
     Text("Text"),
+}
+internal fun MediaFilter.searchFilter(): TdApi.SearchMessagesFilter = when (this) {
+    MediaFilter.All, MediaFilter.Text -> TdApi.SearchMessagesFilterEmpty()
+    MediaFilter.Video -> TdApi.SearchMessagesFilterVideo()
+    MediaFilter.Image -> TdApi.SearchMessagesFilterPhoto()
+    MediaFilter.Audio -> TdApi.SearchMessagesFilterAudio()
+}
+
+/**
+ * Belt-and-braces type guard. The server already scopes everything except
+ * Text, and Text is precisely the case that needs a client-side check.
+ */
+internal fun MediaItem.matches(filter: MediaFilter): Boolean = when (filter) {
+    MediaFilter.All -> true
+    MediaFilter.Video -> type == MediaType.Video || type == MediaType.Animation
+    MediaFilter.Image -> type == MediaType.Photo
+    MediaFilter.Audio -> type == MediaType.Audio
+    MediaFilter.Text -> type == MediaType.Text
 }
