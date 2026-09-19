@@ -113,9 +113,10 @@ private object HomeSpec {
     val RowFillStrong = Color(0x99D9D9D9)     // rgba(217,217,217,0.6) — pinned row
     val ChipOutline = Color(0x33FFFFFF)       // rgba(255,255,255,0.2)
     val White = Color(0xFFFFFFFF)
-    // Figma "primary-fixed": the verified badge switches to this while the
-    // row is focused. The unfocused/pinned colour is the theme's primary
-    // (#A8C8FF), which is what the design draws in those rows.
+    // The verified badge's two colours as constants, not theme roles: the design is
+    // dark-only, and colorScheme.primary would turn steel-blue (#5288C1) under the
+    // light theme. They mirror material-theme/sys/dark/primary and .../primary-fixed.
+    val Primary = Color(0xFFA8C8FF)
     val PrimaryFixed = Color(0xFFD6E3FF)
 
     val ListWidth = 268.dp
@@ -350,7 +351,7 @@ private fun ChatRow(
                     Icon(
                         Icons.Outlined.Verified,
                         null,
-                        tint = if (highlighted) HomeSpec.PrimaryFixed else MaterialTheme.colorScheme.primary,
+                        tint = if (highlighted) HomeSpec.PrimaryFixed else HomeSpec.Primary,
                         modifier = Modifier.size(12.dp),
                     )
                 }
