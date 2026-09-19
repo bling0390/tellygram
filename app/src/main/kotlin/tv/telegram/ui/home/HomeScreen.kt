@@ -147,8 +147,7 @@ fun HomeScreen(
 
     Box(
         modifier = Modifier
-            .fillMaxSize()
-            .background(HomeSpec.Background),
+            .fillMaxSize(),
     ) {
         // The top bar is provided by the app shell (MainActivity) so it survives
         // navigation; this screen only owns the lower part of the design — the

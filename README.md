@@ -9,6 +9,11 @@ first, leanback UI, no phone in hand.
 > Not affiliated with Telegram FZ-LLC. Built on TDLib, Telegram's own client
 > library, so the app talks to Telegram directly.
 
+![Tellygram home screen: chat list, filter chips and the media wall](docs/images/home-screen.jpg)
+
+*The home screen — the design frame this implementation is measured against: the
+chat list on the left, the media filter chips and the media wall on the right.*
+
 **Status:** working app, released as `v1.0.0`. Distributed as a self-built APK —
 there is no Play Store listing.
 
