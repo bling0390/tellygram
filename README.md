@@ -1,6 +1,6 @@
 # Tellygram — Telegram for Android TV
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Version](https://img.shields.io/github/v/tag/bling0390/tellygram?label=version&color=blue)](https://github.com/bling0390/tellygram/releases) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 An **unofficial, media-first Telegram client for Android TV**. Browse images and
 video from your channels, groups and private chats on the big screen — D-pad
