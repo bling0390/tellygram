@@ -1,5 +1,6 @@
 package tv.telegram.ui.home
 
+import androidx.compose.ui.graphics.Color
 import tv.telegram.td.MediaItem
 import tv.telegram.td.MediaType
 
@@ -67,3 +68,36 @@ internal fun formatDuration(totalSeconds: Int): String {
     val sec = s % 60
     return if (h > 0) "%d:%02d:%02d".format(h, m, sec) else "%d:%02d".format(m, sec)
 }
+
+/** Colours of one chat row and its badges, decided in one place. */
+internal data class ChatRowColors(val fill: Color, val text: Color, val unreadDot: Color)
+
+/**
+ * Row state -> colours.
+ *
+ * The design annotates the chat-name row so the filled background belongs to FOCUS OR
+ * SELECTION only. A pinned chat keeps the plain styling and shows its state through
+ * the pin glyph. `pinned` is accepted and deliberately ignored so the rule is stated
+ * once and can be asserted: a pinned row must look exactly like a plain one.
+ */
+internal fun chatRowColors(highlighted: Boolean, pinned: Boolean): ChatRowColors = if (highlighted) {
+    ChatRowColors(HomeSpec.OnSurface, HomeSpec.InverseOnSurface, HomeSpec.TertiaryFixed)
+} else {
+    ChatRowColors(HomeSpec.RowFill, HomeSpec.OnSurface, HomeSpec.Tertiary)
+}
+
+/** What confirming a media card opens. */
+internal enum class MediaOpenTarget { Player, PhotoPreview }
+
+/**
+ * Photo cards open the full-screen preview; videos open the player; the remaining
+ * kinds keep the behaviour they had (the player), as requested.
+ */
+internal fun mediaOpenTarget(kind: MediaCellKind): MediaOpenTarget = when (kind) {
+    is MediaCellKind.Photo -> MediaOpenTarget.PhotoPreview
+    else -> MediaOpenTarget.Player
+}
+
+/** Index of the media item carrying this message id; -1 when it is not loaded. */
+internal fun indexOfMessage(items: List<MediaItem>, messageId: Long): Int =
+    items.indexOfFirst { it.messageId == messageId }

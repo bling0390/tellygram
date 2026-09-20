@@ -128,4 +128,46 @@ class HomeRulesTest {
     fun `back with no focused region does nothing`() {
         assertNull(backTarget(null, 0))
     }
+    // ── row colours: only focus/selection may fill a row ───────────────────────
+
+    @Test
+    fun `only a focused or selected row gets a fill`() {
+        val plain = chatRowColors(highlighted = false, pinned = false)
+        val active = chatRowColors(highlighted = true, pinned = false)
+
+        assertEquals(HomeSpec.RowFill, plain.fill)
+        assertEquals(HomeSpec.OnSurface, active.fill)
+        assertEquals(HomeSpec.OnSurface, plain.text)
+        assertEquals(HomeSpec.InverseOnSurface, active.text)
+        assertEquals(HomeSpec.Tertiary, plain.unreadDot)
+        assertEquals(HomeSpec.TertiaryFixed, active.unreadDot)
+    }
+
+    @Test
+    fun `a pinned row is coloured exactly like a plain one`() {
+        // Regression guard: a pinned row must NOT look selected.
+        assertEquals(
+            chatRowColors(highlighted = false, pinned = false),
+            chatRowColors(highlighted = false, pinned = true),
+        )
+    }
+
+    // ── confirm-key target ─────────────────────────────────────────────────────
+
+    @Test
+    fun `photos open the preview and everything else opens the player`() {
+        assertEquals(MediaOpenTarget.PhotoPreview, mediaOpenTarget(MediaCellKind.Photo))
+        assertEquals(MediaOpenTarget.Player, mediaOpenTarget(MediaCellKind.Video))
+        assertEquals(MediaOpenTarget.Player, mediaOpenTarget(MediaCellKind.Audio))
+        assertEquals(MediaOpenTarget.Player, mediaOpenTarget(MediaCellKind.Text))
+        assertEquals(MediaOpenTarget.Player, mediaOpenTarget(MediaCellKind.Album(4)))
+    }
+
+    @Test
+    fun `indexOfMessage finds the card to restore focus to`() {
+        val items = listOf(item(messageId = 7), item(messageId = 9))
+        assertEquals(1, indexOfMessage(items, 9))
+        assertEquals(-1, indexOfMessage(items, 404))
+    }
+
 }

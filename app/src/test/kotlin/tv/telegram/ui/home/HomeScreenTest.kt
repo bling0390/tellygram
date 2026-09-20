@@ -23,6 +23,7 @@ import androidx.compose.ui.test.requestFocus
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -43,16 +44,36 @@ private class FakeHomeState : HomeState {
         listOf(chat(1, "Alpha"), chat(2, "Beta")),
     )
     override val mediaItems: StateFlow<List<MediaItem>> = MutableStateFlow(
-        listOf(media(1), media(2), media(3), media(4), media(5)),
+        // Index 2 is a video, so the confirm tests can tell the two destinations apart.
+        listOf(media(1), media(2), video(3), media(4), media(5)),
     )
     override val mediaLoadingMore: StateFlow<Boolean> = MutableStateFlow(false)
     override val mediaExhausted: StateFlow<Boolean> = MutableStateFlow(false)
     override val fileStates: StateFlow<Map<Int, FileDownloadState>> = MutableStateFlow(emptyMap())
 
+    /** What the UI asked for, so the click tests can assert it. */
+    private val returnFocus = MutableStateFlow<Long?>(null)
+    var consumeReturnFocusCount = 0
+
+    override val playerReturnFocusMessageId: StateFlow<Long?> get() = returnFocus
+
+    override fun setPlayerReturnFocus(messageId: Long) { returnFocus.value = messageId }
+    override fun consumePlayerReturnFocus() {
+        consumeReturnFocusCount++
+        returnFocus.value = null
+    }
+
+    /** Test hook: pretend a viewer closed and asked for this card back. */
+    fun requestReturnFocus(messageId: Long) { returnFocus.value = messageId }
+
+    var openedChatId: Long? = null
+    var filterSet: MediaFilter? = null
+    var loadedMore = false
+
     override fun ensureMediaFile(fileId: Int, priority: Int) = Unit
-    override fun openChat(chatId: Long) = Unit
-    override fun loadMoreMedia() = Unit
-    override fun setMediaFilter(filter: MediaFilter) = Unit
+    override fun openChat(chatId: Long) { openedChatId = chatId }
+    override fun loadMoreMedia() { loadedMore = true }
+    override fun setMediaFilter(filter: MediaFilter) { filterSet = filter }
 
     private companion object {
         fun chat(id: Long, title: String) = ChatItem(
@@ -64,6 +85,7 @@ private class FakeHomeState : HomeState {
         )
 
         fun media(id: Long) = MediaItem(messageId = id, type = MediaType.Photo, fileId = 0)
+        fun video(id: Long) = MediaItem(messageId = id, type = MediaType.Video, fileId = 0)
     }
 }
 
@@ -87,7 +109,11 @@ class HomeScreenTest {
     }
 
     /** Renders HomeScreen under a stand-in top bar that owns the Back target. */
-    private fun show(withTopBar: Boolean = true) {
+    private fun show(
+        withTopBar: Boolean = true,
+        onOpenPlayer: (Int) -> Unit = { },
+        onOpenPhoto: (Int) -> Unit = { },
+    ) {
         val contentEntry = FocusRequester()
         val topBar = FocusRequester()
         rule.setContent {
@@ -104,6 +130,8 @@ class HomeScreenTest {
                     }
                     HomeScreen(
                         state = state,
+                        onOpenPlayer = onOpenPlayer,
+                        onOpenPhoto = onOpenPhoto,
                         contentEntryFocus = contentEntry,
                         topBarFocus = if (withTopBar) topBar else null,
                     )
@@ -234,4 +262,60 @@ class HomeScreenTest {
         rule.waitForIdle()
         rule.onNodeWithTag(TOP_BAR_TAG).assertIsFocused()
     }
+    // ── OK / Enter must actually do something ─────────────────────────────────
+
+    @Test
+    fun `OK on a chat row loads that chat's media`() {
+        show()
+        rule.onNodeWithTag("home-chat-row-2").requestFocus()
+        rule.waitForIdle()
+        rule.onNodeWithTag("home-chat-row-2").performKeyInput { pressKey(Key.DirectionCenter) }
+        rule.waitForIdle()
+        assertEquals(2L, state.openedChatId)
+    }
+
+    @Test
+    fun `OK on a photo card opens the photo preview`() {
+        var previewed = -1
+        var played = -1
+        show(onOpenPlayer = { played = it }, onOpenPhoto = { previewed = it })
+        rule.onNodeWithTag("home-media-cell-1").requestFocus()
+        rule.waitForIdle()
+        rule.onNodeWithTag("home-media-cell-1").performKeyInput { pressKey(Key.DirectionCenter) }
+        rule.waitForIdle()
+        assertEquals(1, previewed)
+        assertEquals(-1, played)
+    }
+
+    @Test
+    fun `OK on a video card opens the player`() {
+        var previewed = -1
+        var played = -1
+        show(onOpenPlayer = { played = it }, onOpenPhoto = { previewed = it })
+        rule.onNodeWithTag("home-media-cell-2").requestFocus()
+        rule.waitForIdle()
+        rule.onNodeWithTag("home-media-cell-2").performKeyInput { pressKey(Key.DirectionCenter) }
+        rule.waitForIdle()
+        assertEquals(2, played)
+        assertEquals(-1, previewed)
+    }
+
+    // ── returning from a full-screen viewer ────────────────────────────────────
+
+    @Test
+    fun `a return hint is consumed and cleared after a viewer closes`() {
+        show()
+        state.requestReturnFocus(4L)
+        rule.waitForIdle()
+        assertEquals(1, state.consumeReturnFocusCount)
+    }
+
+    @Test
+    fun `an unknown return hint is left alone`() {
+        show()
+        state.requestReturnFocus(999L)
+        rule.waitForIdle()
+        assertEquals(0, state.consumeReturnFocusCount)
+    }
+
 }

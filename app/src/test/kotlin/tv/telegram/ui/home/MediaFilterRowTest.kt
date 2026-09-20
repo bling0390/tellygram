@@ -19,6 +19,7 @@ import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.pressKey
 import androidx.compose.ui.test.requestFocus
 import androidx.compose.ui.unit.dp
+import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -41,6 +42,8 @@ class MediaFilterRowTest {
         const val CHAT_TAG = "selected-chat"
         const val GRID_TAG = "remembered-grid-cell"
     }
+
+    private var selectedByClick: MediaFilter? = null
 
     private fun showRow(selected: MediaFilter = MediaFilter.All): HomeFocus {
         val focus = HomeFocus(
@@ -67,7 +70,7 @@ class MediaFilterRowTest {
                     selected = selected,
                     focus = focus,
                     onRegion = { },
-                    onSelect = { },
+                    onSelect = { picked -> selectedByClick = picked },
                 )
                 Box(
                     Modifier
@@ -108,4 +111,14 @@ class MediaFilterRowTest {
         rule.onNodeWithText("Video").onParent().performKeyInput { pressKey(Key.DirectionDown) }
         rule.onNodeWithTag(GRID_TAG).assertIsFocused()
     }
+    @Test
+    fun `OK on a chip reports the selection`() {
+        showRow()
+        rule.onNodeWithText("Video").onParent().requestFocus()
+        rule.waitForIdle()
+        rule.onNodeWithText("Video").onParent().performKeyInput { pressKey(Key.DirectionCenter) }
+        rule.waitForIdle()
+        assertEquals(MediaFilter.Video, selectedByClick)
+    }
+
 }

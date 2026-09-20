@@ -78,6 +78,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameNanos
 import kotlinx.coroutines.flow.distinctUntilChanged
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloat
@@ -87,6 +88,11 @@ import androidx.compose.animation.core.tween
 import androidx.compose.ui.draw.rotate
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.offset
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
@@ -108,7 +114,7 @@ import tv.telegram.ui.components.Avatar
  * hard-coded offsets (so the screen still behaves if a TV reports a slightly
  * different width).
  */
-private object HomeSpec {
+internal object HomeSpec {
     // Figma colour variables (material-theme/sys/dark/* and the raw fills).
     val Background = Color(0xFF1A1C1E)
     val OnSurface = Color(0xFFC7C6CA)
@@ -119,7 +125,6 @@ private object HomeSpec {
     val SecondaryContainer = Color(0x66484459) // 40% of #484459 — selected "Chat" tab
     val OnSecondaryContainer = Color(0xFFE5DFF9)
     val RowFill = Color(0x1AD9D9D9)           // rgba(217,217,217,0.1)
-    val RowFillStrong = Color(0x99D9D9D9)     // rgba(217,217,217,0.6) — pinned row
     val ChipOutline = Color(0x33FFFFFF)       // rgba(255,255,255,0.2)
     val White = Color(0xFFFFFFFF)
     // The verified badge's two colours as constants, not theme roles: the design is
@@ -158,6 +163,8 @@ internal class HomeFocus(
     val selectedChip: FocusRequester,
     val firstGrid: FocusRequester,
     val rememberedGrid: FocusRequester,
+    /** The card a closed viewer asked us to focus again. */
+    val returnGrid: FocusRequester = FocusRequester(),
 ) {
     /**
      * The cell the chips' Down returns to. A plain field rather than a constructor
@@ -172,6 +179,7 @@ internal class HomeFocus(
 internal fun HomeScreen(
     state: HomeState,
     onOpenPlayer: (Int) -> Unit = {},
+    onOpenPhoto: (Int) -> Unit = {},
     // Focus bridge from the shell: Down from the top bar lands on the selected chat
     // row, and Back from the chat list returns to the bar's selected tab.
     contentEntryFocus: FocusRequester? = null,
@@ -194,6 +202,10 @@ internal fun HomeScreen(
     var region by remember { mutableStateOf<HomeRegion?>(null) }
     var gridIndex by remember { mutableStateOf(0) }
     var rememberedGridIndex by remember { mutableStateOf(0) }
+    // Index of the card a viewer asked focus back on; -1 when none.
+    var returnFocusIndex by remember { mutableStateOf(-1) }
+    val returnHint by state.playerReturnFocusMessageId.collectAsStateWithLifecycle()
+
 
     // Row 0's cell doubles as the "remembered" target, so point the chips' Down at the
     // same requester when the remembered cell is [0,0].
@@ -227,6 +239,27 @@ internal fun HomeScreen(
 
     // Back rules (design): grid [0,0] -> selected chat, any other grid cell -> [0,0],
     // chips -> selected chat, chat list -> the bar's selected tab.
+    // The card a closed viewer asked focus back on, from the shell.
+
+    // Coming back from the player or the photo preview: hand focus to the card that
+    // was open instead of resetting to the first cell. The hint is consumed so the
+    // move happens once, and the index is cleared once focus has landed so the cell
+    // re-attaches its normal entry requester.
+    LaunchedEffect(returnHint, media.size) {
+        val id = returnHint ?: return@LaunchedEffect
+        val index = indexOfMessage(media, id)
+        if (index < 0) return@LaunchedEffect
+        state.consumePlayerReturnFocus()
+        returnFocusIndex = index
+        withFrameNanos { }
+        if (!runCatching { focus.returnGrid.requestFocus() }.isSuccess) {
+            runCatching { gridState.scrollToItem(index) }
+            delay(16L)
+            runCatching { focus.returnGrid.requestFocus() }
+        }
+        returnFocusIndex = -1
+    }
+
     BackRegistration(BackPriority.CHATS, enabled = region != null) {
         when (backTarget(region, gridIndex)) {
             HomeBackTarget.SelectedChat -> runCatching { selectedChatFocus.requestFocus() }
@@ -284,12 +317,14 @@ internal fun HomeScreen(
                         focus = focus,
                         gridState = gridState,
                         rememberedIndex = rememberedGridIndex,
+                        returnIndex = returnFocusIndex,
                         onGridFocus = { index ->
                             region = HomeRegion.Grid
                             gridIndex = index
                             rememberedIndexFor(index)?.let { rememberedGridIndex = it }
                         },
                         onOpen = onOpenPlayer,
+                        onPreview = onOpenPhoto,
                     )
                 }
             }
@@ -383,20 +418,10 @@ private fun ChatRow(
     // Figma shows three row states: plain, pinned (60% fill, dark text) and
     // focused/selected (full fill, dark text).
     val highlighted = focused || selected
-    // Three row states in the design: plain, pinned (60% fill + dark text, node
-    // 3209:2083) and focused/selected (solid #C7C6CA + dark text, node 3209:2087).
-    // Pinned rows used to fall through to the plain styling — RowFillStrong was
-    // defined for them and never read.
     val pinned = chat.isPinned
-    val fill = when {
-        highlighted -> HomeSpec.OnSurface
-        pinned -> HomeSpec.RowFillStrong
-        else -> HomeSpec.RowFill
-    }
-    val textColor = when {
-        highlighted || pinned -> HomeSpec.InverseOnSurface
-        else -> HomeSpec.OnSurface
-    }
+    // Only focus/selection fills a row (the design annotates the chat-name row that
+    // way); a pinned chat keeps the plain styling and shows its state through the pin.
+    val colors = chatRowColors(highlighted = highlighted, pinned = pinned)
 
     // A Box rather than a Row: the design positions the pin absolutely
     // (right: 16dp, vertically centred), so it overlays the row instead of taking
@@ -407,7 +432,7 @@ private fun ChatRow(
             // Stable handle for the UI tests that drive the D-pad graph.
             .testTag("home-chat-row-${chat.id}")
             .clip(RoundedCornerShape(HomeSpec.Corner))
-            .background(fill)
+            .background(colors.fill)
             .focusProperties {
                 // Chat list: up/down plus Right into the media grid; Left does nothing,
                 // and only the entry row reaches the top bar (annotations 2, 6, 7).
@@ -415,8 +440,29 @@ private fun ChatRow(
                 right = focus.gridEntry
                 up = if (isEntry && focus.topBar != null) focus.topBar else FocusRequester.Default
             }
-            .let { if (isEntry) it.focusRequester(focus.selectedChat) else it }
-            .focusable()
+            .let { if (isEntry) it.focusRequester(focus.selectedChat) else it }.focusable()
+
+            .onKeyEvent { event: androidx.compose.ui.input.key.KeyEvent ->
+
+                // TV OK arrives as DPAD_CENTER; Enter covers keyboards and emulators.
+
+                if (event.type == KeyEventType.KeyUp &&
+
+                    (event.key == Key.DirectionCenter || event.key == Key.Enter)
+
+                ) {
+
+                    onClick()
+
+                    true
+
+                } else {
+
+                    false
+
+                }
+
+            }
             .onFocusChanged { focused = it.isFocused; if (it.isFocused) onRegion(HomeRegion.ChatList) },
     ) {
         Row(
@@ -447,7 +493,7 @@ private fun ChatRow(
                             .offset(x = 2.dp, y = 2.dp)
                             .size(6.dp)
                             .clip(CircleShape)
-                            .background(if (highlighted || pinned) HomeSpec.TertiaryFixed else HomeSpec.Tertiary),
+                            .background(colors.unreadDot),
                     )
                 }
             }
@@ -461,7 +507,7 @@ private fun ChatRow(
                 Text(
                     text = chat.title,
                     style = MaterialTheme.typography.titleSmall,
-                    color = textColor,
+                    color = colors.text,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     // The design caps the name at 130dp ("最长130dp超过省略"), which is
@@ -486,11 +532,11 @@ private fun ChatRow(
                 }
                 chat.type.typeIcon()?.let {
                     Spacer(Modifier.width(2.dp))
-                    Icon(it, null, tint = textColor, modifier = Modifier.size(12.dp))
+                    Icon(it, null, tint = colors.text, modifier = Modifier.size(12.dp))
                 }
                 if (chat.isMuted) {
                     Spacer(Modifier.width(2.dp))
-                    Icon(Icons.Outlined.VolumeOff, null, tint = textColor, modifier = Modifier.size(12.dp))
+                    Icon(Icons.Outlined.VolumeOff, null, tint = colors.text, modifier = Modifier.size(12.dp))
                 }
             }
         }
@@ -499,7 +545,7 @@ private fun ChatRow(
             Icon(
                 imageVector = Icons.Outlined.PushPin,
                 contentDescription = null,
-                tint = textColor,
+                tint = colors.text,
                 // Absolute placement per the design: 16dp from the row's right edge,
                 // vertically centred, 16dp glyph rotated -45°. (16 * sqrt(2) = 22.63 —
                 // that bounding box is where Figma's "22.63 x 22.63" reading came from.)
@@ -578,8 +624,29 @@ private fun FilterChip(
                 up = FocusRequester.Cancel
                 down = focus.gridEntry
             }
-            .let { if (selected) it.focusRequester(focus.selectedChip) else it }
-            .focusable()
+            .let { if (selected) it.focusRequester(focus.selectedChip) else it }.focusable()
+
+            .onKeyEvent { event: androidx.compose.ui.input.key.KeyEvent ->
+
+                // TV OK arrives as DPAD_CENTER; Enter covers keyboards and emulators.
+
+                if (event.type == KeyEventType.KeyUp &&
+
+                    (event.key == Key.DirectionCenter || event.key == Key.Enter)
+
+                ) {
+
+                    onClick()
+
+                    true
+
+                } else {
+
+                    false
+
+                }
+
+            }
             .onFocusChanged { focused = it.isFocused; if (it.isFocused) onRegion(HomeRegion.Chips) }
             // Horizontal padding only. The chip is a fixed 32dp tall as drawn and
             // the content is centred inside it; keeping the design's 10dp of
@@ -622,6 +689,8 @@ private fun MediaGrid(
     focus: HomeFocus,
     gridState: LazyGridState,
     rememberedIndex: Int,
+    returnIndex: Int,
+    onPreview: (Int) -> Unit,
     onGridFocus: (Int) -> Unit,
     onOpen: (Int) -> Unit,
 ) {
@@ -664,9 +733,11 @@ private fun MediaGrid(
                 isFirstRow = isFirstRow(index),
                 isFirst = index == 0,
                 isRemembered = rememberedIndex != 0 && index == rememberedIndex,
+                isReturn = index == returnIndex,
                 focus = focus,
                 onGridFocus = onGridFocus,
-                onClick = { onOpen(index) },
+                onOpen = { onOpen(index) },
+                onPreview = { onPreview(index) },
             )
         }
     }
@@ -686,9 +757,11 @@ private fun MediaCell(
     isFirstRow: Boolean,
     isFirst: Boolean,
     isRemembered: Boolean,
+    isReturn: Boolean,
     focus: HomeFocus,
     onGridFocus: (Int) -> Unit,
-    onClick: () -> Unit,
+    onOpen: () -> Unit,
+    onPreview: () -> Unit,
 ) {
     val kind = remember(item.messageId, item.type, item.albumSize) { item.cellKind() }
     var focused by remember { mutableStateOf(false) }
@@ -715,9 +788,42 @@ private fun MediaCell(
                 right = if (isLastCol) FocusRequester.Cancel else FocusRequester.Default
                 up = if (isFirstRow) focus.selectedChip else FocusRequester.Default
             }
-            .let { if (isFirst) it.focusRequester(focus.firstGrid) else it }
-            .let { if (isRemembered) it.focusRequester(focus.rememberedGrid) else it }
+            // One requester per cell, most recent intent first: a focus request only
+            // honours whichever requester is attached, so they must not stack.
+            .let { m ->
+                when {
+                    isReturn -> m.focusRequester(focus.returnGrid)
+                    isRemembered -> m.focusRequester(focus.rememberedGrid)
+                    isFirst -> m.focusRequester(focus.firstGrid)
+                    else -> m
+                }
+            }
             .focusable()
+
+            .onKeyEvent { event: androidx.compose.ui.input.key.KeyEvent ->
+
+                // TV OK arrives as DPAD_CENTER; Enter covers keyboards and emulators.
+
+                if (event.type == KeyEventType.KeyUp &&
+
+                    (event.key == Key.DirectionCenter || event.key == Key.Enter)
+
+                ) {
+
+                    when (mediaOpenTarget(kind)) {
+                                            MediaOpenTarget.PhotoPreview -> onPreview()
+                                            MediaOpenTarget.Player -> onOpen()
+                                        }
+
+                    true
+
+                } else {
+
+                    false
+
+                }
+
+            }
             .onFocusChanged { focused = it.isFocused; if (it.isFocused) onGridFocus(index) },
     ) {
         when (kind) {

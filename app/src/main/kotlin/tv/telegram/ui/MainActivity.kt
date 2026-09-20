@@ -71,6 +71,7 @@ import tv.telegram.td.AuthState
 import tv.telegram.ui.chats.ChatsScreen
 import tv.telegram.ui.login.ColdStartScreen
 import tv.telegram.ui.login.QrCodeScreen
+import tv.telegram.ui.photo.PhotoPreviewScreen
 import tv.telegram.ui.player.PlayerScreen
 import tv.telegram.ui.search.SearchScreen
 import tv.telegram.ui.settings.SettingsScreen
@@ -307,6 +308,7 @@ private fun AppNavHost(viewModel: MainViewModel, backController: BackController)
                 HomeScreen(
                     state = viewModel,
                     onOpenPlayer = { index -> navController.navigate(Routes.player(index)) },
+                    onOpenPhoto = { index -> navController.navigate(Routes.photo(index)) },
                     contentEntryFocus = homeContentFocus,
                     topBarFocus = homeTopBarFocus,
                 )
@@ -355,6 +357,23 @@ private fun AppNavHost(viewModel: MainViewModel, backController: BackController)
                 ) {
                     SettingsScreen(viewModel = viewModel)
                 }
+            }
+
+            composable(
+                route = Routes.PHOTO,
+                arguments = listOf(navArgument("index") { type = NavType.IntType }),
+            ) { entry ->
+                PhotoPreviewScreen(
+                    state = viewModel,
+                    index = entry.arguments?.getInt("index") ?: 0,
+                    onClose = { navController.popBackStack() },
+                    onNavigateTo = { newIndex ->
+                        navController.navigate(Routes.photo(newIndex)) {
+                            popUpTo(Routes.PHOTO) { inclusive = true }
+                            launchSingleTop = true
+                        }
+                    },
+                )
             }
 
             composable(

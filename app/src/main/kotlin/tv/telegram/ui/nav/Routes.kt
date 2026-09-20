@@ -12,4 +12,8 @@ object Routes {
     const val PLAYER = "player/{index}"
 
     fun player(index: Int): String = "player/$index"
+
+    // Full-screen photo preview, opened by confirming an image card.
+    const val PHOTO = "photo/{index}"
+    fun photo(index: Int): String = "photo/$index"
 }
