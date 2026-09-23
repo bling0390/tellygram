@@ -59,14 +59,14 @@
     <string name="player_info_date">日期</string>
 
     <string name="settings_title">设置</string>
-    <string name="settings_account">账户信息</string>
+    <string name="settings_account">账户</string>
     <string name="settings_account_value_signed_in_with_id">已登录:%1$s (id %2$d)</string>
     <string name="settings_account_value_signed_in_with_phone">已登录:%1$s (id %2$d, %3$s)</string>
     <string name="settings_account_value_not_signed_in">未登录</string>
     <string name="settings_account_value_loading">正在加载账户…</string>
     <string name="settings_language">语言</string>
     <string name="settings_theme">主题</string>
-    <string name="settings_about">关于 Tellygram</string>
+    <string name="settings_about">关于</string>
     <string name="settings_about_value">v%1$s</string>
     <string name="settings_signout">退出登录</string>
     <string name="settings_signout_value">退出当前 Telegram 账户</string>
@@ -115,4 +115,8 @@
     <string name="chat_menu_archive_confirm_text">该会话将被移入归档。</string>
     <string name="chat_menu_confirm">确认</string>
     <string name="chat_menu_cancel">取消</string>
+    <string name="settings_about_row_version">版本</string>
+    <string name="settings_about_row_license">开源许可</string>
+    <string name="settings_about_row_check_updates">检查更新</string>
+    <string name="settings_about_license_value">MIT</string>
 </resources>

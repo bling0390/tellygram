@@ -21,6 +21,7 @@ import androidx.compose.foundation.focusable
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
@@ -112,7 +113,6 @@ fun TopNavBar(
                 onItemFocus = ::onItemFocus,
                 item = TopNavItem.Chat,
             )
-            Spacer(Modifier.width(8.dp))
             TopNavTabButton(
                 label = "Setting",
                 active = active == TopNavItem.Setting,
@@ -121,12 +121,11 @@ fun TopNavBar(
                 onItemFocus = ::onItemFocus,
                 item = TopNavItem.Setting,
             )
-            Spacer(Modifier.width(8.dp))
             Box(
                 modifier = Modifier
                     .size(width = 42.dp, height = TopNavBarHeight)
                     .clip(RoundedCornerShape(4.dp))
-                    .background(if (active == TopNavItem.Search) TopNavColors.SecondaryContainer else Color.Transparent)
+                    .background(navPillColor(active == TopNavItem.Search) ?: Color.Transparent)
                     .focusProperties {
                         // The bar only moves sideways and down (design annotations
                         // #1-#3): Down leaves for the chat list, Up does nothing.
@@ -140,7 +139,7 @@ fun TopNavBar(
                 Icon(
                     imageVector = Icons.Outlined.Search,
                     contentDescription = "Search",
-                    tint = TopNavColors.OnBackground,
+                    tint = navLabelColor(active == TopNavItem.Search),
                     modifier = Modifier.size(22.dp),
                 )
             }
@@ -150,7 +149,7 @@ fun TopNavBar(
             Icon(
                 imageVector = Icons.Filled.PlayCircle,
                 contentDescription = null,
-                tint = TopNavColors.OnBackground.copy(alpha = 0.7f),
+                tint = TopNavColors.Label,
                 modifier = Modifier.size(24.dp),
             )
             Spacer(Modifier.width(6.dp))
@@ -159,7 +158,7 @@ fun TopNavBar(
             Text(
                 text = "TELLYGRAM",
                 style = MaterialTheme.typography.titleSmall,
-                color = TopNavColors.OnBackground.copy(alpha = 0.7f),
+                color = TopNavColors.Label,
             )
         }
     }
@@ -190,7 +189,7 @@ private fun TopNavTabButton(
         modifier = Modifier
             .height(TopNavBarHeight)
             .clip(RoundedCornerShape(4.dp))
-            .background(if (active) TopNavColors.SecondaryContainer else Color.Transparent)
+            .background(navPillColor(active) ?: Color.Transparent)
             .focusProperties {
                 down = downFocus ?: FocusRequester.Default
                 up = FocusRequester.Cancel
@@ -203,17 +202,30 @@ private fun TopNavTabButton(
     ) {
         Text(
             text = label,
-            style = MaterialTheme.typography.titleSmall,
-            color = if (active) TopNavColors.OnSecondaryContainer else TopNavColors.OnBackground,
+            style = MaterialTheme.typography.labelLarge,
+            color = navLabelColor(active),
         )
     }
 }
 
 private object TopNavColors {
-    val OnBackground = Color(0xFFE3E2E6)
-    val SecondaryContainer = Color(0x66484459)   // 40% of #484459
-    val OnSecondaryContainer = Color(0xFFE5DFF9)
+    /** Unselected tab and logo label: the design's material-theme/sys/dark/on-surface. */
+    val Label = Color(0xFFC7C6CA)
+    /** Label sitting on the selected pill: material-theme/sys/dark/inverse-on-surface. */
+    val LabelActive = Color(0xFF1A1C1E)
+    /** The selected pill itself: material-theme/white, 81x32, 4dp rounded. */
+    val Pill = Color(0xFFFFFFFF)
 }
+
+/**
+ * The bar's two-state rule, kept out of the composables so it can be asserted:
+ * the active entry gets the white pill with the dark inverse label; the rest stay
+ * unfilled and are labelled on-surface. (Design: Nav in frames 3239:2418 / 3240:2375.)
+ */
+internal fun navPillColor(active: Boolean): Color? = if (active) TopNavColors.Pill else null
+
+internal fun navLabelColor(active: Boolean): Color =
+    if (active) TopNavColors.LabelActive else TopNavColors.Label
 
 /**
  * The bar highlights the entry that holds focus; with focus elsewhere it falls back

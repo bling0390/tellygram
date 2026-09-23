@@ -17,6 +17,7 @@ import android.util.Log
 import tv.telegram.BuildConfig
 import tv.telegram.TgTvApp
 import tv.telegram.ui.home.HomeState
+import tv.telegram.ui.settings.SettingsState
 import tv.telegram.td.AuthState
 import tv.telegram.td.ChatItem
 import tv.telegram.td.FileDownloadState
@@ -34,7 +35,7 @@ sealed class NavEvent {
     data object GoToHome : NavEvent()
 }
 
-class MainViewModel(app: Application) : AndroidViewModel(app), HomeState {
+class MainViewModel(app: Application) : AndroidViewModel(app), HomeState, SettingsState {
 
     val auth = TdAuth(client = TdClient, scope = viewModelScope)
     val chatRepo = TdChatRepository(client = TdClient, scope = viewModelScope)
@@ -50,7 +51,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app), HomeState {
         filesDirectory = java.io.File(app.filesDir, "tdlib-files").absolutePath,
     )
 
-    val authState: StateFlow<AuthState> = auth.state
+    override val authState: StateFlow<AuthState> = auth.state
     override val chatList = chatRepo.items
     val chatListLoaded = chatRepo.loaded
     val chatListError = chatRepo.error
@@ -174,10 +175,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app), HomeState {
     val themeMode: StateFlow<ThemeMode> = _themeMode.asStateFlow()
 
     private val _language = MutableStateFlow(Language.English)
-    val language: StateFlow<Language> = _language.asStateFlow()
+    override val language: StateFlow<Language> = _language.asStateFlow()
 
     private val _currentUser = MutableStateFlow<TdUser?>(null)
-    val currentUser: StateFlow<TdUser?> = _currentUser.asStateFlow()
+    override val currentUser: StateFlow<TdUser?> = _currentUser.asStateFlow()
 
     fun selectSidebarChat(chatId: Long?) {
         _sidebarSelectedChatId.value = chatId
@@ -193,7 +194,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app), HomeState {
         SettingsRepository.setTheme(getApplication(), mode)
     }
 
-    fun setLanguage(lang: Language) {
+    override fun setLanguage(lang: Language) {
         _language.value = lang
         SettingsRepository.setLanguage(getApplication(), lang)
     }

@@ -127,6 +127,18 @@ internal object HomeSpec {
     val RowFill = Color(0x1AD9D9D9)           // rgba(217,217,217,0.1)
     val ChipOutline = Color(0x33FFFFFF)       // rgba(255,255,255,0.2)
     val White = Color(0xFFFFFFFF)
+    // Figma material-theme/sys/dark/surface-container: the panel an actionable
+    // settings row sits on before it is focused.
+    val SurfaceContainer = Color(0xFF1E2023)
+    // Figma material-theme/sys/dark/on-surface-variant — the value column in the
+    // settings pane. Kept as a constant, not the theme role: theme roles have
+    // not matched the design values at runtime here before.
+    val OnSurfaceVariant = Color(0xFFC4C6CF)
+
+    // Settings page (Figma 3239:2418): list 268 at x=58, pane 452 at x=398, 72 between.
+    val SettingsListWidth = 268.dp
+    val SettingsPaneWidth = 452.dp
+    val SettingsPaneGap = 72.dp
     // The verified badge's two colours as constants, not theme roles: the design is
     // dark-only, and colorScheme.primary would turn steel-blue (#5288C1) under the
     // light theme. They mirror material-theme/sys/dark/primary and .../primary-fixed.
