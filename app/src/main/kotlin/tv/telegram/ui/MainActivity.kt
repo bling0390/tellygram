@@ -243,6 +243,10 @@ private fun AppNavHost(viewModel: MainViewModel, backController: BackController)
     // the bar. Both live outside this function's branches so the bar and the NavHost
     // destination share the same objects.
     val homeContentFocus = remember { androidx.compose.ui.focus.FocusRequester() }
+    // The settings page's own Down target. The bar must never point at the home
+    // screen's requester while that screen is not composed: an unattached
+    // FocusRequester throws as soon as the focus search touches it.
+    val settingsContentFocus = remember { androidx.compose.ui.focus.FocusRequester() }
     val homeTopBarFocus = remember { androidx.compose.ui.focus.FocusRequester() }
 
     // D-pad presses play the platform's navigation sounds for the whole
@@ -283,7 +287,11 @@ private fun AppNavHost(viewModel: MainViewModel, backController: BackController)
                     onSearchClick = { },
                     modifier = Modifier.padding(horizontal = TopNavBarSideMargin),
                     selectedTabFocus = homeTopBarFocus,
-                    contentFocus = homeContentFocus,
+                    contentFocus = if (currentRoute == Routes.HOME_SETTINGS) {
+                        settingsContentFocus
+                    } else {
+                        homeContentFocus
+                    },
                     avatar = {
                         Avatar(
                             // Real photo when available, initial otherwise.
@@ -367,7 +375,7 @@ private fun AppNavHost(viewModel: MainViewModel, backController: BackController)
                     popEnterTransition = { slideInHorizontally(tween(300)) { -it / 3 } },
                     popExitTransition = { slideOutHorizontally(tween(300)) { it } },
                 ) {
-                    SettingsScreen(state = viewModel)
+                    SettingsScreen(state = viewModel, contentEntryFocus = settingsContentFocus)
                 }
             }
 

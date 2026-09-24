@@ -26,6 +26,7 @@ import tv.telegram.td.TdUser
 import tv.telegram.ui.Language
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.focus.FocusRequester
 
 private class FakeSettingsState(private val bio: String = "i love tellygram") : SettingsState {
     override val authState: StateFlow<AuthState> = MutableStateFlow(AuthState.Ready)
@@ -221,5 +222,42 @@ class SettingsScreenTest {
         rule.onNodeWithText("feedback@tellygram.app").assertExists()
         // Not focusable and nothing to confirm, per the product decision.
         rule.onNodeWithTag("settings-help-contact", useUnmergedTree = true).assertHasNoClickAction()
+    }
+
+    @Test
+    fun `the entry focus requester the shell hands over is attached`() {
+        // The crash this guards: the shell pointed the top bar's Down at a requester that
+        // this page never attached, so the focus search threw IllegalStateException.
+        val entry = FocusRequester()
+        rule.setContent {
+            SettingsScreen(state = FakeSettingsState(), versionName = "9.9.9-test", contentEntryFocus = entry)
+        }
+        rule.waitForIdle()
+        val attached = rule.runOnIdle { runCatching { entry.requestFocus() }.isSuccess }
+        assertTrue("the entry requester must be attached to the first section row", attached)
+    }
+
+    @Test
+    fun `the page takes focus on arrival, on the Accounts entry`() {
+        // What the product asked for: opening Settings lands on the Accounts entry, which
+        // is both the focused and the selected section.
+        val entry = FocusRequester()
+        rule.setContent {
+            SettingsScreen(state = FakeSettingsState(), versionName = "9.9.9-test", contentEntryFocus = entry)
+        }
+        rule.waitForIdle()
+        rule.onNodeWithTag("settings-section-Accounts").assertIsFocused()
+    }
+
+    @Test
+    fun `focusing a section highlights it, even before it is chosen`() {
+        show()
+        rule.onNodeWithTag("settings-section-About").requestFocus()
+        rule.waitForIdle()
+
+        // The design's List item Focused variant is the same white pill.
+        rule.onNodeWithTag("settings-section-About-highlighted", useUnmergedTree = true).assertExists()
+        // ...and the chosen section keeps its highlight at the same time.
+        rule.onNodeWithTag("settings-section-Accounts-highlighted", useUnmergedTree = true).assertExists()
     }
 }

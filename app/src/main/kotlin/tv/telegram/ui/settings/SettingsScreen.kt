@@ -87,10 +87,28 @@ internal fun SettingsScreen(
      * page reports what is actually installed; tests inject a fixed value.
      */
     versionName: String = BuildConfig.VERSION_NAME,
+    /**
+     * The shell hands the top bar's Down here: it must point at something *this* page
+     * actually composes, otherwise the bar's focus search targets an unattached requester
+     * and throws (see the settings crasher).
+     */
+    contentEntryFocus: FocusRequester? = null,
     modifier: Modifier = Modifier,
 ) {
     var selected by remember { mutableStateOf(SettingsSection.Accounts) }
     var showLogOut by remember { mutableStateOf(false) }
+
+    // Arriving on the page takes focus: the shell hands the bar's Down target here, and
+    // without this the top bar keeps focus and the pane looks inert. Waits a frame — a
+    // request during the first composition has nothing to land on — and retries once.
+    LaunchedEffect(contentEntryFocus) {
+        val target = contentEntryFocus ?: return@LaunchedEffect
+        withFrameNanos { }
+        if (!runCatching { target.requestFocus() }.isSuccess) {
+            withFrameNanos { }
+            runCatching { target.requestFocus() }
+        }
+    }
     val authState by state.authState.collectAsStateWithLifecycle()
     val user by state.currentUser.collectAsStateWithLifecycle()
     val language by state.language.collectAsStateWithLifecycle()
@@ -110,11 +128,13 @@ internal fun SettingsScreen(
             modifier = Modifier.width(HomeSpec.SettingsListWidth),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            SettingsSection.entries.forEach { section ->
+            SettingsSection.entries.forEachIndexed { index, section ->
                 SectionItem(
                     section = section,
                     selected = section == selected,
                     onSelect = { selected = section },
+                    // Only the first entry is the bar's Down target.
+                    requester = if (index == 0) contentEntryFocus else null,
                 )
             }
         }
@@ -333,13 +353,22 @@ private enum class SettingsSection(val labelRes: Int, val icon: ImageVector) {
 }
 
 @Composable
-private fun SectionItem(section: SettingsSection, selected: Boolean, onSelect: () -> Unit) {
+private fun SectionItem(
+    section: SettingsSection,
+    selected: Boolean,
+    onSelect: () -> Unit,
+    requester: FocusRequester? = null,
+) {
     var focused by remember { mutableStateOf(false) }
-    val colors = sectionItemColors(selected)
+    // The design's List item has a Focused variant that is the same white pill, so a
+    // focused section lights up even before it is chosen.
+    val colors = sectionItemColors(selected || focused)
     Row(
         modifier = Modifier
             .testTag("settings-section-${section.name}")
             .background(colors.fill, RoundedCornerShape(HomeSpec.Corner))
+            // The requester must sit before focusable() to be the focus target.
+            .let { if (requester != null) it.focusRequester(requester) else it }
             .onFocusState { focused = it }
             .focusable()
             .onKeyEvent { event: KeyEvent ->
@@ -366,6 +395,13 @@ private fun SectionItem(section: SettingsSection, selected: Boolean, onSelect: (
             text = stringResource(section.labelRes),
             color = colors.text,
             style = MaterialTheme.typography.labelLarge,
+            modifier = Modifier.testTag(
+                if (selected || focused) {
+                    "settings-section-${section.name}-highlighted"
+                } else {
+                    "settings-section-${section.name}-plain"
+                },
+            ),
         )
         if (focused && !selected) {
             Spacer(Modifier.width(0.dp))

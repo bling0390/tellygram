@@ -83,7 +83,6 @@
     <string name="settings_language_traditional_chinese">繁體中文</string>
     <string name="settings_preferred_language">偏好語言</string>
     <string name="settings_help">幫助與支援</string>
-    <string name="settings_help_body">Tellygram 是一個社群維護的 Telegram 電視用戶端。使用問題、缺陷回報與功能建議請提交到專案倉庫。</string>
     <string name="settings_app_version_label">應用版本</string>
     <string name="settings_theme_dark">深色</string>
     <string name="settings_theme_light">淺色</string>
