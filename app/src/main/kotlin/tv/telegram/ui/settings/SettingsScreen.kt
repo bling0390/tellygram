@@ -52,6 +52,18 @@ import tv.telegram.td.TdUser
 import tv.telegram.ui.Language
 import tv.telegram.ui.focus.dpadNavigationSounds
 import tv.telegram.ui.home.HomeSpec
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 
 /**
  * Settings as a page, rebuilt from the design frames `3239:2418` (default) and
@@ -78,13 +90,20 @@ internal fun SettingsScreen(
     modifier: Modifier = Modifier,
 ) {
     var selected by remember { mutableStateOf(SettingsSection.Accounts) }
+    var showLogOut by remember { mutableStateOf(false) }
     val authState by state.authState.collectAsStateWithLifecycle()
     val user by state.currentUser.collectAsStateWithLifecycle()
     val language by state.language.collectAsStateWithLifecycle()
 
+    Box(modifier = modifier.fillMaxSize()) {
     Row(
         // The frame's 10dp: shell content starts at 96, the frame draws from 106.
-        modifier = modifier.fillMaxSize().padding(top = 10.dp),
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(top = 10.dp)
+            // The design dims and blurs the page behind the dialog. blur() needs API 31+
+            // and is a no-op below that.
+            .blur(if (showLogOut) 4.dp else 0.dp),
         horizontalArrangement = Arrangement.spacedBy(HomeSpec.SettingsPaneGap),
     ) {
         Column(
@@ -107,7 +126,21 @@ internal fun SettingsScreen(
             when (selected) {
                 SettingsSection.Accounts -> {
                     PaneTitle(stringResource(R.string.settings_account))
-                    PaneBody(accountValue(authState, user))
+                    // Four display rows (unfilled, like the About pane's) and the one
+                    // actionable row the frames draw.
+                    DisplayRow(stringResource(R.string.settings_account_row_id), user?.id?.toString() ?: "—")
+                    DisplayRow(stringResource(R.string.settings_account_row_username), orDash(user?.username ?: ""))
+                    DisplayRow(
+                        stringResource(R.string.settings_account_row_phone),
+                        // Shown in full, per the design (no masking).
+                        orDash(user?.phoneNumber ?: ""),
+                    )
+                    DisplayRow(stringResource(R.string.settings_account_row_bio), orDash(user?.bio ?: ""))
+                    ActionRow(
+                        label = stringResource(R.string.settings_account_row_log_out),
+                        tag = "settings-log-out",
+                        onClick = { showLogOut = true },
+                    )
                 }
 
                 SettingsSection.About -> {
@@ -118,7 +151,7 @@ internal fun SettingsScreen(
                 }
 
                 SettingsSection.PreferredLanguage -> {
-                    PaneTitle(stringResource(R.string.settings_preferred_language))
+                    PaneTitle(stringResource(R.string.settings_language_title))
                     Language.entries.forEach { option ->
                         LanguageRow(
                             label = languageLabel(option),
@@ -130,10 +163,165 @@ internal fun SettingsScreen(
 
                 SettingsSection.HelpAndSupport -> {
                     PaneTitle(stringResource(R.string.settings_help))
-                    PaneBody(stringResource(R.string.settings_help_body))
+                    // Display-only, per the product decision: not focusable, and confirming
+                    // it does nothing. The frame stacks label over address, but a 48dp row
+                    // with 12dp padding only leaves 24dp — so they share one line here.
+                    Row(
+                        modifier = Modifier
+                            .testTag("settings-help-contact")
+                            .padding(horizontal = 16.dp, vertical = 12.dp)
+                            .fillMaxSizeWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = stringResource(R.string.settings_help_contact_label),
+                            color = HomeSpec.OnSurface,
+                            style = MaterialTheme.typography.titleMedium,
+                        )
+                        Spacer(Modifier.weight(1f))
+                        Text(
+                            text = stringResource(R.string.settings_help_contact_email),
+                            color = HomeSpec.OnSurfaceVariant,
+                            style = MaterialTheme.typography.labelLarge,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                 }
             }
         }
+    }
+
+        if (showLogOut) {
+            LogOutDialog(
+                onCancel = { showLogOut = false },
+                onConfirm = {
+                    showLogOut = false
+                    state.logOut()
+                },
+            )
+        }
+    }
+}
+
+/**
+ * The log-out confirmation, per the frames: a 60% scrim, a centred 412dp light panel
+ * (inverse-surface + Elevation Dark/4), the copy that promises nothing is deleted, and
+ * Cancel / Log out. Focus starts on Cancel — the safe choice.
+ */
+@Composable
+private fun LogOutDialog(onCancel: () -> Unit, onConfirm: () -> Unit) {
+    val cancelFocus = remember { FocusRequester() }
+    var cancelFocused by remember { mutableStateOf(false) }
+    var confirmFocused by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        // Request after a frame: nothing is laid out during the first composition.
+        withFrameNanos { }
+        if (!runCatching { cancelFocus.requestFocus() }.isSuccess) {
+            withFrameNanos { }
+            runCatching { cancelFocus.requestFocus() }
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(SettingsSpec.Scrim)
+            .testTag("settings-logout-dialog"),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            modifier = Modifier
+                .width(412.dp)
+                .shadow(12.dp, RoundedCornerShape(HomeSpec.Corner))
+                .background(SettingsSpec.DialogPanel, RoundedCornerShape(HomeSpec.Corner))
+                .padding(horizontal = 32.dp, vertical = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.settings_logout_dialog_title),
+                color = SettingsSpec.DialogTitle,
+                style = MaterialTheme.typography.headlineSmall,
+            )
+            Text(
+                text = stringResource(R.string.settings_logout_dialog_body),
+                color = SettingsSpec.DialogBody,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(14.dp, Alignment.End),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                DialogButton(
+                    label = stringResource(R.string.settings_logout_dialog_cancel),
+                    tag = "settings-logout-cancel",
+                    colors = dialogCancelColors(cancelFocused),
+                    hairline = if (cancelFocused) null else SettingsSpec.DialogOutline,
+                    requester = cancelFocus,
+                    onFocusChange = { cancelFocused = it },
+                    onClick = onCancel,
+                )
+                DialogButton(
+                    label = stringResource(R.string.settings_logout_dialog_confirm),
+                    tag = "settings-logout-confirm",
+                    colors = dialogConfirmColors(confirmFocused),
+                    hairline = null,
+                    requester = null,
+                    onFocusChange = { confirmFocused = it },
+                    onClick = onConfirm,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun DialogButton(
+    label: String,
+    tag: String,
+    colors: RowColors,
+    hairline: Color?,
+    requester: FocusRequester?,
+    onFocusChange: (Boolean) -> Unit,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .testTag(tag)
+            .height(40.dp)
+            .clip(RoundedCornerShape(HomeSpec.Corner))
+            .background(colors.fill)
+            .then(
+                if (hairline != null) {
+                    Modifier.border(1.dp, hairline, RoundedCornerShape(HomeSpec.Corner))
+                } else {
+                    Modifier
+                },
+            )
+            // Inside the dialog there is nowhere to roam: the buttons are the only stops.
+            .focusProperties {
+                up = FocusRequester.Cancel
+                down = FocusRequester.Cancel
+            }
+            .let { if (requester != null) it.focusRequester(requester) else it }
+            .onFocusChanged { onFocusChange(it.isFocused) }
+            .focusable()
+            .onKeyEvent { event: KeyEvent ->
+                if (event.type == KeyEventType.KeyUp &&
+                    (event.key == Key.DirectionCenter || event.key == Key.Enter)
+                ) {
+                    onClick()
+                    true
+                } else {
+                    false
+                }
+            }
+            .padding(horizontal = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(text = label, color = colors.text, style = MaterialTheme.typography.labelLarge)
     }
 }
 
@@ -197,11 +385,17 @@ private fun DisplayRow(label: String, value: String) {
             color = HomeSpec.OnSurface,
             style = MaterialTheme.typography.titleMedium,
         )
-        Spacer(Modifier.weight(1f))
+        Spacer(Modifier.width(8.dp))
+        // The value takes the leftover width rather than its natural one, so a long bio
+        // ellipsizes there instead of pushing the row past its 48dp line.
         Text(
             text = value,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = HomeSpec.OnSurfaceVariant,
             style = MaterialTheme.typography.labelLarge,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.End,
+            modifier = Modifier.weight(1f),
         )
     }
 }
@@ -219,24 +413,39 @@ private fun LicenseRow() =
  * nothing yet (product decision, 2026-09-23).
  */
 @Composable
-private fun CheckForUpdatesRow() {
+private fun CheckForUpdatesRow() = ActionRow(
+    label = stringResource(R.string.settings_about_row_check_updates),
+    tag = "settings-check-updates",
+    // Deliberately inert (product decision, 2026-09-23).
+    onClick = { },
+)
+
+/** An actionable row: surface-container at rest, white with the dark label once focused. */
+@Composable
+private fun ActionRow(label: String, tag: String, onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
     val colors = actionableRowColors(focused)
     Row(
         modifier = Modifier
-            .testTag("settings-check-updates")
+            .testTag(tag)
             .background(colors.fill, RoundedCornerShape(HomeSpec.Corner))
             .onFocusState { focused = it }
             .focusable()
+            .onKeyEvent { event: KeyEvent ->
+                if (event.type == KeyEventType.KeyUp &&
+                    (event.key == Key.DirectionCenter || event.key == Key.Enter)
+                ) {
+                    onClick()
+                    true
+                } else {
+                    false
+                }
+            }
             .padding(horizontal = 16.dp, vertical = 12.dp)
             .fillMaxSizeWidth(),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            text = stringResource(R.string.settings_about_row_check_updates),
-            color = colors.text,
-            style = MaterialTheme.typography.titleMedium,
-        )
+        Text(text = label, color = colors.text, style = MaterialTheme.typography.titleMedium)
         Spacer(Modifier.weight(1f))
         Icon(
             imageVector = Icons.Default.ChevronRight,
@@ -250,9 +459,12 @@ private fun CheckForUpdatesRow() {
 @Composable
 private fun LanguageRow(label: String, selected: Boolean, onSelect: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
-    val colors = actionableRowColors(focused || selected)
+    // The design puts the white fill on FOCUS only; being the chosen language shows up
+    // as the trailing check instead (unlike the top bar, where the selection keeps a pill).
+    val colors = actionableRowColors(focused)
     Row(
         modifier = Modifier
+            .testTag("settings-language-$label")
             .background(colors.fill, RoundedCornerShape(HomeSpec.Corner))
             .onFocusState { focused = it }
             .focusable()
@@ -277,7 +489,9 @@ private fun LanguageRow(label: String, selected: Boolean, onSelect: () -> Unit) 
                 imageVector = Icons.Default.Check,
                 contentDescription = null,
                 tint = colors.text,
-                modifier = Modifier.size(20.dp),
+                modifier = Modifier
+                    .size(20.dp)
+                    .testTag("settings-language-check-${label}"),
             )
         }
     }

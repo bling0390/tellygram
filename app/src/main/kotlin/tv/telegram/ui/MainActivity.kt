@@ -123,12 +123,10 @@ private fun AppNavHost(viewModel: MainViewModel, backController: BackController)
     val navController = rememberNavController()
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
-    // Exact match on the three rail destinations: a route that merely starts
-    // with "home" (the new HomeScreen) must not reserve rail width or show
-    // the rail — that screen brings its own top nav.
-    val inHome = currentRoute == Routes.HOME_CHATS ||
-        currentRoute == Routes.HOME_SEARCH ||
-        currentRoute == Routes.HOME_SETTINGS
+    // Legacy rail destinations only. Home and Settings are SHELL pages — they bring the
+    // global top bar and the shell's own margins, so the rail (and its reserved width)
+    // must not appear on them.
+    val inHome = showsRail(currentRoute)
 
     // Settings is a NavHost page now (Figma 623:1208 lays the section list and
     // the detail pane out side by side), not a drawer overlay: the rail
@@ -587,3 +585,12 @@ private fun RailItem(
         }
     }
 }
+
+/**
+ * True only for the routes that still live behind the legacy navigation rail. The shell
+ * pages (HomeScreen, SettingsScreen) draw the global top bar instead — showing both was
+ * the bug: the settings page rendered the rail *and* the bar, with the rail's width
+ * reserved on top.
+ */
+internal fun showsRail(route: String?): Boolean =
+    route == Routes.HOME_CHATS || route == Routes.HOME_SEARCH

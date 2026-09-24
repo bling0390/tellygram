@@ -199,7 +199,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app), HomeState, Settin
         SettingsRepository.setLanguage(getApplication(), lang)
     }
 
-    fun logout() {
+    override fun logOut() {
+        // Ask TDLib first (it clears its local database), then drop our own state.
+        auth.logOut()
         closeChat()
         _sidebarSelectedChatId.value = null
         _currentUser.value = null

@@ -120,6 +120,17 @@ class TdAuth(
         }
     }
 
+    /**
+     * The account bio. TDLib keeps it on UserFullInfo rather than User, so this is a
+     * second call; a failure (or a missing full info) simply yields an empty string —
+     * the Account pane treats that as "no value".
+     */
+    private suspend fun fetchBio(userId: Long, timeoutMs: Long): String =
+        client.execute(TdApi.GetUserFullInfo(userId), timeoutMs)
+            .valueOrNull<TdApi.UserFullInfo>()?.bio
+            ?.trim()
+            ?: ""
+
     suspend fun getMe(timeoutMs: Long = 5_000L): TdUser? {
         val resp = client.execute(TdApi.GetMe(), timeoutMs).valueOrNull<TdApi.User>() ?: return null
         return TdUser(
@@ -128,6 +139,8 @@ class TdAuth(
             lastName    = resp.lastName,
             username    = resp.username ?: "",
             phoneNumber = resp.phoneNumber ?: "",
+            // bio lives on UserFullInfo, not User — one extra best-effort call.
+            bio         = fetchBio(resp.id, timeoutMs),
             // TDLib hands the photo over as a file descriptor; the avatar loads
             // it lazily and falls back to the initial when this is null or the
             // download fails.
@@ -137,6 +150,21 @@ class TdAuth(
 
     fun requestQrLogin() {
         requestQrCodeAuth()
+    }
+
+    /**
+     * Real sign-out. Guarded on purpose: calling LogOut() while unauthenticated dead-ends
+     * the client in Closed with no way back (see the QR guard below). TDLib clears its
+     * local database, so the next start needs a fresh QR scan — which is what the
+     * confirmation dialog promises.
+     */
+    fun logOut() {
+        if (_state.value is AuthState.Ready) {
+            client.send(TdApi.LogOut())
+            Log.i(TAG, "logOut: requested")
+        } else {
+            Log.w(TAG, "logOut ignored: not signed in (state=${_state.value})")
+        }
     }
 
     fun cancelQrLogin() {
@@ -175,6 +203,8 @@ data class TdUser(
     val photoFileId: Int? = null,
     val username: String,
     val phoneNumber: String,
+    /** TDLib's user bio; empty when the account has none. Shown on the Account pane. */
+    val bio: String = "",
 ) {
     val displayName: String
         get() = listOf(firstName, lastName).filter { it.isNotBlank() }.joinToString(" ")

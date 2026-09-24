@@ -133,4 +133,16 @@
     <string name="settings_about_row_license">License</string>
     <string name="settings_about_row_check_updates">Check for updates</string>
     <string name="settings_about_license_value">MIT</string>
+    <string name="settings_account_row_id">ID</string>
+    <string name="settings_account_row_username">Username</string>
+    <string name="settings_account_row_phone">Phone</string>
+    <string name="settings_account_row_bio">BIO</string>
+    <string name="settings_account_row_log_out">Log out</string>
+    <string name="settings_logout_dialog_title">Log out?</string>
+    <string name="settings_logout_dialog_cancel">Cancel</string>
+    <string name="settings_logout_dialog_confirm">Log out</string>
+    <string name="settings_logout_dialog_body">This device will sign out. Your account and chats are not deleted — they stay on Telegram\'s servers. To use Tellygram again, scan the QR code from your phone.&#10;&#10;Do you wish to continue?</string>
+    <string name="settings_language_title">Language</string>
+    <string name="settings_help_contact_label">Contact us on</string>
+    <string name="settings_help_contact_email">feedback@tellygram.app</string>
 </resources>

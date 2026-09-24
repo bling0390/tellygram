@@ -11,4 +11,6 @@ internal interface SettingsState {
     val currentUser: StateFlow<TdUser?>
     val language: StateFlow<Language>
     fun setLanguage(lang: Language)
+    /** Real sign-out: TDLib clears its local database, so the next start needs a QR scan. */
+    fun logOut()
 }

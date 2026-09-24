@@ -30,4 +30,21 @@ class SettingsRulesTest {
         assertEquals(HomeSpec.White, focused.fill)
         assertEquals(HomeSpec.InverseOnSurface, focused.text)
     }
+
+    
+    
+    @Test
+    fun `the dialog's buttons share the focused treatment`() {
+        // Focused: both flip to the white pill treatment the rest of the app uses.
+        assertEquals(HomeSpec.White, dialogCancelColors(true).fill)
+        assertEquals(HomeSpec.InverseOnSurface, dialogCancelColors(true).text)
+        assertEquals(HomeSpec.White, dialogConfirmColors(true).fill)
+        assertEquals(HomeSpec.InverseOnSurface, dialogConfirmColors(true).text)
+
+        // At rest the cancel is a ghost with the body colour; the confirm is the dark primary.
+        assertEquals(androidx.compose.ui.graphics.Color(0x1A000000), dialogCancelColors(false).fill)
+        assertEquals(SettingsSpec.DialogBody, dialogCancelColors(false).text)
+        assertEquals(HomeSpec.InverseOnSurface, dialogConfirmColors(false).fill)
+        assertEquals(HomeSpec.OnSurface, dialogConfirmColors(false).text)
+    }
 }

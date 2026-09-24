@@ -119,4 +119,16 @@
     <string name="settings_about_row_license">开源许可</string>
     <string name="settings_about_row_check_updates">检查更新</string>
     <string name="settings_about_license_value">MIT</string>
+    <string name="settings_account_row_id">ID</string>
+    <string name="settings_account_row_username">用户名</string>
+    <string name="settings_account_row_phone">手机号</string>
+    <string name="settings_account_row_bio">简介</string>
+    <string name="settings_account_row_log_out">退出登录</string>
+    <string name="settings_logout_dialog_title">退出登录？</string>
+    <string name="settings_logout_dialog_cancel">取消</string>
+    <string name="settings_logout_dialog_confirm">退出登录</string>
+    <string name="settings_logout_dialog_body">此设备将退出当前账号。账号与聊天记录不会被删除，仍保留在 Telegram 服务器上。再次使用需要重新用手机扫码登录。&#10;&#10;要继续吗？</string>
+    <string name="settings_language_title">语言</string>
+    <string name="settings_help_contact_label">联系我们</string>
+    <string name="settings_help_contact_email">feedback@tellygram.app</string>
 </resources>
