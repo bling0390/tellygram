@@ -394,8 +394,8 @@ private fun ArchivedChatsRow() {
             .fillMaxSizeWidth()
             .clip(RoundedCornerShape(HomeSpec.Corner))
             .background(if (focused) HomeSpec.OnSurface else HomeSpec.RowFill)
-            .focusable()
             .onFocusChanged { focused = it.isFocused }
+            .focusable()
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -452,6 +452,7 @@ private fun ChatRow(
                 right = focus.gridEntry
                 up = if (isEntry && focus.topBar != null) focus.topBar else FocusRequester.Default
             }
+            .onFocusChanged { focused = it.isFocused; if (it.isFocused) onRegion(HomeRegion.ChatList) }
             .let { if (isEntry) it.focusRequester(focus.selectedChat) else it }.focusable()
 
             .onKeyEvent { event: androidx.compose.ui.input.key.KeyEvent ->
@@ -474,8 +475,7 @@ private fun ChatRow(
 
                 }
 
-            }
-            .onFocusChanged { focused = it.isFocused; if (it.isFocused) onRegion(HomeRegion.ChatList) },
+            },
     ) {
         Row(
             modifier = Modifier
@@ -636,6 +636,7 @@ private fun FilterChip(
                 up = FocusRequester.Cancel
                 down = focus.gridEntry
             }
+            .onFocusChanged { focused = it.isFocused; if (it.isFocused) onRegion(HomeRegion.Chips) }
             .let { if (selected) it.focusRequester(focus.selectedChip) else it }.focusable()
 
             .onKeyEvent { event: androidx.compose.ui.input.key.KeyEvent ->
@@ -659,7 +660,6 @@ private fun FilterChip(
                 }
 
             }
-            .onFocusChanged { focused = it.isFocused; if (it.isFocused) onRegion(HomeRegion.Chips) }
             // Horizontal padding only. The chip is a fixed 32dp tall as drawn and
             // the content is centred inside it; keeping the design's 10dp of
             // vertical padding on top of that left a 12dp content box for a 16dp
@@ -810,6 +810,7 @@ private fun MediaCell(
                     else -> m
                 }
             }
+            .onFocusChanged { focused = it.isFocused; if (it.isFocused) onGridFocus(index) }
             .focusable()
 
             .onKeyEvent { event: androidx.compose.ui.input.key.KeyEvent ->
@@ -835,8 +836,7 @@ private fun MediaCell(
 
                 }
 
-            }
-            .onFocusChanged { focused = it.isFocused; if (it.isFocused) onGridFocus(index) },
+            },
     ) {
         when (kind) {
             // Placeholder-only kinds: the design draws one glyph, centred.

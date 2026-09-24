@@ -16,6 +16,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.outlined.Search
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.input.key.KeyEvent
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.type
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
 import androidx.compose.ui.input.key.Key
@@ -71,10 +75,6 @@ fun TopNavBar(
     // The signed-in user's avatar. Injected rather than loaded here so the bar
     // stays free of data dependencies and can render in previews/tests.
     avatar: @Composable () -> Unit = { TopNavDefaultAvatar() },
-    // (rule lives in activeNavItem below so it can be unit tested)
-    // The bar highlights whichever entry holds focus (the menu state follows the
-    // D-pad), falling back to the shell's selected tab — Chat, the home — once focus
-    // leaves the bar. Nothing here navigates: OK on Setting or the search icon is
     // deliberately inert for now.
 
     // Focus bridge across the shell boundary. The bar lives outside the NavHost and
@@ -84,14 +84,8 @@ fun TopNavBar(
     selectedTabFocus: FocusRequester? = null,
     contentFocus: FocusRequester? = null,
 ) {
-    var activeItem by remember { mutableStateOf<TopNavItem?>(null) }
-    val active = activeNavItem(activeItem, selectedTab)
+    val active = selectedNavItem(selectedTab)
 
-    // Blur only clears the item that is still recorded, so a gain/loss pair arriving
-    // in either order ends with the newly focused item active.
-    fun onItemFocus(item: TopNavItem, focused: Boolean) {
-        if (focused) activeItem = item else if (activeItem == item) activeItem = null
-    }
 
     Row(
         modifier = modifier
@@ -106,41 +100,59 @@ fun TopNavBar(
             Spacer(Modifier.width(20.dp))
             TopNavTabButton(
                 label = "Chat",
+                cancelLeft = true,
                 active = active == TopNavItem.Chat,
                 onClick = { onTabSelected(TopNavTab.Chat) },
                 downFocus = contentFocus,
                 requester = selectedTabFocus,
-                onItemFocus = ::onItemFocus,
-                item = TopNavItem.Chat,
             )
+            // 4dp between the menus (design update, 2026-09-24).
+            Spacer(Modifier.width(4.dp))
             TopNavTabButton(
                 label = "Setting",
                 active = active == TopNavItem.Setting,
                 onClick = { onTabSelected(TopNavTab.Setting) },
                 downFocus = contentFocus,
-                onItemFocus = ::onItemFocus,
-                item = TopNavItem.Setting,
             )
+            Spacer(Modifier.width(4.dp))
+
+            var searchFocused by remember { mutableStateOf(false) }
+            val searchActive = active == TopNavItem.Search
             Box(
                 modifier = Modifier
+                    .testTag(if (searchActive) "topnav-active-search" else "topnav-idle-search")
                     .size(width = 42.dp, height = TopNavBarHeight)
                     .clip(RoundedCornerShape(4.dp))
-                    .background(navPillColor(active == TopNavItem.Search) ?: Color.Transparent)
+                    .background(navPillColor(searchActive || searchFocused) ?: Color.Transparent)
                     .focusProperties {
                         // The bar only moves sideways and down (design annotations
                         // #1-#3): Down leaves for the chat list, Up does nothing.
                         down = contentFocus ?: FocusRequester.Default
                         up = FocusRequester.Cancel
+                        // Last entry: Right stops here instead of escaping to the row below.
+                        right = FocusRequester.Cancel
                     }
+                    .onFocusChanged { searchFocused = it.isFocused }
                     .focusable()
-                    .onFocusChanged { onItemFocus(TopNavItem.Search, it.isFocused) },
+                    .onKeyEvent { event: KeyEvent ->
+                        if (event.type == KeyEventType.KeyUp &&
+                            (event.key == Key.DirectionCenter || event.key == Key.Enter)
+                        ) {
+                            onSearchClick()
+                            true
+                        } else {
+                            false
+                        }
+                    },
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
                     imageVector = Icons.Outlined.Search,
                     contentDescription = "Search",
-                    tint = navLabelColor(active == TopNavItem.Search),
-                    modifier = Modifier.size(22.dp),
+                    tint = navLabelColor(searchActive || searchFocused),
+                    modifier = Modifier
+                        .size(22.dp)
+                        .testTag(if (searchFocused) "topnav-focus-search" else "topnav-blur-search"),
                 )
             }
         }
@@ -182,28 +194,49 @@ private fun TopNavTabButton(
     onClick: () -> Unit,
     downFocus: FocusRequester? = null,
     requester: FocusRequester? = null,
-    onItemFocus: (TopNavItem, Boolean) -> Unit,
-    item: TopNavItem,
+    // The bar's edges: Left at the first entry and Right at the last one stop there,
+    // otherwise the default focus search can escape downward into the chips row.
+    cancelLeft: Boolean = false,
+    cancelRight: Boolean = false,
 ) {
+    var focused by remember { mutableStateOf(false) }
     Box(
         modifier = Modifier
+            // Selection tag on the container (one testTag per node, so the focus tag
+            // lives on the label below).
+            .testTag(if (active) "topnav-active-$label" else "topnav-idle-$label")
             .height(TopNavBarHeight)
             .clip(RoundedCornerShape(4.dp))
-            .background(navPillColor(active) ?: Color.Transparent)
+            // Focus and selection deliberately share ONE treatment: the entry that
+            // holds focus is drawn exactly like the selected one.
+            .background(navPillColor(active || focused) ?: Color.Transparent)
             .focusProperties {
                 down = downFocus ?: FocusRequester.Default
                 up = FocusRequester.Cancel
+                if (cancelLeft) left = FocusRequester.Cancel
+                if (cancelRight) right = FocusRequester.Cancel
             }
             .let { if (requester != null) it.focusRequester(requester) else it }
+            .onFocusChanged { focused = it.isFocused }
             .focusable()
-            .onFocusChanged { onItemFocus(item, it.isFocused) }
+            .onKeyEvent { event: KeyEvent ->
+                if (event.type == KeyEventType.KeyUp &&
+                    (event.key == Key.DirectionCenter || event.key == Key.Enter)
+                ) {
+                    onClick()
+                    true
+                } else {
+                    false
+                }
+            }
             .padding(horizontal = 16.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(
             text = label,
             style = MaterialTheme.typography.labelLarge,
-            color = navLabelColor(active),
+            color = navLabelColor(active || focused),
+            modifier = Modifier.testTag(if (focused) "topnav-focus-$label" else "topnav-blur-$label"),
         )
     }
 }
@@ -228,8 +261,9 @@ internal fun navLabelColor(active: Boolean): Color =
     if (active) TopNavColors.LabelActive else TopNavColors.Label
 
 /**
- * The bar highlights the entry that holds focus; with focus elsewhere it falls back
- * to the shell's selected tab — Chat, the home. Annotated behaviour, unit tested.
+ * Which entry the bar shows as selected: the shell's page (or a confirmed switch),
+ * NOT focus. Moving sideways leaves Chat's pill in place while the user stays on the
+ * home screen. (Product decision, 2026-09-23, revising the focus-follows rule.)
  */
-internal fun activeNavItem(focused: TopNavItem?, selectedTab: TopNavTab): TopNavItem =
-    focused ?: if (selectedTab == TopNavTab.Chat) TopNavItem.Chat else TopNavItem.Setting
+internal fun selectedNavItem(selectedTab: TopNavTab): TopNavItem =
+    if (selectedTab == TopNavTab.Chat) TopNavItem.Chat else TopNavItem.Setting

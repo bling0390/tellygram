@@ -152,6 +152,7 @@ private fun SectionItem(section: SettingsSection, selected: Boolean, onSelect: (
         modifier = Modifier
             .testTag("settings-section-${section.name}")
             .background(colors.fill, RoundedCornerShape(HomeSpec.Corner))
+            .onFocusState { focused = it }
             .focusable()
             .onKeyEvent { event: KeyEvent ->
                 if (event.type == KeyEventType.KeyUp &&
@@ -163,7 +164,6 @@ private fun SectionItem(section: SettingsSection, selected: Boolean, onSelect: (
                     false
                 }
             }
-            .onFocusState { focused = it }
             .padding(horizontal = 16.dp, vertical = 14.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -226,8 +226,8 @@ private fun CheckForUpdatesRow() {
         modifier = Modifier
             .testTag("settings-check-updates")
             .background(colors.fill, RoundedCornerShape(HomeSpec.Corner))
-            .focusable()
             .onFocusState { focused = it }
+            .focusable()
             .padding(horizontal = 16.dp, vertical = 12.dp)
             .fillMaxSizeWidth(),
         verticalAlignment = Alignment.CenterVertically,
@@ -254,6 +254,7 @@ private fun LanguageRow(label: String, selected: Boolean, onSelect: () -> Unit) 
     Row(
         modifier = Modifier
             .background(colors.fill, RoundedCornerShape(HomeSpec.Corner))
+            .onFocusState { focused = it }
             .focusable()
             .onKeyEvent { event: KeyEvent ->
                 if (event.type == KeyEventType.KeyUp &&
@@ -265,7 +266,6 @@ private fun LanguageRow(label: String, selected: Boolean, onSelect: () -> Unit) 
                     false
                 }
             }
-            .onFocusState { focused = it }
             .padding(horizontal = 16.dp, vertical = 12.dp)
             .fillMaxSizeWidth(),
         verticalAlignment = Alignment.CenterVertically,
