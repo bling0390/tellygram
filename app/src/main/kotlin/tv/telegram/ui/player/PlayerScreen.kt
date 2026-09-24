@@ -116,6 +116,7 @@ import org.drinkless.td.libcore.telegram.TdApi
 import androidx.tv.material3.Icon
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
+import androidx.compose.material.icons.outlined.Done
 
 private const val TAG = "PlayerScreen"
 
@@ -1518,7 +1519,7 @@ private fun PlayerPopoverItem(
         )
         if (selected) {
             Icon(
-                imageVector = Icons.Default.Check,
+                imageVector = Icons.Outlined.Done,
                 contentDescription = null,
                 tint = fg,
                 modifier = Modifier.size(19.dp),

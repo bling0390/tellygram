@@ -102,6 +102,7 @@ import androidx.compose.foundation.lazy.grid.LazyGridState
 import tv.telegram.ui.focus.BackPriority
 import tv.telegram.ui.focus.BackRegistration
 import tv.telegram.ui.components.Avatar
+import androidx.compose.material.icons.outlined.Done
 
 /**
  * HomeScreen — Figma node 1243:1724 ("HomeScreen").
@@ -676,7 +677,7 @@ private fun FilterChip(
     ) {
         if (showCheck) {
             Icon(
-                imageVector = Icons.Outlined.Check,
+                imageVector = Icons.Outlined.Done,
                 contentDescription = null,
                 tint = HomeSpec.InverseOnSurface,
                 modifier = Modifier.size(14.dp),

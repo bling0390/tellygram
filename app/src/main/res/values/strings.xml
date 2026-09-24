@@ -1,12 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Tellygram</string>
-    <string name="app_full_name">Tellygram for Android TV</string>
 
     <!-- Login screen -->
     <string name="login_title">Scan From Mobile Telegram</string>
     <string name="login_subtitle">1. Open Telegram on your phone\n2. Go to Settings &gt; Devices &gt; Scan QR\n3. Scan this image to Log In</string>
-    <string name="login_failed">Login failed: %1$s</string>
 
     <!-- Nav rail -->
     <string name="nav_search">Search</string>
@@ -14,7 +12,6 @@
     <string name="nav_settings">Settings</string>
 
     <!-- Search screen -->
-    <string name="search_title">Global search</string>
     <string name="search_placeholder">Search chats…</string>
     <string name="search_hint">Type to search across all your chats</string>
     <string name="search_loading">Loading chats…</string>
@@ -27,23 +24,16 @@
     <string name="key_clear">CLR</string>
 
     <!-- Chats screen -->
-    <string name="chats_loading">Loading chats…</string>
     <string name="chats_empty">No chats yet</string>
     <string name="chats_select_prompt">←  Select a chat</string>
     <string name="chats_select_detail">Pick a conversation from the sidebar to see its photos and videos.</string>
-    <string name="chats_media_loading">Loading media…</string>
     <string name="chats_media_empty">No photos or videos in this chat</string>
 
     <!-- Photo fullscreen viewer -->
-    <string name="photo_loading">Loading image…</string>
-    <string name="photo_position">%1$d / %2$d</string>
-    <string name="photo_key_hint">←  Back  ·  ◀ ▶  Prev / Next</string>
     <string name="error_prefix">Error: %1$s</string>
     <string name="download_timed_out">Download timed out</string>
 
     <!-- Player screen -->
-    <string name="player_loading">Loading video…</string>
-    <string name="player_position">%1$s / %2$s</string>
     <string name="player_btn_play">Play</string>
     <string name="player_btn_pause">Pause</string>
     <string name="player_btn_seek_back">◀◀ 10s</string>
@@ -67,46 +57,19 @@
     <string name="player_error_unsupported_codec">This video\'s codec isn\'t supported by this device</string>
 
     <!-- Settings screen -->
-    <string name="settings_title">Settings</string>
     <string name="settings_account">Accounts</string>
     <string name="settings_account_value_signed_in_with_id">Signed in as %1$s (id %2$d)</string>
     <string name="settings_account_value_signed_in_with_phone">Signed in as %1$s (id %2$d, %3$s)</string>
     <string name="settings_account_value_not_signed_in">Not signed in</string>
     <string name="settings_account_value_loading">Loading account…</string>
-    <string name="settings_language">Language</string>
-    <string name="settings_theme">Theme</string>
     <string name="settings_about">About</string>
-    <string name="settings_about_value">v%1$s</string>
-    <string name="settings_signout">Sign out</string>
-    <string name="settings_signout_value">Sign out of this Telegram account</string>
-    <string name="settings_signout_dialog_title">Sign out?</string>
-    <string name="settings_signout_dialog_text">This will delete all local data and require scanning a new QR code to sign back in.</string>
-    <string name="settings_signout_dialog_cancel">Cancel</string>
-    <string name="settings_signout_dialog_confirm">Sign out</string>
-    <string name="settings_clear_cache">Clear cache</string>
-    <string name="settings_clear_cache_dialog_title">Clear cache?</string>
-    <string name="settings_clear_cache_dialog_text">This will delete %1$s of cached media. Message history is not affected — files will be re-downloaded on demand next time.</string>
-    <string name="settings_clear_cache_dialog_confirm">Clear</string>
-    <string name="settings_clear_cache_dialog_cancel">Cancel</string>
-    <string name="settings_clear_cache_progress">Clearing… %1$d%%</string>
-    <string name="settings_clear_cache_done">Cleared %1$s of cache.</string>
-    <string name="settings_clear_cache_dialog_done_button">Done</string>
     <string name="settings_language_english">English</string>
     <string name="settings_language_simplified_chinese">简体中文</string>
     <string name="settings_language_traditional_chinese">繁體中文</string>
     <string name="settings_preferred_language">Preferred Language</string>
     <string name="settings_help">Help and Support</string>
-    <string name="settings_app_version_label">Application Version</string>
-    <string name="settings_theme_dark">Dark</string>
-    <string name="settings_theme_light">Light</string>
-    <string name="settings_theme_system">Follow system</string>
 
     <!-- About dialog -->
-    <string name="about_title">About Tellygram</string>
-    <string name="about_version">Tellygram v%1$s</string>
-    <string name="about_body">A non-official Telegram client for Android TV, focused on browsing images and videos in your chats.</string>
-    <string name="about_repo">github.com/bling0390/tellygram</string>
-    <string name="about_close_hint">Press OK to close</string>
 
     <!-- Exit confirmation (Back on the rail) -->
     <string name="exit_confirm_title">Exit app?</string>

@@ -64,6 +64,7 @@ import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.material.icons.outlined.Done
 
 /**
  * Settings as a page, rebuilt from the design frames `3239:2418` (default) and
@@ -189,8 +190,8 @@ internal fun SettingsScreen(
                     Row(
                         modifier = Modifier
                             .testTag("settings-help-contact")
-                            .padding(horizontal = 16.dp, vertical = 12.dp)
-                            .fillMaxSizeWidth(),
+                            .fillMaxSizeWidth()
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
@@ -366,6 +367,10 @@ private fun SectionItem(
     Row(
         modifier = Modifier
             .testTag("settings-section-${section.name}")
+            // The design's list column stretches (alignItems: stretch), so the pill must
+            // span the whole 268dp row — without this the Row hugs icon+label and the
+            // highlight only covers ~half the row.
+            .fillMaxWidth()
             .background(colors.fill, RoundedCornerShape(HomeSpec.Corner))
             // The requester must sit before focusable() to be the focus target.
             .let { if (requester != null) it.focusRequester(requester) else it }
@@ -413,7 +418,8 @@ private fun SectionItem(
 @Composable
 private fun DisplayRow(label: String, value: String) {
     Row(
-        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp).fillMaxSizeWidth(),
+        modifier = Modifier.fillMaxSizeWidth()
+            .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
@@ -477,8 +483,8 @@ private fun ActionRow(label: String, tag: String, onClick: () -> Unit) {
                     false
                 }
             }
-            .padding(horizontal = 16.dp, vertical = 12.dp)
-            .fillMaxSizeWidth(),
+            .fillMaxSizeWidth()
+            .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(text = label, color = colors.text, style = MaterialTheme.typography.titleMedium)
@@ -514,19 +520,19 @@ private fun LanguageRow(label: String, selected: Boolean, onSelect: () -> Unit) 
                     false
                 }
             }
-            .padding(horizontal = 16.dp, vertical = 12.dp)
-            .fillMaxSizeWidth(),
+            .fillMaxSizeWidth()
+            .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(text = label, color = colors.text, style = MaterialTheme.typography.labelLarge)
         Spacer(Modifier.weight(1f))
         if (selected) {
             Icon(
-                imageVector = Icons.Default.Check,
+                imageVector = Icons.Outlined.Done,
                 contentDescription = null,
                 tint = colors.text,
                 modifier = Modifier
-                    .size(20.dp)
+                    .size(24.dp)
                     .testTag("settings-language-check-${label}"),
             )
         }

@@ -260,4 +260,39 @@ class SettingsScreenTest {
         // ...and the chosen section keeps its highlight at the same time.
         rule.onNodeWithTag("settings-section-Accounts-highlighted", useUnmergedTree = true).assertExists()
     }
+
+    @Test
+    fun `the highlighted section spans the whole list row`() {
+        // The design's list column stretches, so the white pill must be the full 268dp —
+        // before the width modifier it hugged the icon and label instead.
+        show()
+        val row = rule.onNodeWithTag("settings-section-Accounts").getUnclippedBoundsInRoot()
+        val width = (row.right - row.left).value
+        assertTrue("row is ${width}dp wide, expected the 268dp column", width >= 260f)
+    }
+
+@Test
+    fun `a pane value stops inside the pane, not past its right edge`() {
+        // The padding used to sit outside the fixed width, so each row measured 484dp on a
+        // 452dp pane and right-aligned values landed past the pane's right edge (and the
+        // Log out panel stuck out 32dp). Measured on the symptom: a value's right edge.
+        show()
+        val paneRight = 398f + 452f          // the frame's pane: x=398, width=452
+        val value = rule.onNodeWithText("123456").getUnclippedBoundsInRoot()
+        val right = value.right.value
+        assertTrue("value ends at ${right}dp, pane ends at $paneRight", right <= paneRight - 8f)
+    }
+
+    @Test
+    fun `the chosen language's check is the design's 24dp`() {
+        // The frame draws check_24px at 24x24; the row used to draw it at 20.
+        show()
+        select("PreferredLanguage")
+        val check = rule.onNodeWithTag("settings-language-check-English", useUnmergedTree = true)
+            .getUnclippedBoundsInRoot()
+        // .size(24.dp) makes it square, and measure reports the height faithfully here
+        // (the width comes back 0 in this harness, as with the Log out row).
+        val h = (check.bottom - check.top).value
+        assertTrue("check is ${h}dp tall, expected the design's 24", h in 22f..26f)
+    }
 }

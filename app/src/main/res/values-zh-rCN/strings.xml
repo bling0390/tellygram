@@ -1,17 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Tellygram</string>
-    <string name="app_full_name">Tellygram for Android TV</string>
 
     <string name="login_title">用手机 Telegram 扫码登录</string>
     <string name="login_subtitle">1. 在手机上打开 Telegram\n2. 进入 设置 &gt; 设备 &gt; 扫描二维码\n3. 扫描此二维码完成登录</string>
-    <string name="login_failed">登录失败:%1$s</string>
 
     <string name="nav_search">搜索</string>
     <string name="nav_chats">聊天</string>
     <string name="nav_settings">设置</string>
 
-    <string name="search_title">全局搜索</string>
     <string name="search_placeholder">搜索聊天…</string>
     <string name="search_hint">输入关键词,搜索你的所有聊天</string>
     <string name="search_loading">正在加载聊天列表…</string>
@@ -23,21 +20,14 @@
     <string name="key_backspace">⌫</string>
     <string name="key_clear">清空</string>
 
-    <string name="chats_loading">正在加载聊天列表…</string>
     <string name="chats_empty">暂无聊天</string>
     <string name="chats_select_prompt">←  选择一个聊天</string>
     <string name="chats_select_detail">在左侧列表中选择一个聊天,查看其中的图片和视频。</string>
-    <string name="chats_media_loading">正在加载媒体…</string>
     <string name="chats_media_empty">这个聊天里没有图片或视频</string>
 
-    <string name="photo_loading">正在加载图片…</string>
-    <string name="photo_position">%1$d / %2$d</string>
-    <string name="photo_key_hint">←  返回  ·  ◀ ▶  上一张 / 下一张</string>
     <string name="error_prefix">错误:%1$s</string>
     <string name="download_timed_out">下载超时</string>
 
-    <string name="player_loading">正在加载视频…</string>
-    <string name="player_position">%1$s / %2$s</string>
     <string name="player_btn_play">播放</string>
     <string name="player_btn_pause">暂停</string>
     <string name="player_btn_seek_back">◀◀ 10 秒</string>
@@ -58,41 +48,18 @@
     <string name="player_info_size">大小</string>
     <string name="player_info_date">日期</string>
 
-    <string name="settings_title">设置</string>
     <string name="settings_account">账户</string>
     <string name="settings_account_value_signed_in_with_id">已登录:%1$s (id %2$d)</string>
     <string name="settings_account_value_signed_in_with_phone">已登录:%1$s (id %2$d, %3$s)</string>
     <string name="settings_account_value_not_signed_in">未登录</string>
     <string name="settings_account_value_loading">正在加载账户…</string>
-    <string name="settings_language">语言</string>
-    <string name="settings_theme">主题</string>
     <string name="settings_about">关于</string>
-    <string name="settings_about_value">v%1$s</string>
-    <string name="settings_signout">退出登录</string>
-    <string name="settings_signout_value">退出当前 Telegram 账户</string>
-    <string name="settings_clear_cache">清理缓存</string>
-    <string name="settings_clear_cache_dialog_title">清理缓存？</string>
-    <string name="settings_clear_cache_dialog_text">将删除 %1$s 的本地媒体缓存（不影响消息历史,下次访问时自动重新下载）。</string>
-    <string name="settings_clear_cache_dialog_confirm">清理</string>
-    <string name="settings_clear_cache_dialog_cancel">取消</string>
-    <string name="settings_clear_cache_progress">清理中 %1$d%%</string>
-    <string name="settings_clear_cache_done">已清理 %1$s 缓存。</string>
-    <string name="settings_clear_cache_dialog_done_button">完成</string>
     <string name="settings_language_english">English</string>
     <string name="settings_language_simplified_chinese">简体中文</string>
     <string name="settings_language_traditional_chinese">繁體中文</string>
     <string name="settings_preferred_language">偏好语言</string>
     <string name="settings_help">帮助与支持</string>
-    <string name="settings_app_version_label">应用版本</string>
-    <string name="settings_theme_dark">深色</string>
-    <string name="settings_theme_light">浅色</string>
-    <string name="settings_theme_system">跟随系统</string>
 
-    <string name="about_title">关于 Tellygram</string>
-    <string name="about_version">Tellygram v%1$s</string>
-    <string name="about_body">Tellygram 是一款非官方的 Telegram 安卓电视客户端,专注于浏览聊天中的图片和视频。</string>
-    <string name="about_repo">github.com/bling0390/tellygram</string>
-    <string name="about_close_hint">按 OK 关闭</string>
 
     <!-- Exit confirmation (Back on the rail) -->
     <string name="exit_confirm_title">退出应用？</string>
