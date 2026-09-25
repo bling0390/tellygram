@@ -15,12 +15,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
@@ -37,8 +35,12 @@ import androidx.tv.material3.Card
 import androidx.tv.material3.CardDefaults
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
-import kotlinx.coroutines.delay
 import tv.telegram.ui.focus.dpadNavigationSounds
+import androidx.compose.ui.platform.testTag
+import tv.telegram.ui.home.HomeSpec
+import tv.telegram.ui.settings.RowColors
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.IntrinsicSize
 
 /**
  * JetStream confirmation dialog — Figma 1114:8669 ("Delete account?").
@@ -78,20 +80,18 @@ fun ConfirmDialog(
     confirmLabel: String? = null,
     onConfirm: (() -> Unit)? = null,
     cancelLabel: String? = null,
+    /**
+     * When set, the panel and buttons carry `"$tagPrefix-dialog"`, `-cancel` and `-confirm`
+     * tags — the UI tests locate the dialog through them.
+     */
+    tagPrefix: String? = null,
 ) {
     val cancelFocus = remember { FocusRequester() }
     val confirmFocus = remember { FocusRequester() }
 
-    // The dialog window focuses its first focusable child as it opens, so retry
-    // the intended button for a few frames (same dance the chat dialog did).
-    LaunchedEffect(confirmLabel, cancelLabel) {
-        withFrameNanos { }
-        repeat(5) {
-            val target = if (cancelLabel != null) cancelFocus else confirmFocus
-            try { target.requestFocus() } catch (_: IllegalStateException) {}
-            delay(60)
-        }
-    }
+    // No focus dance: the design puts the safe button FIRST in the row, so the dialog
+    // window focuses it on open by itself. The old loop re-requested focus for ~300ms,
+    // which meant anything the user (or a test) focused in that window got yanked back.
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -100,47 +100,58 @@ fun ConfirmDialog(
         Column(
             modifier = modifier
                 .dpadNavigationSounds()
+                .let { if (tagPrefix != null) it.testTag("$tagPrefix-dialog") else it }
                 .shadow(8.dp, RoundedCornerShape(4.dp))
-                .background(
-                    MaterialTheme.colorScheme.inverseSurface,
-                    RoundedCornerShape(4.dp),
-                )
+                .background(ConfirmDialogSpec.Panel, RoundedCornerShape(4.dp))
                 .padding(horizontal = 32.dp, vertical = 24.dp)
                 .width(348.dp),
         ) {
             Text(
                 text = title,
-                color = MaterialTheme.colorScheme.surface,
+                color = ConfirmDialogSpec.Title,
                 style = MaterialTheme.typography.headlineSmall,
             )
             Spacer(Modifier.height(12.dp))
             Text(
                 text = text,
-                color = MaterialTheme.colorScheme.surfaceVariant,
+                color = ConfirmDialogSpec.Body,
                 style = MaterialTheme.typography.bodyMedium,
             )
             if (confirmLabel != null || cancelLabel != null) {
                 Spacer(Modifier.height(12.dp))
+                // Per the frames: the safe button hugs the LEFT and the action fills the
+                // rest on the RIGHT (the older node had them the other way round).
                 Row(
                     modifier = Modifier.width(348.dp),
                     horizontalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
-                    if (confirmLabel != null) {
-                        ConfirmDialogButton(
-                            label = confirmLabel,
-                            primary = true,
-                            onClick = { onConfirm?.invoke() },
-                            focusRequester = confirmFocus,
-                        )
-                    }
                     if (cancelLabel != null) {
+                        // The button's content is Box(fillMaxSize), which reports the incoming
+                        // max width as its own — so an unconstrained button swallows the whole
+                        // row and squeezes the other to zero. Pin the safe one to its content.
                         ConfirmDialogButton(
                             label = cancelLabel,
                             primary = false,
                             onClick = onDismiss,
                             focusRequester = cancelFocus,
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier.width(IntrinsicSize.Max),
+                            tagPrefix = tagPrefix,
                         )
+                    }
+                    if (confirmLabel != null) {
+                        // The weight goes on a plain Box: a tv Card given Modifier.weight
+                        // laid out zero-width here, so the action button vanished and
+                        // could not take focus.
+                        Box(modifier = Modifier.weight(1f)) {
+                            ConfirmDialogButton(
+                                label = confirmLabel,
+                                primary = true,
+                                onClick = { onConfirm?.invoke() },
+                                focusRequester = confirmFocus,
+                                modifier = Modifier.fillMaxWidth(),
+                                tagPrefix = tagPrefix,
+                            )
+                        }
                     }
                 }
             }
@@ -156,6 +167,7 @@ private fun ConfirmDialogButton(
     onClick: () -> Unit,
     focusRequester: FocusRequester,
     modifier: Modifier = Modifier,
+    tagPrefix: String? = null,
 ) {
     var focused by remember { mutableStateOf(false) }
     Card(
@@ -167,21 +179,24 @@ private fun ConfirmDialogButton(
             RoundedCornerShape(4.dp),
         ),
         colors = CardDefaults.colors(
-            containerColor = if (primary) {
-                MaterialTheme.colorScheme.inverseOnSurface
-            } else {
-                Color.Black.copy(alpha = 0.1f)
-            },
-            focusedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+            containerColor = confirmDialogButtonColors(primary, focused = false).fill,
+            focusedContainerColor = confirmDialogButtonColors(primary, focused = true).fill,
         ),
         border = if (primary) {
             CardDefaults.border(Border.None, Border.None, Border.None)
         } else {
-            val outline = Border(BorderStroke(1.dp, MaterialTheme.colorScheme.border))
+            val outline = Border(BorderStroke(1.dp, ConfirmDialogSpec.Outline))
             CardDefaults.border(outline, outline, outline)
         },
         modifier = modifier
             .height(40.dp)
+            .let {
+                if (tagPrefix != null) {
+                    it.testTag(if (primary) "$tagPrefix-confirm" else "$tagPrefix-cancel")
+                } else {
+                    it
+                }
+            }
             .onFocusChanged { focused = it.hasFocus }
             .focusRequester(focusRequester),
     ) {
@@ -191,15 +206,30 @@ private fun ConfirmDialogButton(
         ) {
             Text(
                 text = label,
-                color = when {
-                    focused -> MaterialTheme.colorScheme.onSecondaryContainer
-                    primary -> MaterialTheme.colorScheme.onSurface
-                    else -> MaterialTheme.colorScheme.surfaceVariant
-                },
+                color = confirmDialogButtonColors(primary, focused).text,
                 style = MaterialTheme.typography.labelLarge,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
         }
     }
+}
+
+/** The dialog's palette, straight from the frames (not from theme roles, which drift). */
+internal object ConfirmDialogSpec {
+    val Panel = Color(0xFFE3E2E6)
+    val Title = Color(0xFF121316)
+    val Body = Color(0xFF43474E)
+    val Outline = Color(0xFF8E9099)
+    val Scrim = Color(0x991A1C1E)
+}
+
+/**
+ * The two button states. The action button is the dark primary at rest and flips to white
+ * on focus; the safe one is a ghost that does the same. Facts from the frames, unit tested.
+ */
+internal fun confirmDialogButtonColors(primary: Boolean, focused: Boolean): RowColors = when {
+    focused -> RowColors(HomeSpec.White, HomeSpec.InverseOnSurface)
+    primary -> RowColors(HomeSpec.InverseOnSurface, HomeSpec.OnSurface)
+    else -> RowColors(Color(0x1A000000), ConfirmDialogSpec.Body)
 }

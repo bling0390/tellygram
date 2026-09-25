@@ -162,8 +162,11 @@ class SettingsScreenTest {
         rule.waitForIdle()
         rule.onNodeWithTag("settings-log-out").performKeyInput { pressKey(Key.DirectionCenter) }
         rule.waitForIdle()
-        rule.onNodeWithTag("settings-logout-confirm").requestFocus()
+        // Walk to the action button the way a D-pad does — Right from Cancel. Requesting
+        // focus programmatically here would lose to the dialog's opening focus dance.
+        rule.onNodeWithTag("settings-logout-cancel").performKeyInput { pressKey(Key.DirectionRight) }
         rule.waitForIdle()
+        rule.onNodeWithTag("settings-logout-confirm").assertIsFocused()
         rule.onNodeWithTag("settings-logout-confirm").performKeyInput { pressKey(Key.DirectionCenter) }
         rule.waitForIdle()
         assertTrue(state.logOutCalled)
@@ -294,5 +297,124 @@ class SettingsScreenTest {
         // (the width comes back 0 in this harness, as with the Log out row).
         val h = (check.bottom - check.top).value
         assertTrue("check is ${h}dp tall, expected the design's 24", h in 22f..26f)
+    }
+
+@Test
+    fun `every language row is the frame's 48dp, chosen or not`() {
+        // The selected row carries a 24dp check; with a hug height it grew to 48 while the
+        // others stayed at 44 (12 + a 20dp line + 12). The frame fixes every row at 48.
+        show()
+        select("PreferredLanguage")
+        for (label in listOf("English", "简体中文", "繁體中文")) {
+            val row = rule.onNodeWithTag("settings-language-$label").getUnclippedBoundsInRoot()
+            val h = (row.bottom - row.top).value
+            assertTrue("$label row is ${h}dp tall, expected 48", h in 46f..50f)
+        }
+    }
+
+    @Test
+    fun `left from a language row returns to the chosen section`() {
+        // Product rule: the pane's rows come back to the section that is showing, instead of
+        // the item the geometric search happens to find.
+        show()
+        select("PreferredLanguage")
+        rule.onNodeWithTag("settings-language-简体中文").requestFocus()
+        rule.waitForIdle()
+        rule.onNodeWithTag("settings-language-简体中文")
+            .performKeyInput { pressKey(Key.DirectionLeft) }
+        rule.waitForIdle()
+        rule.onNodeWithTag("settings-section-PreferredLanguage").assertIsFocused()
+    }
+
+    @Test
+    fun `right from the section returns to the last language row, else the first`() {
+        show()
+        select("PreferredLanguage")
+
+        // Nothing remembered yet: Right reaches the first language row.
+        rule.onNodeWithTag("settings-section-PreferredLanguage").requestFocus()
+        rule.waitForIdle()
+        rule.onNodeWithTag("settings-section-PreferredLanguage")
+            .performKeyInput { pressKey(Key.DirectionRight) }
+        rule.waitForIdle()
+        rule.onNodeWithTag("settings-language-English").assertIsFocused()
+
+        // Visit 简体中文, leave, return: it is remembered.
+        rule.onNodeWithTag("settings-language-简体中文").requestFocus()
+        rule.waitForIdle()
+        rule.onNodeWithTag("settings-language-简体中文")
+            .performKeyInput { pressKey(Key.DirectionLeft) }
+        rule.waitForIdle()
+        rule.onNodeWithTag("settings-section-PreferredLanguage")
+            .performKeyInput { pressKey(Key.DirectionRight) }
+        rule.waitForIdle()
+        rule.onNodeWithTag("settings-language-简体中文").assertIsFocused()
+    }
+
+    @Test
+    fun `up down and right never leave the language list`() {
+        show()
+        select("PreferredLanguage")
+
+        // Up from the first row used to escape to the section list above it.
+        rule.onNodeWithTag("settings-language-English").requestFocus()
+        rule.waitForIdle()
+        rule.onNodeWithTag("settings-language-English").performKeyInput { pressKey(Key.DirectionUp) }
+        rule.waitForIdle()
+        rule.onNodeWithTag("settings-language-English").assertIsFocused()
+
+        // Right stays inside the list too.
+        rule.onNodeWithTag("settings-language-English").performKeyInput { pressKey(Key.DirectionRight) }
+        rule.waitForIdle()
+        rule.onNodeWithTag("settings-language-English").assertIsFocused()
+
+        // And Down at the last row stops there.
+        rule.onNodeWithTag("settings-language-繁體中文").requestFocus()
+        rule.waitForIdle()
+        rule.onNodeWithTag("settings-language-繁體中文").performKeyInput { pressKey(Key.DirectionDown) }
+        rule.waitForIdle()
+        rule.onNodeWithTag("settings-language-繁體中文").assertIsFocused()
+    }
+
+    @Test
+    fun `an action row never leaves its pane`() {
+        // About and Accounts each have a single actionable row: Up, Down and Right stop there.
+        show()
+        select("About")
+        rule.onNodeWithTag("settings-check-updates").requestFocus()
+        rule.waitForIdle()
+        for (key in listOf(Key.DirectionUp, Key.DirectionDown, Key.DirectionRight)) {
+            rule.onNodeWithTag("settings-check-updates").performKeyInput { pressKey(key) }
+            rule.waitForIdle()
+            rule.onNodeWithTag("settings-check-updates").assertIsFocused()
+        }
+        // Left still returns to the chosen section.
+        rule.onNodeWithTag("settings-check-updates").performKeyInput { pressKey(Key.DirectionLeft) }
+        rule.waitForIdle()
+        rule.onNodeWithTag("settings-section-About").assertIsFocused()
+    }
+
+    @Test
+    fun `the last section item does not move down`() {
+        show()
+        rule.onNodeWithTag("settings-section-HelpAndSupport").requestFocus()
+        rule.waitForIdle()
+        rule.onNodeWithTag("settings-section-HelpAndSupport")
+            .performKeyInput { pressKey(Key.DirectionDown) }
+        rule.waitForIdle()
+        rule.onNodeWithTag("settings-section-HelpAndSupport").assertIsFocused()
+    }
+
+    @Test
+    fun `leaving a pane remembers the section it came from`() {
+        show()
+        // The chosen section stays Accounts, but focus visits About before entering the pane.
+        rule.onNodeWithTag("settings-section-About").requestFocus()
+        rule.waitForIdle()
+        rule.onNodeWithTag("settings-section-About").performKeyInput { pressKey(Key.DirectionRight) }
+        rule.waitForIdle()
+        rule.onNodeWithTag("settings-section-About").performKeyInput { pressKey(Key.DirectionLeft) }
+        rule.waitForIdle()
+        rule.onNodeWithTag("settings-section-About").assertIsFocused()
     }
 }

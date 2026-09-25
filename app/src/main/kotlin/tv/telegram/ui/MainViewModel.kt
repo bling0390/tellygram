@@ -197,6 +197,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app), HomeState, Settin
     override fun setLanguage(lang: Language) {
         _language.value = lang
         SettingsRepository.setLanguage(getApplication(), lang)
+        // Store AND apply: without this the choice only took effect after a restart.
+        SettingsRepository.applyLocale(getApplication(), lang)
     }
 
     override fun logOut() {

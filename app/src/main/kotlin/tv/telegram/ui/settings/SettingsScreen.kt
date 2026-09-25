@@ -18,10 +18,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.HelpOutline
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -65,6 +61,11 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.material.icons.outlined.Done
+import androidx.compose.material.icons.outlined.Person
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.Translate
+import androidx.compose.material.icons.outlined.HelpOutline
+import tv.telegram.ui.components.ConfirmDialog
 
 /**
  * Settings as a page, rebuilt from the design frames `3239:2418` (default) and
@@ -98,6 +99,22 @@ internal fun SettingsScreen(
 ) {
     var selected by remember { mutableStateOf(SettingsSection.Accounts) }
     var showLogOut by remember { mutableStateOf(false) }
+
+    // Left/Right between the section list and the pane: Right from the list always reaches
+    // the pane's entry stop, and a pane row going Left returns to the CHOSEN section (the
+    // default geometric search drifted to whichever item happened to sit leftwards).
+    val selectedSectionFocus = remember { FocusRequester() }
+    val paneEntryFocus = remember { FocusRequester() }
+    // Which section item last held focus. A pane row going Left returns there — not to the
+    // chosen section, which may be a different item entirely — and to the first item when
+    // the list has never been visited.
+    val rememberedSectionFocus = remember { FocusRequester() }
+    var lastSectionFocus by remember { mutableStateOf<SettingsSection?>(null) }
+    var lastLanguageFocus by remember { mutableStateOf<Language?>(null) }
+
+    // Only panes that compose a focusable row may be the list's Right target: Help has none,
+    // and pointing the search at an unattached requester throws.
+    val paneEntryOrNull = if (selected == SettingsSection.HelpAndSupport) null else paneEntryFocus
 
     // Arriving on the page takes focus: the shell hands the bar's Down target here, and
     // without this the top bar keeps focus and the pane looks inert. Waits a frame — a
@@ -136,6 +153,16 @@ internal fun SettingsScreen(
                     onSelect = { selected = section },
                     // Only the first entry is the bar's Down target.
                     requester = if (index == 0) contentEntryFocus else null,
+                    selectedRequester = if (section == selected) selectedSectionFocus else null,
+                    rememberedRequester = if (section == (lastSectionFocus ?: SettingsSection.entries.first())) {
+                        rememberedSectionFocus
+                    } else {
+                        null
+                    },
+                    rightRequester = paneEntryOrNull,
+                    // The last item ends the list: Down must not escape below it.
+                    cancelDown = section == SettingsSection.entries.last(),
+                    onFocus = { lastSectionFocus = section },
                 )
             }
         }
@@ -161,6 +188,8 @@ internal fun SettingsScreen(
                         label = stringResource(R.string.settings_account_row_log_out),
                         tag = "settings-log-out",
                         onClick = { showLogOut = true },
+                        leftRequester = rememberedSectionFocus,
+                        entryRequester = paneEntryFocus,
                     )
                 }
 
@@ -168,16 +197,29 @@ internal fun SettingsScreen(
                     PaneTitle(stringResource(R.string.settings_about))
                     VersionRow(versionName)
                     LicenseRow()
-                    CheckForUpdatesRow()
+                    CheckForUpdatesRow(
+                        leftRequester = rememberedSectionFocus,
+                        entryRequester = paneEntryFocus,
+                    )
                 }
 
                 SettingsSection.PreferredLanguage -> {
                     PaneTitle(stringResource(R.string.settings_language_title))
-                    Language.entries.forEach { option ->
+                    Language.entries.forEachIndexed { index, option ->
                         LanguageRow(
                             label = languageLabel(option),
                             selected = option == language,
                             onSelect = { state.setLanguage(option) },
+                            leftRequester = rememberedSectionFocus,
+                            // Right from the list lands on the remembered row, else the first.
+                            entryRequester = if (option == (lastLanguageFocus ?: Language.entries.first())) {
+                                paneEntryFocus
+                            } else {
+                                null
+                            },
+                            onFocus = { lastLanguageFocus = option },
+                            cancelUp = index == 0,
+                            cancelDown = index == Language.entries.lastIndex,
                         )
                     }
                 }
@@ -214,143 +256,30 @@ internal fun SettingsScreen(
     }
 
         if (showLogOut) {
-            LogOutDialog(
-                onCancel = { showLogOut = false },
+            // The shared component: a real Dialog, so the scrim covers the whole window
+            // (top bar included) and the panel centres in the frame, like the design.
+            ConfirmDialog(
+                title = stringResource(R.string.settings_logout_dialog_title),
+                text = stringResource(R.string.settings_logout_dialog_body),
+                confirmLabel = stringResource(R.string.settings_logout_dialog_confirm),
+                cancelLabel = stringResource(R.string.settings_logout_dialog_cancel),
                 onConfirm = {
                     showLogOut = false
                     state.logOut()
                 },
+                onDismiss = { showLogOut = false },
+                tagPrefix = "settings-logout",
             )
         }
     }
 }
 
-/**
- * The log-out confirmation, per the frames: a 60% scrim, a centred 412dp light panel
- * (inverse-surface + Elevation Dark/4), the copy that promises nothing is deleted, and
- * Cancel / Log out. Focus starts on Cancel — the safe choice.
- */
-@Composable
-private fun LogOutDialog(onCancel: () -> Unit, onConfirm: () -> Unit) {
-    val cancelFocus = remember { FocusRequester() }
-    var cancelFocused by remember { mutableStateOf(false) }
-    var confirmFocused by remember { mutableStateOf(false) }
-
-    LaunchedEffect(Unit) {
-        // Request after a frame: nothing is laid out during the first composition.
-        withFrameNanos { }
-        if (!runCatching { cancelFocus.requestFocus() }.isSuccess) {
-            withFrameNanos { }
-            runCatching { cancelFocus.requestFocus() }
-        }
-    }
-
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(SettingsSpec.Scrim)
-            .testTag("settings-logout-dialog"),
-        contentAlignment = Alignment.Center,
-    ) {
-        Column(
-            modifier = Modifier
-                .width(412.dp)
-                .shadow(12.dp, RoundedCornerShape(HomeSpec.Corner))
-                .background(SettingsSpec.DialogPanel, RoundedCornerShape(HomeSpec.Corner))
-                .padding(horizontal = 32.dp, vertical = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Text(
-                text = stringResource(R.string.settings_logout_dialog_title),
-                color = SettingsSpec.DialogTitle,
-                style = MaterialTheme.typography.headlineSmall,
-            )
-            Text(
-                text = stringResource(R.string.settings_logout_dialog_body),
-                color = SettingsSpec.DialogBody,
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(14.dp, Alignment.End),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                DialogButton(
-                    label = stringResource(R.string.settings_logout_dialog_cancel),
-                    tag = "settings-logout-cancel",
-                    colors = dialogCancelColors(cancelFocused),
-                    hairline = if (cancelFocused) null else SettingsSpec.DialogOutline,
-                    requester = cancelFocus,
-                    onFocusChange = { cancelFocused = it },
-                    onClick = onCancel,
-                )
-                DialogButton(
-                    label = stringResource(R.string.settings_logout_dialog_confirm),
-                    tag = "settings-logout-confirm",
-                    colors = dialogConfirmColors(confirmFocused),
-                    hairline = null,
-                    requester = null,
-                    onFocusChange = { confirmFocused = it },
-                    onClick = onConfirm,
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun DialogButton(
-    label: String,
-    tag: String,
-    colors: RowColors,
-    hairline: Color?,
-    requester: FocusRequester?,
-    onFocusChange: (Boolean) -> Unit,
-    onClick: () -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .testTag(tag)
-            .height(40.dp)
-            .clip(RoundedCornerShape(HomeSpec.Corner))
-            .background(colors.fill)
-            .then(
-                if (hairline != null) {
-                    Modifier.border(1.dp, hairline, RoundedCornerShape(HomeSpec.Corner))
-                } else {
-                    Modifier
-                },
-            )
-            // Inside the dialog there is nowhere to roam: the buttons are the only stops.
-            .focusProperties {
-                up = FocusRequester.Cancel
-                down = FocusRequester.Cancel
-            }
-            .let { if (requester != null) it.focusRequester(requester) else it }
-            .onFocusChanged { onFocusChange(it.isFocused) }
-            .focusable()
-            .onKeyEvent { event: KeyEvent ->
-                if (event.type == KeyEventType.KeyUp &&
-                    (event.key == Key.DirectionCenter || event.key == Key.Enter)
-                ) {
-                    onClick()
-                    true
-                } else {
-                    false
-                }
-            }
-            .padding(horizontal = 16.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(text = label, color = colors.text, style = MaterialTheme.typography.labelLarge)
-    }
-}
 
 private enum class SettingsSection(val labelRes: Int, val icon: ImageVector) {
-    Accounts(R.string.settings_account, Icons.Default.Person),
-    About(R.string.settings_about, Icons.Default.Info),
-    PreferredLanguage(R.string.settings_preferred_language, Icons.Default.Translate),
-    HelpAndSupport(R.string.settings_help, Icons.Default.HelpOutline),
+    Accounts(R.string.settings_account, Icons.Outlined.Person),
+    About(R.string.settings_about, Icons.Outlined.Info),
+    PreferredLanguage(R.string.settings_preferred_language, Icons.Outlined.Translate),
+    HelpAndSupport(R.string.settings_help, Icons.Outlined.HelpOutline),
 }
 
 @Composable
@@ -359,6 +288,11 @@ private fun SectionItem(
     selected: Boolean,
     onSelect: () -> Unit,
     requester: FocusRequester? = null,
+    selectedRequester: FocusRequester? = null,
+    rememberedRequester: FocusRequester? = null,
+    rightRequester: FocusRequester? = null,
+    cancelDown: Boolean = false,
+    onFocus: () -> Unit = {},
 ) {
     var focused by remember { mutableStateOf(false) }
     // The design's List item has a Focused variant that is the same white pill, so a
@@ -374,7 +308,13 @@ private fun SectionItem(
             .background(colors.fill, RoundedCornerShape(HomeSpec.Corner))
             // The requester must sit before focusable() to be the focus target.
             .let { if (requester != null) it.focusRequester(requester) else it }
-            .onFocusState { focused = it }
+            .let { if (selectedRequester != null) it.focusRequester(selectedRequester) else it }
+            .let { if (rememberedRequester != null) it.focusRequester(rememberedRequester) else it }
+            .focusProperties {
+                if (rightRequester != null) right = rightRequester
+                down = if (cancelDown) FocusRequester.Cancel else FocusRequester.Default
+            }
+            .onFocusState { focused = it; if (it) onFocus() }
             .focusable()
             .onKeyEvent { event: KeyEvent ->
                 if (event.type == KeyEventType.KeyUp &&
@@ -455,22 +395,42 @@ private fun LicenseRow() =
  * nothing yet (product decision, 2026-09-23).
  */
 @Composable
-private fun CheckForUpdatesRow() = ActionRow(
+private fun CheckForUpdatesRow(
+    leftRequester: FocusRequester? = null,
+    entryRequester: FocusRequester? = null,
+) = ActionRow(
     label = stringResource(R.string.settings_about_row_check_updates),
     tag = "settings-check-updates",
     // Deliberately inert (product decision, 2026-09-23).
     onClick = { },
+    leftRequester = leftRequester,
+    entryRequester = entryRequester,
 )
 
 /** An actionable row: surface-container at rest, white with the dark label once focused. */
 @Composable
-private fun ActionRow(label: String, tag: String, onClick: () -> Unit) {
+private fun ActionRow(
+    label: String,
+    tag: String,
+    onClick: () -> Unit,
+    leftRequester: FocusRequester? = null,
+    entryRequester: FocusRequester? = null,
+) {
     var focused by remember { mutableStateOf(false) }
     val colors = actionableRowColors(focused)
     Row(
         modifier = Modifier
             .testTag(tag)
             .background(colors.fill, RoundedCornerShape(HomeSpec.Corner))
+            .let { if (entryRequester != null) it.focusRequester(entryRequester) else it }
+            .focusProperties {
+                if (leftRequester != null) left = leftRequester
+                // A pane with a single actionable row is a closed list: Up, Down and Right
+                // all stop here instead of letting the default search wander off.
+                up = FocusRequester.Cancel
+                down = FocusRequester.Cancel
+                right = FocusRequester.Cancel
+            }
             .onFocusState { focused = it }
             .focusable()
             .onKeyEvent { event: KeyEvent ->
@@ -483,8 +443,8 @@ private fun ActionRow(label: String, tag: String, onClick: () -> Unit) {
                     false
                 }
             }
-            .fillMaxSizeWidth()
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .padding(horizontal = 16.dp, vertical = 12.dp)
+            .fillMaxSizeWidth(),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(text = label, color = colors.text, style = MaterialTheme.typography.titleMedium)
@@ -492,23 +452,42 @@ private fun ActionRow(label: String, tag: String, onClick: () -> Unit) {
         Icon(
             imageVector = Icons.Default.ChevronRight,
             contentDescription = null,
-            tint = colors.text,
+            // On-surface at rest (matching its label), dark once the row turns white.
+            tint = paneChevronColor(focused),
             modifier = Modifier.size(24.dp),
         )
     }
 }
 
 @Composable
-private fun LanguageRow(label: String, selected: Boolean, onSelect: () -> Unit) {
+private fun LanguageRow(
+    label: String,
+    selected: Boolean,
+    onSelect: () -> Unit,
+    leftRequester: FocusRequester? = null,
+    entryRequester: FocusRequester? = null,
+    // The list is a closed column: Up at the first row, Down at the last one and Right
+    // anywhere stop there instead of letting the default search escape to the section list.
+    cancelUp: Boolean = false,
+    cancelDown: Boolean = false,
+    onFocus: () -> Unit = {},
+) {
     var focused by remember { mutableStateOf(false) }
-    // The design puts the white fill on FOCUS only; being the chosen language shows up
-    // as the trailing check instead (unlike the top bar, where the selection keeps a pill).
+    // The design puts the white fill on FOCUS only; being the chosen language shows up as
+    // the trailing check instead (the top bar keeps a pill for its selection).
     val colors = actionableRowColors(focused)
     Row(
         modifier = Modifier
             .testTag("settings-language-$label")
             .background(colors.fill, RoundedCornerShape(HomeSpec.Corner))
-            .onFocusState { focused = it }
+            .let { if (entryRequester != null) it.focusRequester(entryRequester) else it }
+            .focusProperties {
+                if (leftRequester != null) left = leftRequester
+                up = if (cancelUp) FocusRequester.Cancel else FocusRequester.Default
+                down = if (cancelDown) FocusRequester.Cancel else FocusRequester.Default
+                right = FocusRequester.Cancel
+            }
+            .onFocusState { focused = it; if (it) onFocus() }
             .focusable()
             .onKeyEvent { event: KeyEvent ->
                 if (event.type == KeyEventType.KeyUp &&
@@ -521,6 +500,9 @@ private fun LanguageRow(label: String, selected: Boolean, onSelect: () -> Unit) 
                 }
             }
             .fillMaxSizeWidth()
+            // Fixed height, like the frame (452x48): a hug height made the selected row grow
+            // by the 24dp check (12+24+12) while the others stayed at 12+20+12.
+            .height(48.dp)
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -530,10 +512,11 @@ private fun LanguageRow(label: String, selected: Boolean, onSelect: () -> Unit) 
             Icon(
                 imageVector = Icons.Outlined.Done,
                 contentDescription = null,
-                tint = colors.text,
+                // White on the dark row, dark on the focused white row.
+                tint = trailingIconColor(focused),
                 modifier = Modifier
                     .size(24.dp)
-                    .testTag("settings-language-check-${label}"),
+                    .testTag("settings-language-check-$label"),
             )
         }
     }

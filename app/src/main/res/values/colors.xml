@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The window's own backdrop: the design's material-theme/sys/dark/background.
+         Kept here as well as in Theme.kt so the sliver behind Compose (cold start,
+         transitions) matches the pages instead of showing the platform black. -->
+    <color name="window_background">#FF1A1C1E</color>
+</resources>

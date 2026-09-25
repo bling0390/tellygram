@@ -21,6 +21,20 @@ internal fun sectionItemColors(selected: Boolean): RowColors = if (selected) {
 }
 
 /**
+ * The chosen language's trailing check: white on the dark row (the product decision of
+ * 2026-09-25), and dark on the focused white row where white would vanish.
+ */
+internal fun trailingIconColor(focused: Boolean): Color =
+    if (focused) HomeSpec.InverseOnSurface else HomeSpec.White
+
+/**
+ * An action row's trailing chevron. Unlike the language check, this one matches its label:
+ * on-surface at rest, the dark inverse once the row turns white.
+ */
+internal fun paneChevronColor(focused: Boolean): Color =
+    if (focused) HomeSpec.InverseOnSurface else HomeSpec.OnSurface
+
+/**
  * An actionable row in the right pane: a surface-container panel by default, white with a
  * dark label while focused. Display-only rows never call this — they stay unfilled.
  */
@@ -30,30 +44,5 @@ internal fun actionableRowColors(highlighted: Boolean): RowColors = if (highligh
     RowColors(HomeSpec.SurfaceContainer, HomeSpec.OnSurface)
 }
 
-/** The log-out dialog's palette, straight from the frames (its own tokens, not HomeSpec's). */
-internal object SettingsSpec {
-    /** The panel: the design's material-theme/sys/dark/inverse-surface. */
-    val DialogPanel = Color(0xFFE3E2E6)
-    /** Title on the panel: material-theme/sys/dark/surface. */
-    val DialogTitle = Color(0xFF121316)
-    /** Body copy: material-theme/sys/dark/surface-variant. */
-    val DialogBody = Color(0xFF43474E)
-    /** The cancel button's hairline: material-theme/sys/dark/outline. */
-    val DialogOutline = Color(0xFF8E9099)
-    /** The 60% scrim over the page. */
-    val Scrim = Color(0x991A1C1E)
-}
 
-/** Cancel is a ghost at rest and turns white (with the dark label) once focused. */
-internal fun dialogCancelColors(focused: Boolean): RowColors = if (focused) {
-    RowColors(HomeSpec.White, HomeSpec.InverseOnSurface)
-} else {
-    RowColors(Color(0x1A000000), SettingsSpec.DialogBody)
-}
 
-/** Confirm is the dark primary; focused it flips to white like the other rows do. */
-internal fun dialogConfirmColors(focused: Boolean): RowColors = if (focused) {
-    RowColors(HomeSpec.White, HomeSpec.InverseOnSurface)
-} else {
-    RowColors(HomeSpec.InverseOnSurface, HomeSpec.OnSurface)
-}

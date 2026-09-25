@@ -7,7 +7,7 @@ package tv.telegram.ui
 
 import android.app.Activity
 import android.os.Bundle
-import androidx.activity.ComponentActivity
+import androidx.appcompat.app.AppCompatActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
@@ -96,7 +96,9 @@ import androidx.tv.material3.CardDefaults
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 
-class MainActivity : ComponentActivity() {
+// AppCompatActivity, not ComponentActivity: the per-app language API
+// (AppCompatDelegate.setApplicationLocales) only applies through AppCompat activities.
+class MainActivity : AppCompatActivity() {
 
     private val viewModel: MainViewModel by viewModels()
 
@@ -324,7 +326,13 @@ private fun AppNavHost(viewModel: MainViewModel, backController: BackController)
 
             composable(Routes.QR_LOGIN) { QrCodeScreen(viewModel = viewModel) }
 
-            composable(Routes.HOME_SCREEN) {
+            composable(
+                route = Routes.HOME_SCREEN,
+                enterTransition = { EnterTransition.None },
+                exitTransition = { ExitTransition.None },
+                popEnterTransition = { EnterTransition.None },
+                popExitTransition = { ExitTransition.None },
+            ) {
                 HomeScreen(
                     state = viewModel,
                     onOpenPlayer = { index -> navController.navigate(Routes.player(index)) },
@@ -336,11 +344,11 @@ private fun AppNavHost(viewModel: MainViewModel, backController: BackController)
 
             navigation(startDestination = Routes.HOME_CHATS, route = Routes.HOME) {
                 composable(
+                enterTransition = { EnterTransition.None },
+                exitTransition = { ExitTransition.None },
+                popEnterTransition = { EnterTransition.None },
+                popExitTransition = { ExitTransition.None },
                     route = Routes.HOME_SEARCH,
-                    enterTransition = { slideInHorizontally(tween(300)) { it } },
-                    exitTransition = { slideOutHorizontally(tween(300)) { -it / 3 } },
-                    popEnterTransition = { slideInHorizontally(tween(300)) { -it / 3 } },
-                    popExitTransition = { slideOutHorizontally(tween(300)) { it } },
                 ) {
                     SearchScreen(
                         viewModel = viewModel,
@@ -369,11 +377,11 @@ private fun AppNavHost(viewModel: MainViewModel, backController: BackController)
                     )
                 }
                 composable(
+                enterTransition = { EnterTransition.None },
+                exitTransition = { ExitTransition.None },
+                popEnterTransition = { EnterTransition.None },
+                popExitTransition = { ExitTransition.None },
                     route = Routes.HOME_SETTINGS,
-                    enterTransition = { slideInHorizontally(tween(300)) { it } },
-                    exitTransition = { slideOutHorizontally(tween(300)) { -it / 3 } },
-                    popEnterTransition = { slideInHorizontally(tween(300)) { -it / 3 } },
-                    popExitTransition = { slideOutHorizontally(tween(300)) { it } },
                 ) {
                     SettingsScreen(state = viewModel, contentEntryFocus = settingsContentFocus)
                 }

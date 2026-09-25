@@ -44,7 +44,10 @@ object SettingsRepository {
 }
 
 fun Language.toBcp47(): String = when (this) {
+    // These MUST match the resource folders (values-zh-rCN / values-zh-rTW). The script
+    // subtags "zh-Hans"/"zh-Hant" resolve to nothing here and silently fall back to
+    // values/, which is why choosing Chinese used to leave the UI in English.
     Language.English -> "en"
-    Language.SimplifiedChinese -> "zh-Hans"
-    Language.TraditionalChinese -> "zh-Hant"
+    Language.SimplifiedChinese -> "zh-CN"
+    Language.TraditionalChinese -> "zh-TW"
 }
