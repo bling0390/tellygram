@@ -62,7 +62,8 @@ class ChatMenuRulesTest {
         assertTrue(chatDeleteRevokes(ChatType.Group, isOwner = true, radioChecked = false))
         // Leaving never wipes anything for others.
         assertFalse(chatDeleteRevokes(ChatType.Group, isOwner = false, radioChecked = true))
-        assertFalse(chatDeleteRevokes(ChatType.Channel, isOwner = true, radioChecked = true))
+        // A channel owner's "Leave" deletes the channel, so it does revoke (product, 2026-09-27).
+        assertTrue(chatDeleteRevokes(ChatType.Channel, isOwner = true, radioChecked = true))
     }
 
     @Test
