@@ -108,6 +108,7 @@ import androidx.compose.material.icons.automirrored.outlined.ArrowBackIos
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.ui.platform.LocalDensity
 import kotlinx.coroutines.Job
+import tv.telegram.ui.components.ConfirmDialog
 
 /**
  * HomeScreen — Figma node 1243:1724 ("HomeScreen").
@@ -220,8 +221,41 @@ internal fun HomeScreen(
     var menuChat by remember { mutableStateOf<ChatItem?>(null) }
     var hadMenu by remember { mutableStateOf(false) }
     val menuReturnFocus = remember { FocusRequester() }
+    // Resolved on the long press (one cached call for groups; false for private/channels).
+    var menuIsOwner by remember { mutableStateOf(false) }
+    // The confirm dialog's target and its private-chat toggle, unchecked by default.
+    var deleteTarget by remember { mutableStateOf<ChatItem?>(null) }
+    var deleteRadioChecked by remember { mutableStateOf(false) }
 
     // Closing the popover hands focus back to the row it came from.
+    deleteTarget?.let { chat ->
+        val case = chatDeleteCase(chat.type, menuIsOwner)
+        ConfirmDialog(
+            title = stringResource(chatDeleteTitleRes(case)),
+            // Only the owner's group body names the group; extra args are ignored elsewhere.
+            text = stringResource(chatDeleteBodyRes(case), chat.title),
+            confirmLabel = stringResource(chatDeleteConfirmRes(case)),
+            cancelLabel = stringResource(R.string.chat_delete_cancel),
+            radioLabel = if (chatDeleteHasRadio(chat.type, menuIsOwner)) {
+                // The counterpart's name is the private chat's title.
+                stringResource(R.string.chat_delete_radio, chat.title)
+            } else {
+                null
+            },
+            radioChecked = deleteRadioChecked,
+            onRadioClick = { deleteRadioChecked = !deleteRadioChecked },
+            onConfirm = {
+                state.deleteChat(
+                    chat,
+                    chatDeleteRevokes(chat.type, menuIsOwner, deleteRadioChecked),
+                )
+                deleteTarget = null
+            },
+            onDismiss = { deleteTarget = null },
+            tagPrefix = "chat-delete",
+        )
+    }
+
     LaunchedEffect(menuChat) {
         if (menuChat != null) {
             hadMenu = true
@@ -347,8 +381,14 @@ internal fun HomeScreen(
                     focus = focus,
                     onRegion = { region = it },
                     menuChat = menuChat,
+                    menuIsOwner = menuIsOwner,
                     menuReturnFocus = menuReturnFocus,
-                    onMenuOpen = { menuChat = it },
+                    onMenuOpen = { chat ->
+                        scope.launch {
+                            menuIsOwner = state.isGroupOwner(chat.id)
+                            menuChat = chat
+                        }
+                    },
                     onMenuClose = { menuChat = null },
                     onMenuAction = { action ->
                         menuChat?.let { chat ->
@@ -356,8 +396,11 @@ internal fun HomeScreen(
                                 ChatMenuAction.Pin -> state.toggleChatPin(chat.id, showingArchived, !chat.isPinned)
                                 ChatMenuAction.Mute -> state.toggleChatMute(chat.id, !chat.isMuted)
                                 ChatMenuAction.Archive -> state.toggleChatArchive(chat.id, !showingArchived)
-                                // Delete waits for its own confirmation design (product, 2026-09-27).
-                                ChatMenuAction.Delete -> Unit
+                                // Destructive: never immediate — open the confirm dialog first.
+                                ChatMenuAction.Delete -> {
+                                    deleteRadioChecked = false
+                                    deleteTarget = chat
+                                }
                             }
                         }
                         menuChat = null
@@ -429,6 +472,7 @@ private fun ChatList(
     focus: HomeFocus,
     onRegion: (HomeRegion) -> Unit,
     menuChat: ChatItem?,
+    menuIsOwner: Boolean,
     menuReturnFocus: FocusRequester,
     onMenuOpen: (ChatItem) -> Unit,
     onMenuClose: () -> Unit,
@@ -484,6 +528,7 @@ private fun ChatList(
         ChatContextMenu(
             chat = chat,
             archived = showingArchived,
+            isOwner = menuIsOwner,
             top = top,
             onSelect = onMenuAction,
             onDismiss = onMenuClose,

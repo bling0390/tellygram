@@ -33,23 +33,31 @@ class ChatContextMenuTest {
     private var picked: ChatMenuAction? = null
     private var dismissed = false
 
-    private fun chat(pinned: Boolean = false, muted: Boolean = false) = ChatItem(
+    private fun chat(
+        pinned: Boolean = false,
+        muted: Boolean = false,
+        type: ChatType = ChatType.Private,
+    ) = ChatItem(
         id = 1,
         title = "Alpha",
-        type = ChatType.Private,
+        type = type,
         unreadCount = 0,
         isMuted = muted,
         isPinned = pinned,
         lastMessageText = null,
     )
 
-    private fun show(isChat: ChatItem = chat(), archived: Boolean = false) {
+    private var owner = false
+
+    private fun show(isChat: ChatItem = chat(), archived: Boolean = false, owner: Boolean = false) {
+        this.owner = owner
         picked = null
         dismissed = false
         rule.setContent {
             ChatContextMenu(
                 chat = isChat,
                 archived = archived,
+                isOwner = owner,
                 top = 0.dp,
                 onSelect = { picked = it },
                 onDismiss = { dismissed = true },
@@ -106,5 +114,31 @@ class ChatContextMenuTest {
             rule.waitForIdle()
             last.assertIsFocused()
         }
+    }
+
+    @Test
+    fun `the destructive row says Delete for a private chat`() {
+        // Private chats are deleted, not left.
+        show(chat(type = ChatType.Private))
+        rule.onNodeWithText("Delete").assertExists()
+    }
+
+    @Test
+    fun `the destructive row says Delete and leave for a group I own`() {
+        show(chat(type = ChatType.Group), owner = true)
+        rule.onNodeWithText("Delete and leave").assertExists()
+    }
+
+    @Test
+    fun `the destructive row says Leave for a group I am in`() {
+        show(chat(type = ChatType.Group), owner = false)
+        rule.onNodeWithText("Leave").assertExists()
+    }
+
+    @Test
+    fun `the destructive row says Leave for a channel even when I own it`() {
+        // Product: channels never distinguish the owner; only the action differs.
+        show(chat(type = ChatType.Channel), owner = true)
+        rule.onNodeWithText("Leave").assertExists()
     }
 }

@@ -36,4 +36,8 @@ internal interface HomeState {
     fun toggleChatPin(chatId: Long, inArchive: Boolean, pinned: Boolean)
     fun toggleChatMute(chatId: Long, muted: Boolean)
     fun toggleChatArchive(chatId: Long, archived: Boolean)
+    /** The popover's fourth row: revoke comes from chatDeleteRevokes(). */
+    fun deleteChat(chat: ChatItem, revoke: Boolean)
+    /** Resolved on demand for groups; cached, so a long press costs one call at most. */
+    suspend fun isGroupOwner(chatId: Long): Boolean
 }

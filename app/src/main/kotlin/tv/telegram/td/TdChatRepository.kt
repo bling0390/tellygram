@@ -382,13 +382,20 @@ class TdChatRepository(
      * are left. Both fire live-update events, but we reload explicitly for
      * determinism.
      */
-    suspend fun deleteChat(chat: ChatItem) {
-        when (chat.type) {
-            ChatType.Private -> client.execute(
-                TdApi.DeleteChatHistory(chat.id, true, false),
-                timeoutMs = 5_000L,
-            )
-            else -> client.execute(TdApi.LeaveChat(chat.id), timeoutMs = 5_000L)
+    /**
+     * The destructive action behind the menu's fourth row. `revoke` comes from the rules:
+     * the private toggle decides it, a group owner always wipes the history for everyone,
+     * and a channel owner's "Leave" deletes the channel (product, 2026-09-27).
+     */
+    suspend fun deleteChat(chat: ChatItem, revoke: Boolean) {
+        when {
+            chat.type == ChatType.Private ->
+                client.execute(TdApi.DeleteChatHistory(chat.id, true, revoke), timeoutMs = 5_000L)
+            revoke ->
+                // Owner of a group or channel: wipe for everyone and drop it from our list.
+                client.execute(TdApi.DeleteChatHistory(chat.id, true, true), timeoutMs = 5_000L)
+            else ->
+                client.execute(TdApi.LeaveChat(chat.id), timeoutMs = 5_000L)
         }
         refreshLists()
     }

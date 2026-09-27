@@ -63,6 +63,8 @@ import androidx.compose.ui.input.key.type
 internal fun ChatContextMenu(
     chat: ChatItem,
     archived: Boolean,
+    /** Resolved by the screen before opening: the destructive row is worded per owner. */
+    isOwner: Boolean,
     top: Dp,
     onSelect: (ChatMenuAction) -> Unit,
     onDismiss: () -> Unit,
@@ -102,9 +104,13 @@ internal fun ChatContextMenu(
     ) {
         ChatMenuAction.entries.forEachIndexed { index, action ->
             ChatMenuItemRow(
+                icon = chatMenuIcon(action, chat.isMuted, archived),
+                labelRes = if (action == ChatMenuAction.Delete) {
+                    chatMenuDestructiveLabelRes(chatDeleteCase(chat.type, isOwner))
+                } else {
+                    chatMenuLabelRes(action, chat.isPinned, chat.isMuted, archived)
+                },
                 action = action,
-                chat = chat,
-                archived = archived,
                 isFirst = index == 0,
                 isLast = index == ChatMenuAction.entries.lastIndex,
                 firstFocus = firstFocus,
@@ -116,16 +122,16 @@ internal fun ChatContextMenu(
 
 @Composable
 private fun ChatMenuItemRow(
+    labelRes: Int,
+    icon: ImageVector,
     action: ChatMenuAction,
-    chat: ChatItem,
-    archived: Boolean,
     isFirst: Boolean,
     isLast: Boolean,
     firstFocus: FocusRequester,
     onSelect: (ChatMenuAction) -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
-    val label = stringResource(chatMenuLabelRes(action, chat.isPinned, chat.isMuted, archived))
+    val label = stringResource(labelRes)
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -160,7 +166,7 @@ private fun ChatMenuItemRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Spacer(Modifier.width(12.dp))
-        Icon16(chatMenuIcon(action, chat.isMuted, archived), focused)
+        Icon16(icon, focused)
         Spacer(Modifier.width(2.dp))
         Text(
             text = label,

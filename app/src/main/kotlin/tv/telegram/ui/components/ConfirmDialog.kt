@@ -1,4 +1,7 @@
-@file:OptIn(androidx.tv.material3.ExperimentalTvMaterial3Api::class)
+@file:OptIn(
+    androidx.tv.material3.ExperimentalTvMaterial3Api::class,
+    androidx.compose.ui.ExperimentalComposeUiApi::class,
+)
 
 package tv.telegram.ui.components
 
@@ -40,6 +43,18 @@ import androidx.compose.ui.platform.testTag
 import tv.telegram.ui.home.HomeSpec
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.focusable
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.outlined.RadioButtonUnchecked
+import androidx.tv.material3.Icon
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.type
 
 /**
  * JetStream confirmation dialog — Figma 1114:8669 ("Delete account?").
@@ -84,9 +99,17 @@ fun ConfirmDialog(
      * tags — the UI tests locate the dialog through them.
      */
     tagPrefix: String? = null,
+    /**
+     * Optional toggle above the buttons. The private delete dialog uses it for "also delete
+     * for the other side"; the default is unchecked (product, 2026-09-27).
+     */
+    radioLabel: String? = null,
+    radioChecked: Boolean = false,
+    onRadioClick: (() -> Unit)? = null,
 ) {
     val cancelFocus = remember { FocusRequester() }
     val confirmFocus = remember { FocusRequester() }
+    val radioFocus = remember { FocusRequester() }
 
     // No focus dance: the design puts the safe button FIRST in the row, so the dialog
     // window focuses it on open by itself. The old loop re-requested focus for ~300ms,
@@ -126,6 +149,19 @@ fun ConfirmDialog(
                 color = ConfirmDialogSpec.Body,
                 style = MaterialTheme.typography.bodyMedium,
             )
+            if (radioLabel != null) {
+                Spacer(Modifier.height(2.dp))
+                ChatRadioRow(
+                    label = radioLabel,
+                    checked = radioChecked,
+                    onClick = { onRadioClick?.invoke() },
+                    focusRequester = radioFocus,
+                    // Sealed to the dialog: Down reaches Cancel, Up has nowhere to go.
+                    up = FocusRequester.Cancel,
+                    down = cancelFocus,
+                    tagPrefix = tagPrefix,
+                )
+            }
             if (confirmLabel != null || cancelLabel != null) {
                 Spacer(Modifier.height(12.dp))
                 // Per the frames: the safe button hugs the LEFT and the action fills the
@@ -143,7 +179,13 @@ fun ConfirmDialog(
                             primary = false,
                             onClick = onDismiss,
                             focusRequester = cancelFocus,
-                            modifier = Modifier.width(IntrinsicSize.Max),
+                            modifier = Modifier
+                                .width(IntrinsicSize.Max)
+                                // Up reaches the toggle when there is one; otherwise it stops
+                                // instead of wandering out of the dialog.
+                                .focusProperties {
+                                    up = if (radioLabel != null) radioFocus else FocusRequester.Cancel
+                                },
                             tagPrefix = tagPrefix,
                         )
                     }
@@ -157,7 +199,11 @@ fun ConfirmDialog(
                                 primary = true,
                                 onClick = { onConfirm?.invoke() },
                                 focusRequester = confirmFocus,
-                                modifier = Modifier.fillMaxWidth(),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .focusProperties {
+                                        up = if (radioLabel != null) radioFocus else FocusRequester.Cancel
+                                    },
                                 tagPrefix = tagPrefix,
                             )
                         }
@@ -242,4 +288,62 @@ internal fun confirmDialogButtonColors(primary: Boolean, focused: Boolean): RowC
     focused -> RowColors(HomeSpec.White, HomeSpec.InverseOnSurface)
     primary -> RowColors(HomeSpec.InverseOnSurface, HomeSpec.OnSurface)
     else -> RowColors(Color(0x1A000000), ConfirmDialogSpec.Body)
+}
+
+/** The dialog's optional toggle: a 16dp glyph, the label, and nothing that escapes. */
+@Composable
+private fun ChatRadioRow(
+    label: String,
+    checked: Boolean,
+    onClick: () -> Unit,
+    focusRequester: FocusRequester,
+    up: FocusRequester,
+    down: FocusRequester,
+    tagPrefix: String?,
+) {
+    var focused by remember { mutableStateOf(false) }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(40.dp)
+            .let { if (tagPrefix != null) it.testTag("$tagPrefix-radio") else it }
+            .background(
+                if (focused) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent,
+                RoundedCornerShape(8.dp),
+            )
+            .focusProperties {
+                left = FocusRequester.Cancel
+                right = FocusRequester.Cancel
+                this.up = up
+                this.down = down
+            }
+            .onFocusChanged { focused = it.isFocused }
+            .focusRequester(focusRequester)
+            .focusable()
+            .onKeyEvent { event: androidx.compose.ui.input.key.KeyEvent ->
+                if (event.type == KeyEventType.KeyUp &&
+                    (event.key == Key.DirectionCenter || event.key == Key.Enter)
+                ) {
+                    onClick()
+                    true
+                } else {
+                    false
+                }
+            },
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = if (checked) Icons.Filled.CheckCircle else Icons.Outlined.RadioButtonUnchecked,
+            contentDescription = null,
+            tint = ConfirmDialogSpec.Body,
+            modifier = Modifier.size(16.dp),
+        )
+        Spacer(Modifier.width(8.dp))
+        Text(
+            text = label,
+            color = ConfirmDialogSpec.Body,
+            style = MaterialTheme.typography.bodyMedium,
+            maxLines = 1,
+        )
+    }
 }

@@ -83,9 +83,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app), HomeState, Settin
         viewModelScope.launch { chatRepo.setChatArchived(chatId, archived) }
     }
 
-    fun deleteChat(chat: ChatItem) {
+    override suspend fun isGroupOwner(chatId: Long): Boolean =
+        chatRepo.isGroupOwner(chatId, currentUser.value?.id ?: 0L)
+
+    override fun deleteChat(chat: ChatItem, revoke: Boolean) {
         viewModelScope.launch {
-            chatRepo.deleteChat(chat)
+            chatRepo.deleteChat(chat, revoke)
             // If the deleted chat was selected, clear the media pane.
             if (_sidebarSelectedChatId.value == chat.id) {
                 selectSidebarChat(null)
@@ -219,6 +222,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app), HomeState, Settin
     }
 
     fun realSignOut() {
+        // A different account must not inherit this one's ownership answers.
+        chatRepo.clearOwnerCache()
         closeChat()
         _sidebarSelectedChatId.value = null
         _currentUser.value = null

@@ -486,7 +486,8 @@ private fun ChatSidebar(
             action = action,
             onConfirm = {
                 when (action) {
-                    is ChatConfirmAction.Delete -> viewModel.deleteChat(action.chat)
+                    is ChatConfirmAction.Delete -> // Legacy dialog: keep the old behaviour (no revoke) — the popover owns the new copy.
+                    viewModel.deleteChat(action.chat, revoke = false)
                     is ChatConfirmAction.Archive ->
                         viewModel.toggleChatArchive(action.chat.id, archived = action.archived)
                 }

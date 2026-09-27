@@ -85,6 +85,14 @@ private class FakeHomeState : HomeState {
 
     override fun toggleChatMute(chatId: Long, muted: Boolean) { mutedTo = chatId to muted }
     override fun toggleChatArchive(chatId: Long, archived: Boolean) { archivedTo = chatId to archived }
+
+    /** Last destructive action the UI asked for, with the revoke the rules produced. */
+    var deletedWithRevoke: Pair<Long, Boolean>? = null
+    /** What isGroupOwner should answer (the real one asks TDLib). */
+    var ownerAnswer = false
+
+    override fun deleteChat(chat: ChatItem, revoke: Boolean) { deletedWithRevoke = chat.id to revoke }
+    override suspend fun isGroupOwner(chatId: Long): Boolean = ownerAnswer
     override fun loadMoreMedia() { loadedMore = true }
     override fun setMediaFilter(filter: MediaFilter) { filterSet = filter }
 

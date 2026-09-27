@@ -114,4 +114,5 @@
     <string name="chat_delete_confirm_group_member">退出群组</string>
     <string name="chat_delete_confirm_channel">退出频道</string>
     <string name="chat_delete_radio">同时为 %1$s 删除</string>
+    <string name="chat_delete_cancel">取消</string>
 </resources>
