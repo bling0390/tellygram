@@ -393,6 +393,32 @@ class TdChatRepository(
         refreshLists()
     }
 
+    /**
+     * The creator's user id from a getChatAdministrators response, or null when the list
+     * has no creator (or the sender is not a plain user). Pure, so it is unit tested.
+     */
+    internal fun creatorIdOf(admins: List<TdApi.ChatAdministrator>): Long? =
+        admins.firstOrNull { it.isOwner }?.userId
+
+    // Groups only, and cached: the popover's wording depends on it, but the answer for a
+    // chat does not change while the app runs.
+    private val ownerCache = mutableMapOf<Long, Boolean>()
+
+    /** Whether the signed-in user created this group (product decision, 2026-09-27). */
+    suspend fun isGroupOwner(chatId: Long, myUserId: Long): Boolean {
+        ownerCache[chatId]?.let { return it }
+        val admins = client.execute(TdApi.GetChatAdministrators(chatId), timeoutMs = 5_000L)
+            .valueOrNull<TdApi.ChatAdministrators>()
+        val result = creatorIdOf(admins?.administrators?.toList().orEmpty()) == myUserId
+        ownerCache[chatId] = result
+        return result
+    }
+
+    /** Called on sign-out so a different account cannot inherit stale answers. */
+    fun clearOwnerCache() {
+        ownerCache.clear()
+    }
+
     private suspend fun refreshLists() {
         loadAllChats(force = true)
         loadArchiveChats()

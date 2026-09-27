@@ -109,4 +109,19 @@
     <string name="settings_help_contact_email">feedback@tellygram.app</string>
     <string name="home_archived_chats">Archived Chats</string>
     <string name="home_archived_back">Back</string>
+    <string name="chat_menu_leave">Leave</string>
+    <string name="chat_menu_delete_and_leave">Delete and leave</string>
+    <string name="chat_delete_title_private">Delete the chat?</string>
+    <string name="chat_delete_title_group_owner">Delete and leave group?</string>
+    <string name="chat_delete_title_group_member">Leave group?</string>
+    <string name="chat_delete_title_channel">Leave channel?</string>
+    <string name="chat_delete_body_private">Do you wish to continue?</string>
+    <string name="chat_delete_body_group_owner">Do you wish to delete all message history and leave \"%1$s\"?\n\nThis action cannot be undone.</string>
+    <string name="chat_delete_body_group_member">Do you wish to leave this group?\n\nThis action cannot be undone.</string>
+    <string name="chat_delete_body_channel">Do you wish to leave this channel?\n\nThis action cannot be undone.</string>
+    <string name="chat_delete_confirm_private">Delete</string>
+    <string name="chat_delete_confirm_group_owner">Delete and leave group</string>
+    <string name="chat_delete_confirm_group_member">Leave group</string>
+    <string name="chat_delete_confirm_channel">Leave channel</string>
+    <string name="chat_delete_radio">Delete for Me and %1$s</string>
 </resources>

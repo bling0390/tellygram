@@ -31,4 +31,9 @@ internal interface HomeState {
     /** Remembered by the player / photo preview when they close. */
     fun setPlayerReturnFocus(messageId: Long)
     fun consumePlayerReturnFocus()
+
+    // The long-press popover's actions (delete waits for its own design).
+    fun toggleChatPin(chatId: Long, inArchive: Boolean, pinned: Boolean)
+    fun toggleChatMute(chatId: Long, muted: Boolean)
+    fun toggleChatArchive(chatId: Long, archived: Boolean)
 }

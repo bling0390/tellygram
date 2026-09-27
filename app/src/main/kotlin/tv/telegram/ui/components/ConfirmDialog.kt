@@ -38,7 +38,6 @@ import androidx.tv.material3.Text
 import tv.telegram.ui.focus.dpadNavigationSounds
 import androidx.compose.ui.platform.testTag
 import tv.telegram.ui.home.HomeSpec
-import tv.telegram.ui.settings.RowColors
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.IntrinsicSize
 

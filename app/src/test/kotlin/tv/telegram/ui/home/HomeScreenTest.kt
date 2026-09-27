@@ -74,6 +74,17 @@ private class FakeHomeState : HomeState {
 
     override fun ensureMediaFile(fileId: Int, priority: Int) = Unit
     override fun openChat(chatId: Long) { openedChatId = chatId }
+
+    var pinnedTo: Pair<Long, Boolean>? = null
+    var mutedTo: Pair<Long, Boolean>? = null
+    var archivedTo: Pair<Long, Boolean>? = null
+
+    override fun toggleChatPin(chatId: Long, inArchive: Boolean, pinned: Boolean) {
+        pinnedTo = chatId to pinned
+    }
+
+    override fun toggleChatMute(chatId: Long, muted: Boolean) { mutedTo = chatId to muted }
+    override fun toggleChatArchive(chatId: Long, archived: Boolean) { archivedTo = chatId to archived }
     override fun loadMoreMedia() { loadedMore = true }
     override fun setMediaFilter(filter: MediaFilter) { filterSet = filter }
 
@@ -150,6 +161,9 @@ class HomeScreenTest {
     fun `right from the chat list enters the media grid`() {
         show()
         rule.onNodeWithTag("home-chat-row-1").requestFocus()
+        rule.waitForIdle()
+        // Right only exists once a chat is selected (the pane then has cells).
+        rule.onNodeWithTag("home-chat-row-1").performKeyInput { pressKey(Key.DirectionCenter) }
         rule.waitForIdle()
         rule.onNodeWithTag("home-chat-row-1").performKeyInput { pressKey(Key.DirectionRight) }
         rule.waitForIdle()
@@ -378,5 +392,39 @@ class HomeScreenTest {
         rule.onNodeWithTag("home-chat-row-1").performKeyInput { pressKey(Key.DirectionUp) }
         rule.waitForIdle()
         rule.onNodeWithTag("home-archived-row").assertIsFocused()
+    }
+
+    @Test
+    fun `right from the chat list is cancelled until a chat is selected`() {
+        // Nothing is loaded on the right, so there is no cell to move into: Right must stay
+        // put instead of aiming at a requester that is not attached.
+        show()
+        rule.onNodeWithTag("home-chat-row-1").requestFocus()
+        rule.waitForIdle()
+        rule.onNodeWithTag("home-chat-row-1").performKeyInput { pressKey(Key.DirectionRight) }
+        rule.waitForIdle()
+        rule.onNodeWithTag("home-chat-row-1").assertIsFocused()
+    }
+
+    @Test
+    fun `reproduces the card-to-list-then-right crash`() {
+        // Reported on device: focus a media card, come back to the chat list, press Down
+        // then Right -> crash. Walk exactly that path; the harness will show the exception.
+        show()
+        rule.onNodeWithTag("home-chat-row-1").requestFocus()
+        rule.waitForIdle()
+        rule.onNodeWithTag("home-chat-row-1").performKeyInput { pressKey(Key.DirectionCenter) }
+        rule.waitForIdle()
+        rule.onNodeWithTag("home-chat-row-1").performKeyInput { pressKey(Key.DirectionRight) }
+        rule.waitForIdle()
+        rule.onNodeWithTag("home-media-cell-0").assertIsFocused()
+
+        // Back to the chat list (the BackController path), then Down + Right again.
+        rule.runOnIdle { back.dispatch() }
+        rule.waitForIdle()
+        rule.onNodeWithTag("home-chat-row-1").performKeyInput { pressKey(Key.DirectionDown) }
+        rule.waitForIdle()
+        rule.onNodeWithTag("home-chat-row-2").performKeyInput { pressKey(Key.DirectionRight) }
+        rule.waitForIdle()
     }
 }

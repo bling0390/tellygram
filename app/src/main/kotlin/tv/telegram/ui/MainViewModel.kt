@@ -71,15 +71,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app), HomeState, Settin
         chatRepo.setViewingArchive(value)
     }
 
-    fun toggleChatMute(chatId: Long, muted: Boolean) {
+    override fun toggleChatMute(chatId: Long, muted: Boolean) {
         viewModelScope.launch { chatRepo.setChatMuted(chatId, muted) }
     }
 
-    fun toggleChatPin(chatId: Long, inArchive: Boolean, pinned: Boolean) {
+    override fun toggleChatPin(chatId: Long, inArchive: Boolean, pinned: Boolean) {
         viewModelScope.launch { chatRepo.setChatPinned(chatId, inArchive, pinned) }
     }
 
-    fun toggleChatArchive(chatId: Long, archived: Boolean) {
+    override fun toggleChatArchive(chatId: Long, archived: Boolean) {
         viewModelScope.launch { chatRepo.setChatArchived(chatId, archived) }
     }
 

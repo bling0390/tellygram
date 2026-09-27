@@ -99,4 +99,19 @@
     <string name="settings_help_contact_email">feedback@tellygram.app</string>
     <string name="home_archived_chats">已归档会话</string>
     <string name="home_archived_back">返回</string>
+    <string name="chat_menu_leave">退出</string>
+    <string name="chat_menu_delete_and_leave">删除并退出</string>
+    <string name="chat_delete_title_private">删除聊天？</string>
+    <string name="chat_delete_title_group_owner">删除并退出群组？</string>
+    <string name="chat_delete_title_group_member">退出群组？</string>
+    <string name="chat_delete_title_channel">退出频道？</string>
+    <string name="chat_delete_body_private">你确定要继续吗？</string>
+    <string name="chat_delete_body_group_owner">你确定要删除全部聊天记录并退出“%1$s”吗？\n\n此操作无法撤销。</string>
+    <string name="chat_delete_body_group_member">你确定要退出该群组吗？\n\n此操作无法撤销。</string>
+    <string name="chat_delete_body_channel">你确定要退出该频道吗？\n\n此操作无法撤销。</string>
+    <string name="chat_delete_confirm_private">删除</string>
+    <string name="chat_delete_confirm_group_owner">删除并退出群组</string>
+    <string name="chat_delete_confirm_group_member">退出群组</string>
+    <string name="chat_delete_confirm_channel">退出频道</string>
+    <string name="chat_delete_radio">同时为 %1$s 删除</string>
 </resources>

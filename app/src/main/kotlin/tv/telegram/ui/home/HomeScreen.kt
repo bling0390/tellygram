@@ -105,6 +105,9 @@ import tv.telegram.ui.components.Avatar
 import androidx.compose.material.icons.outlined.Done
 import androidx.compose.ui.res.stringResource
 import androidx.compose.material.icons.automirrored.outlined.ArrowBackIos
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.ui.platform.LocalDensity
+import kotlinx.coroutines.Job
 
 /**
  * HomeScreen — Figma node 1243:1724 ("HomeScreen").
@@ -179,6 +182,13 @@ internal class HomeFocus(
     val selectedChip: FocusRequester,
     val firstGrid: FocusRequester,
     val rememberedGrid: FocusRequester,
+    /**
+     * A requester on the grid's own container. Unlike a cell's, this node exists whenever the
+     * pane does — so directional moves can target it and let it hand focus on, instead of
+     * aiming at a recycled cell's requester (which throws "FocusRequester is not
+     * initialized" the moment its cell scrolls out of view).
+     */
+    val gridContainer: FocusRequester,
     /** The card a closed viewer asked us to focus again. */
     val returnGrid: FocusRequester = FocusRequester(),
 ) {
@@ -205,6 +215,22 @@ internal fun HomeScreen(
     val archivedChats by state.archiveChats.collectAsStateWithLifecycle()
     // Which half of the list the Archived Chats / Back row is currently showing.
     var showingArchived by remember { mutableStateOf(false) }
+
+    // Long-press popover: which chat it belongs to, and where focus goes when it closes.
+    var menuChat by remember { mutableStateOf<ChatItem?>(null) }
+    var hadMenu by remember { mutableStateOf(false) }
+    val menuReturnFocus = remember { FocusRequester() }
+
+    // Closing the popover hands focus back to the row it came from.
+    LaunchedEffect(menuChat) {
+        if (menuChat != null) {
+            hadMenu = true
+        } else if (hadMenu) {
+            hadMenu = false
+            withFrameNanos { }
+            runCatching { menuReturnFocus.requestFocus() }
+        }
+    }
     val media by state.mediaItems.collectAsStateWithLifecycle()
 
     var selectedChatId by rememberSaveable { mutableStateOf<Long?>(null) }
@@ -217,6 +243,7 @@ internal fun HomeScreen(
     // the grid or chips returns to, which is a different thing entirely.
     val entryFocus = remember(contentEntryFocus) { contentEntryFocus ?: FocusRequester() }
     val selectedChatFocus = remember { FocusRequester() }
+    val gridContainerFocus = remember { FocusRequester() }
     val selectedChipFocus = remember { FocusRequester() }
     val firstGridFocus = remember { FocusRequester() }
     val rememberedGridFocus = remember { FocusRequester() }
@@ -240,10 +267,12 @@ internal fun HomeScreen(
             selectedChip = selectedChipFocus,
             firstGrid = firstGridFocus,
             rememberedGrid = rememberedGridFocus,
+            gridContainer = gridContainerFocus,
         )
     }
     // Re-pointed every recomposition; focusProperties lambdas read it live.
-    focus.gridEntry = if (rememberedGridIndex == 0) firstGridFocus else rememberedGridFocus
+    // Read live from focusProperties; the container is always attached.
+    focus.gridEntry = gridContainerFocus
 
     // A requester whose cell is scrolled away is not attached, and requesting one
     // throws; scrolling first also makes the cell exist. Every grid jump goes here.
@@ -309,11 +338,30 @@ internal fun HomeScreen(
 
                     showingArchived = showingArchived,
         onToggleArchived = { showingArchived = !showingArchived },
+        // With nothing loaded on the right there is no cell to move into: the row's Right
+        // is cancelled instead of aiming at a requester that is not attached.
+        canEnterGrid = selectedChatId != null && media.isNotEmpty(),
                     chats = chats,
                     selectedChatId = selectedChatId,
                     state = state,
                     focus = focus,
                     onRegion = { region = it },
+                    menuChat = menuChat,
+                    menuReturnFocus = menuReturnFocus,
+                    onMenuOpen = { menuChat = it },
+                    onMenuClose = { menuChat = null },
+                    onMenuAction = { action ->
+                        menuChat?.let { chat ->
+                            when (action) {
+                                ChatMenuAction.Pin -> state.toggleChatPin(chat.id, showingArchived, !chat.isPinned)
+                                ChatMenuAction.Mute -> state.toggleChatMute(chat.id, !chat.isMuted)
+                                ChatMenuAction.Archive -> state.toggleChatArchive(chat.id, !showingArchived)
+                                // Delete waits for its own confirmation design (product, 2026-09-27).
+                                ChatMenuAction.Delete -> Unit
+                            }
+                        }
+                        menuChat = null
+                    },
                     onSelect = { chat ->
                         selectedChatId = chat.id
                         // A chat opens on the unfiltered first page, so the chip state and the
@@ -357,6 +405,7 @@ internal fun HomeScreen(
                         },
                         onOpen = onOpenPlayer,
                         onPreview = onOpenPhoto,
+                        onEnterGrid = { jumpToGrid(rememberedGridIndex) },
                     )
                 }
             }
@@ -374,10 +423,16 @@ private fun ChatList(
     archivedChats: List<ChatItem>,
     showingArchived: Boolean,
     onToggleArchived: () -> Unit,
+    canEnterGrid: Boolean,
     selectedChatId: Long?,
     state: HomeState,
     focus: HomeFocus,
     onRegion: (HomeRegion) -> Unit,
+    menuChat: ChatItem?,
+    menuReturnFocus: FocusRequester,
+    onMenuOpen: (ChatItem) -> Unit,
+    onMenuClose: () -> Unit,
+    onMenuAction: (ChatMenuAction) -> Unit,
     onSelect: (ChatItem) -> Unit,
 ) {
     // The design's 268x412 box is exactly eight rows of (48 + 4), so anything
@@ -385,7 +440,12 @@ private fun ChatList(
     // no scrollbar, since the design draws none, and moving focus down brings the
     // focused row into view on its own. "Archived Chats" stays the first item so
     // it scrolls with the list, as the design's column implies.
+    // The popover is hosted here: this Box owns the list's coordinate space, so the menu can
+    // sit level with the long-pressed row and be pulled up when it would spill past the bottom.
+    val listState = rememberLazyListState()
+    Box(modifier = Modifier.width(HomeSpec.ListWidth).height(HomeSpec.ListHeight)) {
     LazyColumn(
+        state = listState,
         modifier = Modifier
             .width(HomeSpec.ListWidth)
             .height(HomeSpec.ListHeight),
@@ -410,10 +470,25 @@ private fun ChatList(
                 focus = focus,
                 isEntry = isEntry,
                 isFirst = isFirst,
+                canEnterGrid = canEnterGrid,
                 onRegion = onRegion,
+                onLongPress = { onMenuOpen(chat) },
+                menuReturn = if (chat.id == menuChat?.id) menuReturnFocus else null,
                 onClick = { onSelect(chat) },
             )
         }
+    }
+    menuChat?.let { chat ->
+        val offset = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.key == chat.id }?.offset
+        val top = offset?.let { with(LocalDensity.current) { chatMenuTop(it.toDp(), HomeSpec.ListHeight, ChatMenuHeightDp.dp) } } ?: 0.dp
+        ChatContextMenu(
+            chat = chat,
+            archived = showingArchived,
+            top = top,
+            onSelect = onMenuAction,
+            onDismiss = onMenuClose,
+        )
+    }
     }
 }
 
@@ -474,10 +549,16 @@ private fun ChatRow(
     focus: HomeFocus,
     isEntry: Boolean,
     isFirst: Boolean,
+    canEnterGrid: Boolean,
     onRegion: (HomeRegion) -> Unit,
+    onLongPress: () -> Unit,
+    menuReturn: FocusRequester?,
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    var longPressJob by remember { mutableStateOf<Job?>(null) }
+    var longPressed by remember { mutableStateOf(false) }
     // Figma shows three row states: plain, pinned (60% fill, dark text) and
     // focused/selected (full fill, dark text).
     val highlighted = focused || selected
@@ -501,32 +582,50 @@ private fun ChatRow(
                 // Up from the FIRST chat reaches the Archived Chats row above it — the bar
                 // itself is only reached from that row (it used to jump straight to the bar).
                 left = FocusRequester.Cancel
-                right = focus.gridEntry
+                // Right only exists once the pane has cells; otherwise it would target an
+                // unattached requester (and the focus search throws on those).
+                right = if (canEnterGrid) focus.gridEntry else FocusRequester.Cancel
                 up = if (isFirst) focus.entry else FocusRequester.Default
             }
-            .onFocusChanged { focused = it.isFocused; if (it.isFocused) onRegion(HomeRegion.ChatList) }
-            .let { if (isEntry) it.focusRequester(focus.selectedChat) else it }.focusable()
+            .onFocusChanged { st ->
+                focused = st.isFocused
+                if (st.isFocused) {
+                    // Focus returns when the popover closes, but the key-up that ended the
+                    // long press went to the menu — clear the leftover state here or the
+                    // next tap on this row would be swallowed as "still held".
+                    longPressed = false
+                    longPressJob?.cancel()
+                    longPressJob = null
+                    onRegion(HomeRegion.ChatList)
+                }
+            }
+            .let { if (isEntry) it.focusRequester(focus.selectedChat) else it }
+            .let { if (menuReturn != null) it.focusRequester(menuReturn) else it }.focusable()
 
             .onKeyEvent { event: androidx.compose.ui.input.key.KeyEvent ->
 
                 // TV OK arrives as DPAD_CENTER; Enter covers keyboards and emulators.
-
-                if (event.type == KeyEventType.KeyUp &&
-
-                    (event.key == Key.DirectionCenter || event.key == Key.Enter)
-
-                ) {
-
-                    onClick()
-
-                    true
-
-                } else {
-
-                    false
-
+                // HOLDING it opens the long-press popover; a tap is still a plain click.
+                val ok = event.key == Key.DirectionCenter || event.key == Key.Enter
+                when {
+                    event.type == KeyEventType.KeyDown && ok -> {
+                        if (longPressJob == null && !longPressed) {
+                            longPressJob = scope.launch {
+                                delay(ChatMenuLongPressMs)
+                                longPressed = true
+                                onLongPress()
+                            }
+                        }
+                        true
+                    }
+                    event.type == KeyEventType.KeyUp && ok -> {
+                        longPressJob?.cancel()
+                        longPressJob = null
+                        if (longPressed) longPressed = false else onClick()
+                        true
+                    }
+                    else -> false
                 }
-
             },
     ) {
         Row(
@@ -757,9 +856,13 @@ private fun MediaGrid(
     onPreview: (Int) -> Unit,
     onGridFocus: (Int) -> Unit,
     onOpen: (Int) -> Unit,
+    /** Land focus on the remembered cell; HomeScreen owns the scroll-then-request dance. */
+    onEnterGrid: () -> Unit,
 ) {
     val exhausted by state.mediaExhausted.collectAsStateWithLifecycle()
     val loadingMore by state.mediaLoadingMore.collectAsStateWithLifecycle()
+    // Used to hand focus on to a cell after the container takes it.
+    val scope = rememberCoroutineScope()
 
     // The repository pages 100 messages at a time, so without this the grid would
     // simply stop at the first page and read as "that is all the media there is".
@@ -782,6 +885,15 @@ private fun MediaGrid(
             }
     }
 
+    Box(
+        modifier = Modifier
+            .width(HomeSpec.GridWidth)
+            .height(HomeSpec.GridHeight)
+            .focusRequester(focus.gridContainer)
+            // Deferred a frame: a focus request made inside a focus callback is ignored.
+        .onFocusChanged { st -> if (st.isFocused) scope.launch { onEnterGrid() } }
+            .focusable(),
+    ) {
     LazyVerticalGrid(
         columns = GridCells.Fixed(3),
         state = gridState,
@@ -809,6 +921,7 @@ private fun MediaGrid(
                 onPreview = { onPreview(index) },
             )
         }
+    }
     }
 }
 

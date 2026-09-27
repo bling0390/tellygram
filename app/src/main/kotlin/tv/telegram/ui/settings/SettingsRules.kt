@@ -3,8 +3,6 @@ package tv.telegram.ui.settings
 import androidx.compose.ui.graphics.Color
 import tv.telegram.ui.home.HomeSpec
 
-/** Colours of one settings row, derived in one place so the UI and tests agree. */
-internal data class RowColors(val fill: Color, val text: Color)
 
 
 /** Telegram may not have a value for a field; the pane shows an em dash then. */
