@@ -103,6 +103,8 @@ import tv.telegram.ui.focus.BackPriority
 import tv.telegram.ui.focus.BackRegistration
 import tv.telegram.ui.components.Avatar
 import androidx.compose.material.icons.outlined.Done
+import androidx.compose.ui.res.stringResource
+import androidx.compose.material.icons.automirrored.outlined.ArrowBackIos
 
 /**
  * HomeScreen — Figma node 1243:1724 ("HomeScreen").
@@ -125,7 +127,6 @@ internal object HomeSpec {
     val TertiaryFixed = Color(0xFFF9D8FE)     // unread dot, highlighted row
     val SecondaryContainer = Color(0x66484459) // 40% of #484459 — selected "Chat" tab
     val OnSecondaryContainer = Color(0xFFE5DFF9)
-    val RowFill = Color(0x1AD9D9D9)           // rgba(217,217,217,0.1)
     val ChipOutline = Color(0x33FFFFFF)       // rgba(255,255,255,0.2)
     val White = Color(0xFFFFFFFF)
     // Figma material-theme/sys/dark/surface-container: the panel an actionable
@@ -171,6 +172,8 @@ internal enum class HomeRegion { ChatList, Chips, Grid }
  * the two sides have to share the same requester objects.
  */
 internal class HomeFocus(
+    /** What the top bar's Down lands on: the Archived Chats / Back row. */
+    val entry: FocusRequester,
     val selectedChat: FocusRequester,
     val topBar: FocusRequester?,
     val selectedChip: FocusRequester,
@@ -199,6 +202,9 @@ internal fun HomeScreen(
     topBarFocus: FocusRequester? = null,
 ) {
     val chats by state.chatList.collectAsStateWithLifecycle()
+    val archivedChats by state.archiveChats.collectAsStateWithLifecycle()
+    // Which half of the list the Archived Chats / Back row is currently showing.
+    var showingArchived by remember { mutableStateOf(false) }
     val media by state.mediaItems.collectAsStateWithLifecycle()
 
     var selectedChatId by rememberSaveable { mutableStateOf<Long?>(null) }
@@ -206,7 +212,11 @@ internal fun HomeScreen(
 
     // D-pad graph: the edges of each region are routed explicitly rather than left to
     // Compose's nearest-candidate search (design annotations 1-4).
-    val selectedChatFocus = remember(contentEntryFocus) { contentEntryFocus ?: FocusRequester() }
+    // Two separate targets. `entry` is what the shell's top bar drops onto — the Archived
+    // Chats / Back row, the list's first focusable. `selectedChat` is the row that Back from
+    // the grid or chips returns to, which is a different thing entirely.
+    val entryFocus = remember(contentEntryFocus) { contentEntryFocus ?: FocusRequester() }
+    val selectedChatFocus = remember { FocusRequester() }
     val selectedChipFocus = remember { FocusRequester() }
     val firstGridFocus = remember { FocusRequester() }
     val rememberedGridFocus = remember { FocusRequester() }
@@ -224,6 +234,7 @@ internal fun HomeScreen(
     // same requester when the remembered cell is [0,0].
     val focus = remember(contentEntryFocus, topBarFocus) {
         HomeFocus(
+            entry = entryFocus,
             selectedChat = selectedChatFocus,
             topBar = topBarFocus,
             selectedChip = selectedChipFocus,
@@ -293,6 +304,11 @@ internal fun HomeScreen(
         Column(modifier = Modifier.fillMaxSize()) {
             Row {
                 ChatList(
+
+                    archivedChats = archivedChats,
+
+                    showingArchived = showingArchived,
+        onToggleArchived = { showingArchived = !showingArchived },
                     chats = chats,
                     selectedChatId = selectedChatId,
                     state = state,
@@ -310,6 +326,8 @@ internal fun HomeScreen(
                 Spacer(Modifier.width(HomeSpec.GutterBetweenColumns))
 
                 Column(modifier = Modifier.width(HomeSpec.GridWidth)) {
+                    // With no chat selected there is nothing to filter: the row is not drawn at all.
+                    if (selectedChatId != null) {
                     MediaFilterRow(
                         selected = filter,
                         focus = focus,
@@ -323,6 +341,7 @@ internal fun HomeScreen(
                             }
                         },
                     )
+                    }
                     Spacer(Modifier.height(HomeSpec.ChipsToGrid))
                     MediaGrid(
                         items = media,
@@ -352,6 +371,9 @@ internal fun HomeScreen(
 @Composable
 private fun ChatList(
     chats: List<ChatItem>,
+    archivedChats: List<ChatItem>,
+    showingArchived: Boolean,
+    onToggleArchived: () -> Unit,
     selectedChatId: Long?,
     state: HomeState,
     focus: HomeFocus,
@@ -369,17 +391,25 @@ private fun ChatList(
             .height(HomeSpec.ListHeight),
         verticalArrangement = Arrangement.spacedBy(HomeSpec.ListGap),
     ) {
-        item(key = "archived") { ArchivedChatsRow() }
-        items(items = chats, key = { it.id }) { chat ->
+        item(key = "archived") {
+            ArchivedChatsRow(
+                showingArchived = showingArchived,
+                onClick = onToggleArchived,
+                focus = focus,
+            )
+        }
+        items(items = if (showingArchived) archivedChats else chats, key = { it.id }) { chat ->
             // The row the bar's Down lands on and Back returns to: the selected chat,
             // or the first row before anything is selected.
             val isEntry = chat.id == selectedChatId || (selectedChatId == null && chat.id == chats.firstOrNull()?.id)
+            val isFirst = chat.id == chats.firstOrNull()?.id
             ChatRow(
                 chat = chat,
                 selected = chat.id == selectedChatId,
                 state = state,
                 focus = focus,
                 isEntry = isEntry,
+                isFirst = isFirst,
                 onRegion = onRegion,
                 onClick = { onSelect(chat) },
             )
@@ -388,27 +418,46 @@ private fun ChatList(
 }
 
 @Composable
-private fun ArchivedChatsRow() {
+private fun ArchivedChatsRow(
+    showingArchived: Boolean,
+    onClick: () -> Unit,
+    focus: HomeFocus,
+) {
     var focused by remember { mutableStateOf(false) }
+    // The frames draw the focused row as the white pill with the dark label.
     Row(
         modifier = Modifier
+            .testTag("home-archived-row")
             .fillMaxSizeWidth()
             .clip(RoundedCornerShape(HomeSpec.Corner))
-            .background(if (focused) HomeSpec.OnSurface else HomeSpec.RowFill)
+            .background(if (focused) HomeSpec.White else HomeSpec.SurfaceContainer)
+            .focusProperties { up = focus.topBar ?: FocusRequester.Default }
             .onFocusChanged { focused = it.isFocused }
+            .focusRequester(focus.entry)
             .focusable()
+            .onKeyEvent { event: androidx.compose.ui.input.key.KeyEvent ->
+                if (event.type == KeyEventType.KeyUp &&
+                    (event.key == Key.DirectionCenter || event.key == Key.Enter)
+                ) {
+                    onClick()
+                    true
+                } else {
+                    false
+                }
+            }
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
-            imageVector = Icons.Outlined.Archive,
+            // In the archived list the same row turns into "Back" with an arrow.
+            imageVector = if (showingArchived) Icons.AutoMirrored.Outlined.ArrowBackIos else Icons.Outlined.Archive,
             contentDescription = null,
             tint = if (focused) HomeSpec.InverseOnSurface else HomeSpec.OnSurface,
             modifier = Modifier.size(20.dp),
         )
         Spacer(Modifier.width(8.dp))
         Text(
-            text = "Archived Chats",
+            text = stringResource(if (showingArchived) R.string.home_archived_back else R.string.home_archived_chats),
             style = MaterialTheme.typography.titleSmall,
             color = if (focused) HomeSpec.InverseOnSurface else HomeSpec.OnSurface,
             maxLines = 1,
@@ -424,6 +473,7 @@ private fun ChatRow(
     state: HomeState,
     focus: HomeFocus,
     isEntry: Boolean,
+    isFirst: Boolean,
     onRegion: (HomeRegion) -> Unit,
     onClick: () -> Unit,
 ) {
@@ -447,11 +497,12 @@ private fun ChatRow(
             .clip(RoundedCornerShape(HomeSpec.Corner))
             .background(colors.fill)
             .focusProperties {
-                // Chat list: up/down plus Right into the media grid; Left does nothing,
-                // and only the entry row reaches the top bar (annotations 2, 6, 7).
+                // Chat list: up/down plus Right into the media grid; Left does nothing.
+                // Up from the FIRST chat reaches the Archived Chats row above it — the bar
+                // itself is only reached from that row (it used to jump straight to the bar).
                 left = FocusRequester.Cancel
                 right = focus.gridEntry
-                up = if (isEntry && focus.topBar != null) focus.topBar else FocusRequester.Default
+                up = if (isFirst) focus.entry else FocusRequester.Default
             }
             .onFocusChanged { focused = it.isFocused; if (it.isFocused) onRegion(HomeRegion.ChatList) }
             .let { if (isEntry) it.focusRequester(focus.selectedChat) else it }.focusable()
@@ -539,7 +590,7 @@ private fun ChatRow(
                     Icon(
                         Icons.Outlined.Verified,
                         null,
-                        tint = if (highlighted) HomeSpec.PrimaryFixed else HomeSpec.Primary,
+                        tint = verifiedIconColor(highlighted),
                         modifier = Modifier.size(12.dp),
                     )
                 }
@@ -714,7 +765,7 @@ private fun MediaGrid(
     // simply stop at the first page and read as "that is all the media there is".
     // Load the next page as soon as the last item comes into view; the exhausted
     // flag stops the requests once the chat runs out.
-    LaunchedEffect(gridState, exhausted) {
+    LaunchedEffect(gridState) {
         snapshotFlow {
             val info = gridState.layoutInfo
             val last = info.visibleItemsInfo.lastOrNull()?.index ?: -1
@@ -722,7 +773,12 @@ private fun MediaGrid(
         }
             .distinctUntilChanged()
             .collect { atEnd ->
-                if (atEnd && !exhausted && !loadingMore) state.loadMoreMedia()
+                // Read the flags live: a snapshot taken at composition time goes stale, and
+                // after the first page the effect is not restarted (no key changes), so the
+                // row could sit at the bottom with nothing ever requesting the next page.
+                if (atEnd && !state.mediaExhausted.value && !state.mediaLoadingMore.value) {
+                    state.loadMoreMedia()
+                }
             }
     }
 
@@ -785,7 +841,7 @@ private fun MediaCell(
             // Stable handle for the UI tests that drive the D-pad graph.
             .testTag("home-media-cell-$index")
             .clip(RoundedCornerShape(HomeSpec.Corner))
-            .background(HomeSpec.RowFill)
+            .background(HomeSpec.SurfaceContainer)
             .then(
                 if (focused) {
                     Modifier.border(HomeSpec.FocusBorder, HomeSpec.White, RoundedCornerShape(HomeSpec.Corner))

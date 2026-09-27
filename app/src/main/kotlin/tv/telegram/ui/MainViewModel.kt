@@ -37,6 +37,7 @@ sealed class NavEvent {
 
 class MainViewModel(app: Application) : AndroidViewModel(app), HomeState, SettingsState {
 
+
     val auth = TdAuth(client = TdClient, scope = viewModelScope)
     val chatRepo = TdChatRepository(client = TdClient, scope = viewModelScope)
     val mediaRepo = TdMediaRepository(client = TdClient, scope = viewModelScope)
@@ -55,7 +56,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app), HomeState, Settin
     override val chatList = chatRepo.items
     val chatListLoaded = chatRepo.loaded
     val chatListError = chatRepo.error
-    val archiveChats = chatRepo.archiveChats
+    override val archiveChats = chatRepo.archiveChats
     val archiveCount = chatRepo.archiveCount
     val viewingArchive = chatRepo.viewingArchive
 
@@ -174,6 +175,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app), HomeState, Settin
     private val _themeMode = MutableStateFlow(ThemeMode.Dark)
     val themeMode: StateFlow<ThemeMode> = _themeMode.asStateFlow()
 
+    /** Set by logOut(): the Closed state that follows is ours, not a startup failure. */
+    @Volatile private var signOutRequested = false
+
     private val _language = MutableStateFlow(Language.English)
     override val language: StateFlow<Language> = _language.asStateFlow()
 
@@ -202,7 +206,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app), HomeState, Settin
     }
 
     override fun logOut() {
-        // Ask TDLib first (it clears its local database), then drop our own state.
+        // Ask TDLib first (it clears its local database), then drop our own state. TDLib
+        // answers LogOut by landing the client in AuthorizationStateClosed, and a Closed
+        // client can never request a QR code again — so the state collector below stops,
+        // wipes and restarts the client once that happens.
+        signOutRequested = true
         auth.logOut()
         closeChat()
         _sidebarSelectedChatId.value = null
@@ -299,6 +307,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app), HomeState, Settin
                     _sidebarSelectedChatId.value = null
                     _currentUser.value = null
                 }
+                if (shouldRestartClosedClient(st, signOutRequested)) {
+                    signOutRequested = false
+                    Log.i("MainViewModel", "sign-out closed the TDLib client; restarting it")
+                    // stop + wipe DB + start, then re-apply the proxy — realSignOut does all
+                    // of it and emits GoToQrCode, so the login flow can request a fresh QR.
+                    realSignOut()
+                }
                 wasReady = isReady
             }
         }
@@ -360,3 +375,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app), HomeState, Settin
     /** Download only the first chunk of a file — enough for a hover preview. */
     suspend fun ensurePreviewFile(fileId: Int): String? = fileRepo.ensurePreview(fileId)
 }
+
+/**
+ * TDLib answers LogOut() by closing the client, and a Closed client can never request a
+ * QR code again — only a freshly created one can. Restart it, but only for our own
+ * sign-out: an unexpected Closed at any other time is not ours to "fix" blind.
+ */
+internal fun shouldRestartClosedClient(state: AuthState, signOutRequested: Boolean): Boolean =
+    signOutRequested && state is AuthState.Closed

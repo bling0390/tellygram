@@ -135,8 +135,8 @@ class HomeRulesTest {
         val plain = chatRowColors(highlighted = false, pinned = false)
         val active = chatRowColors(highlighted = true, pinned = false)
 
-        assertEquals(HomeSpec.RowFill, plain.fill)
-        assertEquals(HomeSpec.OnSurface, active.fill)
+        assertEquals(HomeSpec.SurfaceContainer, plain.fill)
+        assertEquals(HomeSpec.White, active.fill)
         assertEquals(HomeSpec.OnSurface, plain.text)
         assertEquals(HomeSpec.InverseOnSurface, active.text)
         assertEquals(HomeSpec.Tertiary, plain.unreadDot)
@@ -170,4 +170,11 @@ class HomeRulesTest {
         assertEquals(-1, indexOfMessage(items, 404))
     }
 
+
+    @Test
+    fun `the verified badge follows the row it sits on`() {
+        // On the focused white row it takes the inverse label colour; at rest it stays primary.
+        assertEquals(HomeSpec.InverseOnSurface, verifiedIconColor(highlighted = true))
+        assertEquals(HomeSpec.Primary, verifiedIconColor(highlighted = false))
+    }
 }

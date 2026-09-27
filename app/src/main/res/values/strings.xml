@@ -107,4 +107,6 @@
     <string name="settings_language_title">Language</string>
     <string name="settings_help_contact_label">Contact us on</string>
     <string name="settings_help_contact_email">feedback@tellygram.app</string>
+    <string name="home_archived_chats">Archived Chats</string>
+    <string name="home_archived_back">Back</string>
 </resources>

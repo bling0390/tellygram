@@ -218,13 +218,19 @@ private fun AppNavHost(viewModel: MainViewModel, backController: BackController)
     // reactive to authState would rebuild the whole NavGraph whenever auth
     // leaves Ready (e.g. mid sign-out), resetting the UI to COLD_START and
     // racing the GoToQrCode/GoToHome events. Navigation is event-driven only.
-    val startDestination = remember {
-        when {
-            authState is AuthState.Ready -> Routes.HOME_SCREEN
-            authState is AuthState.WaitTdlibParams ||
-                authState is AuthState.WaitEncryptionKey ||
-                authState is AuthState.Idle -> Routes.COLD_START
-            else -> Routes.QR_LOGIN
+    val startDestination = remember { authStartRoute(authState) }
+
+    // Log-out drops the authorization state back to the login flow. The graph is
+    // deliberately not reactive to authState (that would rebuild the whole NavHost), so
+    // watch it here and step out of the shell pages when it stops being Ready.
+    LaunchedEffect(authState) {
+        if (authState is tv.telegram.td.AuthState.Ready) return@LaunchedEffect
+        val target = authStartRoute(authState)
+        if (currentRoute != target) {
+            navController.navigate(target) {
+                popUpTo(navController.graph.id) { inclusive = true }
+                launchSingleTop = true
+            }
         }
     }
 
@@ -610,3 +616,15 @@ private fun RailItem(
  */
 internal fun showsRail(route: String?): Boolean =
     route == Routes.HOME_CHATS || route == Routes.HOME_SEARCH
+
+/**
+ * Where a cold NavHost (or a log-out) should land for this authorization state. Extracted
+ * so the mapping is unit tested instead of living inside a remember block.
+ */
+internal fun authStartRoute(state: tv.telegram.td.AuthState): String = when {
+    state is AuthState.Ready -> Routes.HOME_SCREEN
+    state is AuthState.WaitTdlibParams ||
+        state is AuthState.WaitEncryptionKey ||
+        state is AuthState.Idle -> Routes.COLD_START
+    else -> Routes.QR_LOGIN
+}

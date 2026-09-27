@@ -81,9 +81,11 @@ internal data class ChatRowColors(val fill: Color, val text: Color, val unreadDo
  * once and can be asserted: a pinned row must look exactly like a plain one.
  */
 internal fun chatRowColors(highlighted: Boolean, pinned: Boolean): ChatRowColors = if (highlighted) {
-    ChatRowColors(HomeSpec.OnSurface, HomeSpec.InverseOnSurface, HomeSpec.TertiaryFixed)
+    // The 2026-09-26 frames draw the focused/selected row as the white pill with the dark
+    // label (it used to be the on-surface grey), and keep the brighter tertiary-fixed dot.
+    ChatRowColors(HomeSpec.White, HomeSpec.InverseOnSurface, HomeSpec.TertiaryFixed)
 } else {
-    ChatRowColors(HomeSpec.RowFill, HomeSpec.OnSurface, HomeSpec.Tertiary)
+    ChatRowColors(HomeSpec.SurfaceContainer, HomeSpec.OnSurface, HomeSpec.Tertiary)
 }
 
 /** What confirming a media card opens. */
@@ -101,3 +103,11 @@ internal fun mediaOpenTarget(kind: MediaCellKind): MediaOpenTarget = when (kind)
 /** Index of the media item carrying this message id; -1 when it is not loaded. */
 internal fun indexOfMessage(items: List<MediaItem>, messageId: Long): Int =
     items.indexOfFirst { it.messageId == messageId }
+
+/**
+ * The Verified badge. The 2026-09-27 spec: on the focused (white) row it takes the row's
+ * own inverse-on-surface, so it reads as part of the label; at rest it keeps the brand
+ * primary that the earlier frames drew.
+ */
+internal fun verifiedIconColor(highlighted: Boolean): Color =
+    if (highlighted) HomeSpec.InverseOnSurface else HomeSpec.Primary

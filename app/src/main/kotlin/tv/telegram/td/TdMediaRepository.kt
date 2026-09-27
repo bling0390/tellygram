@@ -190,27 +190,41 @@ class TdMediaRepository(
             // Advance the search cursor past the oldest loaded media message.
             // offset=0 returns matches before fromMessageId; the seen-set below
             // dedupes just in case a message comes back twice.
-            val resp = client.execute(
-                TdApi.SearchChatMessages(
-                    chatId, "", null, oldestMessageId, 0, limit,
-                    currentFilter.searchFilter(), 0L,
-                ),
-            ).valueOrNull<TdApi.Messages>()
-            if (resp == null) {
-                Log.w(TAG, "loadMore: searchChatMessages failed")
-                return
-            }
-            val raw = resp.messages.toMutableList()
-            completeTrailingAlbum(chatId, raw)
-            if (raw.isNotEmpty()) oldestFetchedMessageId = raw.last().id
-            val newItems = groupAlbums(raw, chatId).filter { it.matches(currentFilter) }
-            Log.i(TAG, "loadMore: got ${newItems.size} items (albums collapsed) from ${raw.size} messages")
-            val seen = current.map { it.messageId }.toHashSet()
-            val merged = current + newItems.filter { it.messageId !in seen }
-            _items.value = merged
-            knownMessageIds.addAll(newItems.map { it.messageId })
-            if (newItems.isEmpty() || resp.messages.size < limit) {
-                _exhausted.value = true
+            // A page can legitimately yield nothing new — service messages, or an album
+            // already collapsed into an earlier page. Treating that as "the chat is over"
+            // was the bug: the grid stopped loading at the first such page. Keep pulling
+            // instead, bounded so a chat full of junk cannot spin here (openAndLoad does
+            // the same dance for its first page).
+            var extraPages = 0
+            while (true) {
+                val resp = client.execute(
+                    TdApi.SearchChatMessages(
+                        chatId, "", null, oldestMessageId, 0, limit,
+                        currentFilter.searchFilter(), 0L,
+                    ),
+                ).valueOrNull<TdApi.Messages>()
+                if (resp == null) {
+                    Log.w(TAG, "loadMore: searchChatMessages failed")
+                    return
+                }
+                val raw = resp.messages.toMutableList()
+                completeTrailingAlbum(chatId, raw)
+                if (raw.isNotEmpty()) oldestFetchedMessageId = raw.last().id
+                val newItems = groupAlbums(raw, chatId).filter { it.matches(currentFilter) }
+                Log.i(TAG, "loadMore: got ${newItems.size} items (albums collapsed) from ${raw.size} messages")
+                val seen = _items.value.map { it.messageId }.toHashSet()
+                val added = newItems.filter { it.messageId !in seen }
+                if (added.isNotEmpty()) {
+                    _items.value = _items.value + added
+                    knownMessageIds.addAll(newItems.map { it.messageId })
+                }
+                // A short (or empty) page means the chat really has run out.
+                if (resp.messages.isEmpty() || resp.messages.size < limit) {
+                    _exhausted.value = true
+                    break
+                }
+                if (shouldStopPaging(added = added.size, extraPages = extraPages)) break
+                extraPages++
             }
         } finally {
             _loadingMore.value = false
@@ -371,3 +385,11 @@ class TdMediaRepository(
         private const val TAG = "TdMediaRepo"
     }
 }
+
+/**
+ * Whether loadMore should stop hammering the server. A page that adds nothing is worth
+ * another try (the cursor moved on), but only a couple of times; anything beyond that is
+ * a chat that simply has no more displayable media in this stretch.
+ */
+internal fun shouldStopPaging(added: Int, extraPages: Int, maxExtraPages: Int = 3): Boolean =
+    added > 0 || extraPages >= maxExtraPages

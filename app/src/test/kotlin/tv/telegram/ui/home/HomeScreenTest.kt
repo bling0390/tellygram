@@ -41,8 +41,10 @@ import tv.telegram.ui.focus.LocalBackController
 /** Stand-in for MainViewModel: the real one starts TDLib, which cannot run on the JVM. */
 private class FakeHomeState : HomeState {
     override val chatList: StateFlow<List<ChatItem>> = MutableStateFlow(
+
         listOf(chat(1, "Alpha"), chat(2, "Beta")),
     )
+    override val archiveChats: StateFlow<List<ChatItem>> = MutableStateFlow(emptyList())
     override val mediaItems: StateFlow<List<MediaItem>> = MutableStateFlow(
         // Index 2 is a video, so the confirm tests can tell the two destinations apart.
         listOf(media(1), media(2), video(3), media(4), media(5)),
@@ -103,6 +105,8 @@ class HomeScreenTest {
 
     private val back = BackController()
     private val state = FakeHomeState()
+    /** Stands in for the shell's top-bar Down target. */
+    private val contentEntry = FocusRequester()
 
     private companion object {
         const val TOP_BAR_TAG = "test-top-bar"
@@ -114,7 +118,6 @@ class HomeScreenTest {
         onOpenPlayer: (Int) -> Unit = { },
         onOpenPhoto: (Int) -> Unit = { },
     ) {
-        val contentEntry = FocusRequester()
         val topBar = FocusRequester()
         rule.setContent {
             CompositionLocalProvider(LocalBackController provides back) {
@@ -318,4 +321,62 @@ class HomeScreenTest {
         assertEquals(0, state.consumeReturnFocusCount)
     }
 
+
+    @Test
+    fun `the archived row toggles the list and becomes Back`() {
+        // The 2026-09-26 frames: confirming the Archived Chats row swaps in the archived
+        // list AND the row turns into "Back"; confirming that returns to the normal list.
+        show()
+        rule.onNodeWithTag("home-archived-row").requestFocus()
+        rule.waitForIdle()
+        rule.onNodeWithText("Archived Chats").assertExists()
+
+        rule.onNodeWithTag("home-archived-row").requestFocus()
+        rule.waitForIdle()
+        rule.onNodeWithTag("home-archived-row").performKeyInput { pressKey(Key.DirectionCenter) }
+        rule.waitForIdle()
+        rule.onNodeWithText("Back").assertExists()
+
+        rule.onNodeWithTag("home-archived-row").performKeyInput { pressKey(Key.DirectionCenter) }
+        rule.waitForIdle()
+        rule.onNodeWithText("Archived Chats").assertExists()
+    }
+
+    @Test
+    fun `down from the top bar lands on the archived row`() {
+        // Product decision (2026-09-26): the list's first focusable is the Archived Chats
+        // row, so the shell's entry requester is attached there — not to the selected chat.
+        show()
+        rule.runOnIdle { runCatching { contentEntry.requestFocus() } }
+        rule.waitForIdle()
+        rule.onNodeWithTag("home-archived-row").assertIsFocused()
+    }
+
+@Test
+    fun `the filter row is drawn only once a chat is selected`() {
+        // Reported behaviour: with nothing selected the right pane must not draw the
+        // ALL/Video/… row. Focus alone is not selection — a chat has to be confirmed.
+        show()
+        rule.onNodeWithText("ALL").assertDoesNotExist()
+
+        rule.onNodeWithTag("home-chat-row-2").requestFocus()
+        rule.waitForIdle()
+        rule.onNodeWithText("ALL").assertDoesNotExist()
+
+        rule.onNodeWithTag("home-chat-row-2").performKeyInput { pressKey(Key.DirectionCenter) }
+        rule.waitForIdle()
+        rule.onNodeWithText("ALL").assertExists()
+    }
+
+    @Test
+    fun `up from the first chat lands on the archived row`() {
+        // The list reads as one column: the archived row sits above the first chat, and the
+        // top bar is only reached from that row. It used to jump straight to the bar.
+        show()
+        rule.onNodeWithTag("home-chat-row-1").requestFocus()
+        rule.waitForIdle()
+        rule.onNodeWithTag("home-chat-row-1").performKeyInput { pressKey(Key.DirectionUp) }
+        rule.waitForIdle()
+        rule.onNodeWithTag("home-archived-row").assertIsFocused()
+    }
 }

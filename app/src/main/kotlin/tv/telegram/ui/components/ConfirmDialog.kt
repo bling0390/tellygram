@@ -97,6 +97,16 @@ fun ConfirmDialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
+        // usePlatformDefaultWidth = false makes the dialog window fill the screen, but the
+        // window's own dim turned out to be invisible here — the panel was all there was, so
+        // nothing covered the top bar or the shell's side margins. Paint the scrim ourselves.
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(ConfirmDialogSpec.Scrim)
+                .let { if (tagPrefix != null) it.testTag("$tagPrefix-scrim") else it },
+            contentAlignment = Alignment.Center,
+        ) {
         Column(
             modifier = modifier
                 .dpadNavigationSounds()
@@ -155,6 +165,7 @@ fun ConfirmDialog(
                     }
                 }
             }
+        }
         }
     }
 }

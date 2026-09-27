@@ -13,6 +13,8 @@ import tv.telegram.td.MediaItem
  */
 internal interface HomeState {
     val chatList: StateFlow<List<ChatItem>>
+    /** The archived half of the list: what the Archived Chats row swaps in. */
+    val archiveChats: StateFlow<List<ChatItem>>
     val mediaItems: StateFlow<List<MediaItem>>
     val mediaLoadingMore: StateFlow<Boolean>
     val mediaExhausted: StateFlow<Boolean>

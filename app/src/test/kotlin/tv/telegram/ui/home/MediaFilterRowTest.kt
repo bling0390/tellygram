@@ -47,6 +47,7 @@ class MediaFilterRowTest {
 
     private fun showRow(selected: MediaFilter = MediaFilter.All): HomeFocus {
         val focus = HomeFocus(
+            entry = FocusRequester(),
             selectedChat = FocusRequester(),
             topBar = FocusRequester(),
             selectedChip = FocusRequester(),
@@ -120,5 +121,6 @@ class MediaFilterRowTest {
         rule.waitForIdle()
         assertEquals(MediaFilter.Video, selectedByClick)
     }
+
 
 }

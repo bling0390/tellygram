@@ -97,4 +97,6 @@
     <string name="settings_language_title">語言</string>
     <string name="settings_help_contact_label">聯絡我們</string>
     <string name="settings_help_contact_email">feedback@tellygram.app</string>
+    <string name="home_archived_chats">已封存對話</string>
+    <string name="home_archived_back">返回</string>
 </resources>

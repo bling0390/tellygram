@@ -52,7 +52,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.withFrameNanos
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
@@ -136,10 +135,9 @@ internal fun SettingsScreen(
         // The frame's 10dp: shell content starts at 96, the frame draws from 106.
         modifier = Modifier
             .fillMaxSize()
-            .padding(top = 10.dp)
-            // The design dims and blurs the page behind the dialog. blur() needs API 31+
-            // and is a no-op below that.
-            .blur(if (showLogOut) 4.dp else 0.dp),
+            // Only the dialog's own scrim dims the page — no blur: the design's backdrop
+            // blur needs API 31+ and cannot reach outside the page from a Dialog window.
+            .padding(top = 10.dp),
         horizontalArrangement = Arrangement.spacedBy(HomeSpec.SettingsPaneGap),
     ) {
         Column(

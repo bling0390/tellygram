@@ -417,4 +417,24 @@ class SettingsScreenTest {
         rule.waitForIdle()
         rule.onNodeWithTag("settings-section-About").assertIsFocused()
     }
+
+    @Test
+    fun `the dialog's scrim covers more than the panel`() {
+        // The bug: the dialog painted only the panel, so the top bar and the shell's side
+        // margins stayed undimmed. The scrim must be larger than the panel it holds.
+        show()
+        select("Accounts")
+        rule.onNodeWithTag("settings-log-out").requestFocus()
+        rule.waitForIdle()
+        rule.onNodeWithTag("settings-log-out").performKeyInput { pressKey(Key.DirectionCenter) }
+        rule.waitForIdle()
+
+        val scrim = rule.onNodeWithTag("settings-logout-scrim", useUnmergedTree = true)
+            .getUnclippedBoundsInRoot()
+        val panel = rule.onNodeWithTag("settings-logout-dialog", useUnmergedTree = true)
+            .getUnclippedBoundsInRoot()
+        val scrimH = (scrim.bottom - scrim.top).value
+        val panelH = (panel.bottom - panel.top).value
+        assertTrue("scrim ${scrimH}dp vs panel ${panelH}dp", scrimH > panelH)
+    }
 }
