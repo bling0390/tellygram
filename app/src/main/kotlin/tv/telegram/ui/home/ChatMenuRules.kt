@@ -34,12 +34,26 @@ internal fun chatMenuLabelRes(
     ChatMenuAction.Delete -> R.string.chat_menu_delete
 }
 
+/** How far the popover sits from the row it belongs to (product, 2026-09-28). */
+internal const val ChatMenuAnchorGapDp = 4f
+
+/** A chat row's height: a 32dp avatar with 8dp above and below. */
+internal const val ChatRowHeightDp = 48f
+
 /**
- * Where the menu's top edge goes: level with the long-pressed row, but pulled up so it
- * never spills past the bottom of the list (product decision, 2026-09-27).
+ * The menu's top edge. It hangs BELOW the row it was opened from — the row's bottom plus a
+ * 4dp gap, so the popover no longer covers the chat it belongs to. When that would spill
+ * past the bottom of the list it flips ABOVE the row instead: the row's top, minus the gap,
+ * minus the menu's own height.
  */
-internal fun chatMenuTop(rowTop: Dp, listHeight: Dp, menuHeight: Dp): Dp =
-    min(rowTop.value, (listHeight.value - menuHeight.value).coerceAtLeast(0f)).let { Dp(it) }
+internal fun chatMenuTop(rowTop: Dp, listHeight: Dp, menuHeight: Dp): Dp {
+    val below = rowTop.value + ChatRowHeightDp + ChatMenuAnchorGapDp
+    return if (below + menuHeight.value <= listHeight.value) {
+        Dp(below)
+    } else {
+        Dp((rowTop.value - ChatMenuAnchorGapDp - menuHeight.value).coerceAtLeast(0f))
+    }
+}
 
 /** Which copy a destructive action needs: private, a group I own, a group I'm in, or a channel. */
 internal enum class ChatDeleteCase { Private, GroupOwner, GroupMember, Channel }

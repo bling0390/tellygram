@@ -131,6 +131,8 @@ private fun ChatMenuItemRow(
     onSelect: (ChatMenuAction) -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
+    // Armed by a fresh OK press; the release then runs the row (see the key handler).
+    var confirmArmed by remember { mutableStateOf(false) }
     val label = stringResource(labelRes)
     Row(
         modifier = Modifier
@@ -148,19 +150,34 @@ private fun ChatMenuItemRow(
                 up = if (isFirst) FocusRequester.Cancel else FocusRequester.Default
                 down = if (isLast) FocusRequester.Cancel else FocusRequester.Default
             }
-            .onFocusChanged { focused = it.isFocused }
+            .onFocusChanged {
+                focused = it.isFocused
+                // Navigating away with a press still held drops the arming.
+                if (!it.isFocused) confirmArmed = false
+            }
             .let { if (isFirst) it.focusRequester(firstFocus) else it }
             .focusable()
             .onKeyEvent { event: androidx.compose.ui.input.key.KeyEvent ->
-                // Act on the RELEASE only: holding OK past the long-press threshold keeps
-                // sending repeats, and those must not run the action again.
-                if (event.type == KeyEventType.KeyUp &&
-                    (event.key == Key.DirectionCenter || event.key == Key.Enter)
-                ) {
-                    onSelect(action)
-                    true
-                } else {
-                    false
+                if (event.key != Key.DirectionCenter && event.key != Key.Enter) return@onKeyEvent false
+                when (event.type) {
+                    KeyEventType.KeyDown -> {
+                        // Only a FRESH press arms the row. The long press that opened this
+                        // menu is still held, and tv-material3-style long presses keep
+                        // emitting repeats (repeatCount >= 1) — arming on those (or on the
+                        // opening release) would fire the freshly focused first row the
+                        // moment the user lets go. Copied from the chat screen's menu.
+                        if (event.nativeKeyEvent.repeatCount == 0) confirmArmed = true
+                        true
+                    }
+                    KeyEventType.KeyUp -> {
+                        if (confirmArmed) {
+                            confirmArmed = false
+                            onSelect(action)
+                        }
+                        // Always swallow: the opening release must not reach anyone else.
+                        true
+                    }
+                    else -> false
                 }
             },
         verticalAlignment = Alignment.CenterVertically,

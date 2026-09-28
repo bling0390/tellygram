@@ -25,12 +25,14 @@ class ChatMenuRulesTest {
     }
 
     @Test
-    fun `the menu sits on the row, but never past the bottom of the list`() {
-        // Level with the row when there is room…
-        assertEquals(100.dp, chatMenuTop(rowTop = 100.dp, listHeight = 412.dp, menuHeight = 188.dp))
-        // …and pinned to the bottom when there is not (list 412 - menu 188 = 224).
-        assertEquals(224.dp, chatMenuTop(rowTop = 300.dp, listHeight = 412.dp, menuHeight = 188.dp))
-        assertTrue(chatMenuTop(0.dp, 100.dp, 188.dp).value >= 0f)
+    fun `the menu hangs below the row, and flips above near the bottom`() {
+        // Default: the row's bottom + 4dp (the row is 48dp tall), so the chat stays visible.
+        assertEquals(152.dp, chatMenuTop(rowTop = 100.dp, listHeight = 412.dp, menuHeight = 188.dp))
+        // Past the list's bottom it flips: the row's top - 4dp - the menu's height.
+        assertEquals(108.dp, chatMenuTop(rowTop = 300.dp, listHeight = 412.dp, menuHeight = 188.dp))
+        // The last row of a full list (364dp) flips too, and never goes negative.
+        assertEquals(172.dp, chatMenuTop(rowTop = 364.dp, listHeight = 412.dp, menuHeight = 188.dp))
+        assertEquals(0.dp, chatMenuTop(rowTop = 0.dp, listHeight = 100.dp, menuHeight = 188.dp))
     }
 
     @Test

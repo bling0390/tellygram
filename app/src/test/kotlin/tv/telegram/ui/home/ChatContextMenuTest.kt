@@ -141,4 +141,19 @@ class ChatContextMenuTest {
         show(chat(type = ChatType.Channel), owner = true)
         rule.onNodeWithText("Leave").assertExists()
     }
+
+    @Test
+    fun `a release that is not armed does not fire a row`() {
+        // P0 (2026-09-28): the long press that opened the menu keeps sending into it, and its
+        // release must not act. The harness cannot send a bare key-up, so the equivalent path
+        // is: press (arms), navigate away (drops the arming), release -> nothing fires.
+        show()
+        rule.onNodeWithTag("chat-menu-pin").performKeyInput { keyDown(Key.DirectionCenter) }
+        rule.waitForIdle()
+        rule.onNodeWithTag("chat-menu-pin").performKeyInput { pressKey(Key.DirectionDown) }
+        rule.waitForIdle()
+        rule.onNodeWithTag("chat-menu-mute").performKeyInput { keyUp(Key.DirectionCenter) }
+        rule.waitForIdle()
+        assertTrue(picked == null)
+    }
 }
