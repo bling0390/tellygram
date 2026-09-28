@@ -190,6 +190,12 @@ internal class HomeFocus(
      * initialized" the moment its cell scrolls out of view).
      */
     val gridContainer: FocusRequester,
+    /**
+     * The Archived Chats row itself. Focus moves here through the list container rather than
+     * directly: the row is item 0 of a LazyColumn and gets recycled once it scrolls away, and
+     * a directional key aimed at a recycled node throws ("FocusRequester is not initialized").
+     */
+    val archivedRow: FocusRequester,
     /** The card a closed viewer asked us to focus again. */
     val returnGrid: FocusRequester = FocusRequester(),
 ) {
@@ -278,6 +284,7 @@ internal fun HomeScreen(
     val entryFocus = remember(contentEntryFocus) { contentEntryFocus ?: FocusRequester() }
     val selectedChatFocus = remember { FocusRequester() }
     val gridContainerFocus = remember { FocusRequester() }
+    val archivedRowFocus = remember { FocusRequester() }
     val selectedChipFocus = remember { FocusRequester() }
     val firstGridFocus = remember { FocusRequester() }
     val rememberedGridFocus = remember { FocusRequester() }
@@ -302,6 +309,7 @@ internal fun HomeScreen(
             firstGrid = firstGridFocus,
             rememberedGrid = rememberedGridFocus,
             gridContainer = gridContainerFocus,
+            archivedRow = archivedRowFocus,
         )
     }
     // Re-pointed every recomposition; focusProperties lambdas read it live.
@@ -487,7 +495,28 @@ private fun ChatList(
     // The popover is hosted here: this Box owns the list's coordinate space, so the menu can
     // sit level with the long-pressed row and be pulled up when it would spill past the bottom.
     val listState = rememberLazyListState()
-    Box(modifier = Modifier.width(HomeSpec.ListWidth).height(HomeSpec.ListHeight)) {
+    val listScope = rememberCoroutineScope()
+    // The entry target is the container, not the Archived row: the row can be recycled by the
+    // LazyColumn, and aiming a key at a recycled requester crashes (2026-09-28 report). The
+    // container forwards, scrolling the row back in first if it has to — same dance as the grid.
+    Box(
+        modifier = Modifier
+            .width(HomeSpec.ListWidth)
+            .height(HomeSpec.ListHeight)
+            .focusRequester(focus.entry)
+            .onFocusChanged { st ->
+                if (st.isFocused) {
+                    listScope.launch {
+                        if (!runCatching { focus.archivedRow.requestFocus() }.isSuccess) {
+                            runCatching { listState.scrollToItem(0) }
+                            withFrameNanos { }
+                            runCatching { focus.archivedRow.requestFocus() }
+                        }
+                    }
+                }
+            }
+            .focusable(),
+    ) {
     LazyColumn(
         state = listState,
         modifier = Modifier
@@ -553,7 +582,7 @@ private fun ArchivedChatsRow(
             .background(if (focused) HomeSpec.White else HomeSpec.SurfaceContainer)
             .focusProperties { up = focus.topBar ?: FocusRequester.Default }
             .onFocusChanged { focused = it.isFocused }
-            .focusRequester(focus.entry)
+            .focusRequester(focus.archivedRow)
             .focusable()
             .onKeyEvent { event: androidx.compose.ui.input.key.KeyEvent ->
                 if (event.type == KeyEventType.KeyUp &&
@@ -630,7 +659,9 @@ private fun ChatRow(
                 // Right only exists once the pane has cells; otherwise it would target an
                 // unattached requester (and the focus search throws on those).
                 right = if (canEnterGrid) focus.gridEntry else FocusRequester.Cancel
-                up = if (isFirst) focus.entry else FocusRequester.Default
+                // Geometric search: the Archived row sits right above the first chat, and when
+                // it is scrolled away the search simply finds nothing and focus stays put.
+                up = FocusRequester.Default
             }
             .onFocusChanged { st ->
                 focused = st.isFocused

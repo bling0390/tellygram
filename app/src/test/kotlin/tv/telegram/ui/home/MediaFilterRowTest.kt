@@ -47,6 +47,7 @@ class MediaFilterRowTest {
 
     private fun showRow(selected: MediaFilter = MediaFilter.All): HomeFocus {
         val focus = HomeFocus(
+            archivedRow = FocusRequester(),
             gridContainer = FocusRequester(),
             entry = FocusRequester(),
             selectedChat = FocusRequester(),
