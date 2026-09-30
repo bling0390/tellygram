@@ -108,6 +108,12 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.ui.platform.LocalDensity
 import kotlinx.coroutines.Job
 import tv.telegram.ui.components.ConfirmDialog
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.drawscope.Stroke
 
 /**
  * The visual half of a media card, shared by the grid and the album popup so the two cannot
@@ -275,5 +281,56 @@ private fun BoxScope.MediaThumbnail(item: MediaItem, state: HomeState, isVideo: 
                     .padding(end = 9.dp, bottom = 6.dp),
             )
         }
+    }
+}
+
+/**
+ * The card's frame, shared so the grid and the popup cannot drift: 160x120, 4dp corners, the
+ * surface-container fill, and the focused ring drawn OUTSIDE the card (the design's focused
+ * card measures 166x126 = 160 + 3 + 3). Focus and key handling stay with the caller, which
+ * passes its own chain through [modifier].
+ */
+@Composable
+internal fun MediaCard(
+    focused: Boolean,
+    tag: String? = null,
+    modifier: Modifier = Modifier,
+    content: @Composable BoxScope.() -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .size(width = HomeSpec.CellWidth, height = HomeSpec.CellHeight)
+            .let { if (tag != null) it.testTag(tag) else it }
+            .clip(RoundedCornerShape(HomeSpec.Corner))
+            .background(HomeSpec.SurfaceContainer, RoundedCornerShape(HomeSpec.Corner))
+            .focusStroke(focused, HomeSpec.FocusBorder, HomeSpec.White, HomeSpec.Corner)
+            .then(modifier),
+        content = content,
+    )
+}
+
+/**
+ * The focused ring, entirely outside the node: a 3dp stroke centred on a path inflated by
+ * half the width, so the card's outer bounds grow by the full stroke (Compose's
+ * Modifier.border draws inside instead). The corner radius grows with it to stay concentric.
+ */
+internal fun Modifier.focusStroke(
+    focused: Boolean,
+    width: Dp,
+    color: Color,
+    corner: Dp,
+): Modifier = if (!focused) {
+    this
+} else {
+    drawWithContent {
+        drawContent()
+        val grow = width.toPx() / 2f
+        drawRoundRect(
+            color = color,
+            topLeft = Offset(-grow, -grow),
+            size = Size(size.width + grow * 2f, size.height + grow * 2f),
+            cornerRadius = CornerRadius(corner.toPx() + grow),
+            style = Stroke(width = width.toPx()),
+        )
     }
 }

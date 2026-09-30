@@ -1050,20 +1050,11 @@ private fun MediaCell(
     val kind = remember(item.messageId, item.type, item.albumSize) { item.cellKind() }
     var focused by remember { mutableStateOf(false) }
 
-    Box(
+    MediaCard(
+        focused = focused,
+        // Stable handle for the UI tests that drive the D-pad graph.
+        tag = "home-media-cell-$index",
         modifier = Modifier
-            .size(width = HomeSpec.CellWidth, height = HomeSpec.CellHeight)
-            // Stable handle for the UI tests that drive the D-pad graph.
-            .testTag("home-media-cell-$index")
-            .clip(RoundedCornerShape(HomeSpec.Corner))
-            .background(HomeSpec.SurfaceContainer)
-            .then(
-                if (focused) {
-                    Modifier.border(HomeSpec.FocusBorder, HomeSpec.White, RoundedCornerShape(HomeSpec.Corner))
-                } else {
-                    Modifier
-                },
-            )
             .focusProperties {
                 // Media grid: four-way with explicit edges (annotation 3) — column 0
                 // reaches the selected chat, column 2 stops, row 0 goes up to the

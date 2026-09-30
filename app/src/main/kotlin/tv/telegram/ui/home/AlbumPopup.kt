@@ -53,6 +53,12 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.drawscope.Stroke
 
 /** The popup's palette, taken from the frames (3558:2184). */
 internal object AlbumPopupSpec {
@@ -189,19 +195,10 @@ private fun AlbumMemberTile(
     // Only a FRESH press arms the tile: the long press that opened the popup keeps emitting
     // repeats, and its release would otherwise fire the first member (same gate as the menu).
     var confirmArmed by remember { mutableStateOf(false) }
-    Box(
+    MediaCard(
+        focused = focused,
+        tag = tag,
         modifier = Modifier
-            .size(width = 160.dp, height = 120.dp)
-            .testTag(tag)
-            // Focus is the white border only — same as the grid's cards (product, 2026-09-30).
-            .background(AlbumPopupSpec.Tile, RoundedCornerShape(4.dp))
-            .then(
-                if (focused) {
-                    Modifier.border(3.dp, AlbumPopupSpec.White, RoundedCornerShape(4.dp))
-                } else {
-                    Modifier
-                },
-            )
             .focusProperties {
                 // One row: only Left/Right move, and the ends stop.
                 left = if (isFirst) FocusRequester.Cancel else FocusRequester.Default
