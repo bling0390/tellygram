@@ -49,8 +49,14 @@ internal fun PhotoPreviewScreen(
     index: Int,
     onClose: () -> Unit,
     onNavigateTo: (Int) -> Unit,
+    /**
+     * Set when the preview was opened by message id (plan (a), 2026-09-30): the list to walk,
+     * already filtered to photos. Null means the chat's loaded media.
+     */
+    overrideItems: List<MediaItem>? = null,
 ) {
-    val items by state.mediaItems.collectAsStateWithLifecycle()
+    val ownItems by state.mediaItems.collectAsStateWithLifecycle()
+    val items = overrideItems ?: ownItems
     val fileStates by state.fileStates.collectAsStateWithLifecycle()
     val focus = remember { FocusRequester() }
 

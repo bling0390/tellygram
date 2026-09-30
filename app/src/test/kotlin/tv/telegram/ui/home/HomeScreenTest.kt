@@ -39,7 +39,7 @@ import tv.telegram.ui.focus.BackController
 import tv.telegram.ui.focus.LocalBackController
 
 /** Stand-in for MainViewModel: the real one starts TDLib, which cannot run on the JVM. */
-private class FakeHomeState : HomeState {
+internal class FakeHomeState : HomeState {
     override val chatList: StateFlow<List<ChatItem>> = MutableStateFlow(
 
         listOf(chat(1, "Alpha"), chat(2, "Beta")),
@@ -92,6 +92,13 @@ private class FakeHomeState : HomeState {
     var ownerAnswer = false
 
     override fun deleteChat(chat: ChatItem, revoke: Boolean) { deletedWithRevoke = chat.id to revoke }
+
+    /** What the popup handed the viewer, so a test can assert the walk list. */
+    var viewerHandover: Pair<Int, Long>? = null
+
+    override fun openViewerByMessage(items: List<MediaItem>, messageId: Long) {
+        viewerHandover = items.size to messageId
+    }
     override suspend fun isGroupOwner(chatId: Long): Boolean = ownerAnswer
     override fun loadMoreMedia() { loadedMore = true }
     override fun setMediaFilter(filter: MediaFilter) { filterSet = filter }

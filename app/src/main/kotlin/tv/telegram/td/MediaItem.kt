@@ -27,4 +27,7 @@ data class MediaItem(
     // messages the album holds, which is what the card's "+N" shows.
     val albumId: Long = 0,
     val albumSize: Int = 1,
+    // The album's members, in the order they were grouped. The representative above is
+    // members.first(); the popup renders this list (product, 2026-09-30).
+    val albumMembers: List<MediaItem> = emptyList(),
 )

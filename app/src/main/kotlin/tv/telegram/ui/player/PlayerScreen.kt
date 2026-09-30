@@ -146,9 +146,16 @@ fun PlayerScreen(
     index: Int,
     onClose: () -> Unit,
     onNavigateTo: (Int) -> Unit,
+    /**
+     * Set when the viewer was opened by message id (plan (a), 2026-09-30): the list to walk,
+     * already filtered to the types this screen plays. Null means the chat's loaded media.
+     */
+    items: List<MediaItem>? = null,
 ) {
     val context = LocalContext.current
-    val mediaItems by viewModel.mediaItems.collectAsStateWithLifecycle()
+    val ownItems by viewModel.mediaItems.collectAsStateWithLifecycle()
+    // A handed-over list wins: prev/next then stays inside what the user opened from.
+    val mediaItems = items ?: ownItems
     val speed by viewModel.playerPlaybackSpeed.collectAsStateWithLifecycle()
     val resumeMap by viewModel.playerResumePositions.collectAsStateWithLifecycle()
     val mediaExhausted by viewModel.mediaExhausted.collectAsStateWithLifecycle()
@@ -157,7 +164,8 @@ fun PlayerScreen(
     // loaded media list, prefetch the next search page so the playlist
     // keeps growing past the current data boundary.
     LaunchedEffect(index, mediaItems.size, mediaExhausted) {
-        if (!mediaExhausted && index >= mediaItems.size - 8) {
+        // Only the chat's own list pages; a handed-over list is already complete.
+        if (items == null && !mediaExhausted && index >= mediaItems.size - 8) {
             viewModel.loadMoreMedia()
         }
     }

@@ -40,4 +40,6 @@ internal interface HomeState {
     fun deleteChat(chat: ChatItem, revoke: Boolean)
     /** Resolved on demand for groups; cached, so a long press costs one call at most. */
     suspend fun isGroupOwner(chatId: Long): Boolean
+    /** Plan (a): the list a message-addressed viewer walks, and where it starts. */
+    fun openViewerByMessage(items: List<MediaItem>, messageId: Long)
 }

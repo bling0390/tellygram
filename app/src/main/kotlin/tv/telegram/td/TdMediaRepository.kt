@@ -78,7 +78,12 @@ class TdMediaRepository(
             val idx = _items.value.indexOfFirst { it.albumId == albumId }
             if (idx >= 0) {
                 val updated = _items.value.toMutableList()
-                updated[idx] = updated[idx].copy(albumSize = updated[idx].albumSize + 1)
+                val cur = updated[idx]
+                // The popup shows the members, so the new one joins them too (2026-09-30).
+                updated[idx] = cur.copy(
+                    albumSize = cur.albumSize + 1,
+                    albumMembers = cur.albumMembers + item,
+                )
                 _items.value = updated
                 knownMessageIds.add(item.messageId)
                 return
@@ -367,8 +372,12 @@ class TdMediaRepository(
             var j = i
             while (j < messages.size && messages[j].mediaAlbumId == albumId) j++
             val run = messages.subList(i, j)
-            run.firstNotNullOfOrNull { parseMessage(it, chatId) }
-                ?.let { out += it.copy(albumId = albumId, albumSize = run.size) }
+            // Keep every member, not just the first: the album popup shows the members, and
+            // re-querying them later would cost a round trip we already paid for.
+            val members = run.mapNotNull { parseMessage(it, chatId) }
+            members.firstOrNull()?.let {
+                out += it.copy(albumId = albumId, albumSize = members.size, albumMembers = members)
+            }
             i = j
         }
         return out

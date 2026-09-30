@@ -96,6 +96,22 @@ class MainViewModel(app: Application) : AndroidViewModel(app), HomeState, Settin
         }
     }
 
+    /**
+     * The list a viewer should walk when it was opened by message id, plus where to start.
+     * Handed over rather than stored on the items: prev/next then always matches the list the
+     * user came from (an album's members, or the chat's loaded media), with no second truth.
+     */
+    private val _viewerContext = MutableStateFlow<ViewerContext?>(null)
+    val viewerContext: StateFlow<ViewerContext?> = _viewerContext.asStateFlow()
+
+    override fun openViewerByMessage(items: List<MediaItem>, messageId: Long) {
+        _viewerContext.value = ViewerContext(items, messageId)
+    }
+
+    fun clearViewerContext() {
+        _viewerContext.value = null
+    }
+
     private val _navEvents = MutableSharedFlow<NavEvent>()
     val navEvents: SharedFlow<NavEvent> = _navEvents.asSharedFlow()
 
@@ -388,3 +404,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app), HomeState, Settin
  */
 internal fun shouldRestartClosedClient(state: AuthState, signOutRequested: Boolean): Boolean =
     signOutRequested && state is AuthState.Closed
+
+/** What a message-addressed viewer walks, and where it starts. */
+data class ViewerContext(
+    val items: List<MediaItem>,
+    val messageId: Long,
+)

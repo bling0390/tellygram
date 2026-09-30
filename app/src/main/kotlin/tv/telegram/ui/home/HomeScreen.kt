@@ -213,6 +213,8 @@ internal fun HomeScreen(
     state: HomeState,
     onOpenPlayer: (Int) -> Unit = {},
     onOpenPhoto: (Int) -> Unit = {},
+    /** A member picked inside the album popup: the shell routes it by type. */
+    onOpenMediaItem: (MediaItem) -> Unit = {},
     // Focus bridge from the shell: Down from the top bar lands on the selected chat
     // row, and Back from the chat list returns to the bar's selected tab.
     contentEntryFocus: FocusRequester? = null,
@@ -231,9 +233,30 @@ internal fun HomeScreen(
     var menuIsOwner by remember { mutableStateOf(false) }
     // The confirm dialog's target and its private-chat toggle, unchecked by default.
     var deleteTarget by remember { mutableStateOf<ChatItem?>(null) }
+    // The album popup's target (frames 3558:2184); null when closed.
+    var albumTarget by remember { mutableStateOf<MediaItem?>(null) }
     var deleteRadioChecked by remember { mutableStateOf(false) }
 
     // Closing the popover hands focus back to the row it came from.
+    albumTarget?.let { album ->
+        AlbumPopup(
+            members = album.albumMembers,
+            state = state,
+            caption = album.caption,
+            onOpenMember = { index ->
+                album.albumMembers.getOrNull(index)?.let { member ->
+                    state.openViewerByMessage(album.albumMembers, member.messageId)
+                    onOpenMediaItem(member)
+                    albumTarget = null
+                }
+            },
+            onDismiss = {
+                state.setPlayerReturnFocus(album.messageId)
+                albumTarget = null
+            },
+        )
+    }
+
     deleteTarget?.let { chat ->
         val case = chatDeleteCase(chat.type, menuIsOwner)
         ConfirmDialog(
@@ -456,6 +479,7 @@ internal fun HomeScreen(
                         },
                         onOpen = onOpenPlayer,
                         onPreview = onOpenPhoto,
+                        onOpenAlbum = { albumTarget = it },
                         onEnterGrid = { jumpToGrid(rememberedGridIndex) },
                     )
                 }
@@ -932,6 +956,8 @@ private fun MediaGrid(
     onPreview: (Int) -> Unit,
     onGridFocus: (Int) -> Unit,
     onOpen: (Int) -> Unit,
+    /** Confirming an album card opens the popup instead of a viewer. */
+    onOpenAlbum: (MediaItem) -> Unit = {},
     /** Land focus on the remembered cell; HomeScreen owns the scroll-then-request dance. */
     onEnterGrid: () -> Unit,
 ) {
@@ -995,6 +1021,7 @@ private fun MediaGrid(
                 onGridFocus = onGridFocus,
                 onOpen = { onOpen(index) },
                 onPreview = { onPreview(index) },
+                onOpenAlbum = { onOpenAlbum(item) },
             )
         }
     }
@@ -1002,8 +1029,6 @@ private fun MediaGrid(
 }
 
 
-/** How long a card waits for its thumbnail before falling back to the glyph. */
-private const val ThumbnailTimeoutMs = 6_000L
 
 @Composable
 private fun MediaCell(
@@ -1020,6 +1045,7 @@ private fun MediaCell(
     onGridFocus: (Int) -> Unit,
     onOpen: () -> Unit,
     onPreview: () -> Unit,
+    onOpenAlbum: () -> Unit = {},
 ) {
     val kind = remember(item.messageId, item.type, item.albumSize) { item.cellKind() }
     var focused by remember { mutableStateOf(false) }
@@ -1069,10 +1095,15 @@ private fun MediaCell(
 
                 ) {
 
-                    when (mediaOpenTarget(kind)) {
+
+                    // An album card opens the popup; everything else keeps its viewer.
+                    if (kind is MediaCellKind.Album && item.albumMembers.isNotEmpty()) {
+                        onOpenAlbum()
+                    } else {                    when (mediaOpenTarget(kind)) {
                                             MediaOpenTarget.PhotoPreview -> onPreview()
                                             MediaOpenTarget.Player -> onOpen()
                                         }
+                    }
 
                     true
 
@@ -1084,23 +1115,7 @@ private fun MediaCell(
 
             },
     ) {
-        when (kind) {
-            // Placeholder-only kinds: the design draws one glyph, centred.
-            // Audio is the same glyph as Material's AudioFile (measured: IoU
-            // 99.8%), so it needs no bundled asset; text does (IoU 36.8% against
-            // Material's Description — a different drawing), so that one ships as
-            // a vector converted from the design.
-            is MediaCellKind.Audio -> MediaGlyph(Icons.Outlined.AudioFile)
-            is MediaCellKind.Text -> MediaGlyphFromRes(R.drawable.ic_media_text_snippet)
-
-            // Album: Collections glyph with the member count underneath.
-            is MediaCellKind.Album -> MediaAlbumCell(kind.count)
-
-            // Photo / video: the thumbnail is the card; the Image / Video file
-            // glyph only stands in when there is nothing to show.
-            is MediaCellKind.Photo -> MediaThumbnail(item, state, isVideo = false)
-            is MediaCellKind.Video -> MediaThumbnail(item, state, isVideo = true)
-        }
+        MediaCardContent(item = item, state = state)
     }
 }
 
@@ -1159,103 +1174,7 @@ private fun BoxScope.MediaAlbumCell(count: Int) {
  * empty rather than showing the glyph, so a slow thumbnail does not read as
  * a broken one.
  */
-@Composable
-private fun BoxScope.MediaThumbnail(item: MediaItem, state: HomeState, isVideo: Boolean) {
-    val fileStates by state.fileStates.collectAsStateWithLifecycle()
-    val thumbFileId = item.thumbnailFileId ?: item.fileId
-    val localPath = (fileStates[thumbFileId] as? FileDownloadState.Local)?.path
-        ?: item.thumbnailLocalPath
-        ?: item.localPath
 
-    var imageFailed by remember(item.messageId, localPath) { mutableStateOf(false) }
-    var waitOver by remember(item.messageId) { mutableStateOf(false) }
-
-    LaunchedEffect(thumbFileId) {
-        if (localPath == null) state.ensureMediaFile(thumbFileId, priority = 24)
-    }
-    LaunchedEffect(item.messageId) {
-        delay(ThumbnailTimeoutMs)
-        waitOver = true
-    }
-
-    // Three states: the thumbnail, a spinner while it is on its way, and the type
-    // glyph once it is known not to arrive. Compose's icon set has no
-    // progress_activity (that is a Material Symbols glyph), and a static loading
-    // icon would read as a frozen card, so the spinner is the M3 indicator that
-    // PlayerScreen already uses — and it is bounded by the same timeout, so a card
-    // can never spin forever.
-    val showImage = localPath != null && !imageFailed
-    val showGlyph = !showImage && (imageFailed || waitOver || thumbFileId == 0)
-    val showLoading = !showImage && !showGlyph
-
-    // Read the context in the composable scope: reading a CompositionLocal inside
-    // the remember lambda is not a composable context.
-    val ctx = LocalContext.current
-
-    if (showImage) {
-        AsyncImage(
-            model = remember(localPath) { ImageRequest.Builder(ctx).data(File(localPath!!)).crossfade(false).build() },
-            contentDescription = item.caption,
-            contentScale = ContentScale.Crop,
-            onError = { imageFailed = true },
-            modifier = Modifier
-                .align(Alignment.Center)
-                .size(width = HomeSpec.CellWidth, height = HomeSpec.CellHeight),
-        )
-    } else if (showLoading) {
-        // Material Symbols' progress_activity, spun by hand: the icon set bundled
-        // with Compose predates it, so it ships as a vector and the rotation is
-        // ours. Still bounded by the same timeout above — a card can never spin
-        // forever.
-        val spin by rememberInfiniteTransition(label = "cellSpin").animateFloat(
-            initialValue = 0f,
-            targetValue = 360f,
-            animationSpec = infiniteRepeatable(tween(1_000, easing = LinearEasing)),
-            label = "cellSpinAngle",
-        )
-        Icon(
-            painter = painterResource(R.drawable.ic_progress_activity),
-            contentDescription = null,
-            tint = HomeSpec.OnSurface,
-            modifier = Modifier
-                .align(Alignment.Center)
-                .size(40.dp)
-                .rotate(spin),
-        )
-    } else if (showGlyph) {
-        Icon(
-            imageVector = if (isVideo) Icons.Outlined.VideoFile else Icons.Outlined.Image,
-            contentDescription = null,
-            tint = HomeSpec.OnSurface,
-            modifier = Modifier
-                .align(Alignment.Center)
-                .size(48.dp),
-        )
-    }
-
-    // Play affordance + duration ride on top of the thumbnail only: the design's
-    // glyph-only card carries neither.
-    if (isVideo && showImage) {
-        Icon(
-            imageVector = Icons.Outlined.PlayCircle,
-            contentDescription = null,
-            tint = HomeSpec.White,
-            modifier = Modifier
-                .align(Alignment.Center)
-                .size(48.dp),
-        )
-        if (item.duration > 0) {
-            Text(
-                text = formatDuration(item.duration),
-                style = MaterialTheme.typography.labelSmall,
-                color = HomeSpec.OnSurface,
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(end = 9.dp, bottom = 6.dp),
-            )
-        }
-    }
-}
 
 
 /** Every list row in the design spans the full 268dp column. */

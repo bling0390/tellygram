@@ -125,4 +125,5 @@
     <string name="chat_delete_confirm_channel">Leave channel</string>
     <string name="chat_delete_radio">Delete for Me and %1$s</string>
     <string name="chat_delete_cancel">Cancel</string>
+    <string name="album_popup_title">Albums</string>
 </resources>

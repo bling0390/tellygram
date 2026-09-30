@@ -115,4 +115,5 @@
     <string name="chat_delete_confirm_channel">退出頻道</string>
     <string name="chat_delete_radio">同時為 %1$s 刪除</string>
     <string name="chat_delete_cancel">取消</string>
+    <string name="album_popup_title">相簿</string>
 </resources>

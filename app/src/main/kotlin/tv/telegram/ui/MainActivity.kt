@@ -95,6 +95,7 @@ import androidx.tv.material3.Card
 import androidx.tv.material3.CardDefaults
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
+import tv.telegram.td.MediaType
 
 // AppCompatActivity, not ComponentActivity: the per-app language API
 // (AppCompatDelegate.setApplicationLocales) only applies through AppCompat activities.
@@ -342,6 +343,13 @@ private fun AppNavHost(viewModel: MainViewModel, backController: BackController)
                 HomeScreen(
                     state = viewModel,
                     onOpenPlayer = { index -> navController.navigate(Routes.player(index)) },
+                    onOpenMediaItem = { item ->
+                        // A member picked in the album popup: same split as the grid's cards.
+                        navController.navigate(
+                            if (item.type == MediaType.Photo) Routes.photoAt(item.messageId)
+                            else Routes.playerAt(item.messageId)
+                        )
+                    },
                     onOpenPhoto = { index -> navController.navigate(Routes.photo(index)) },
                     contentEntryFocus = homeContentFocus,
                     topBarFocus = homeTopBarFocus,
@@ -393,6 +401,40 @@ private fun AppNavHost(viewModel: MainViewModel, backController: BackController)
                 }
             }
 
+            // Opened from the album popup: address by message, walk the handed-over list.
+            composable(
+                route = Routes.PHOTO_AT,
+                arguments = listOf(navArgument("messageId") { type = NavType.LongType }),
+            ) { entry ->
+                val messageId = entry.arguments?.getLong("messageId") ?: 0L
+                val context by viewModel.viewerContext.collectAsStateWithLifecycle()
+                val photos = remember(context, messageId) {
+                    context?.items.orEmpty().filter { it.type == MediaType.Photo }
+                }
+                val start = photos.indexOfFirst { it.messageId == messageId }.coerceAtLeast(0)
+                if (photos.isEmpty()) {
+                    LaunchedEffect(Unit) { navController.popBackStack() }
+                } else {
+                    PhotoPreviewScreen(
+                        state = viewModel,
+                        index = start,
+                        overrideItems = photos,
+                        onClose = {
+                            viewModel.clearViewerContext()
+                            navController.popBackStack()
+                        },
+                        onNavigateTo = { newIndex ->
+                            photos.getOrNull(newIndex)?.let { next ->
+                                navController.navigate(Routes.photoAt(next.messageId)) {
+                                    popUpTo(Routes.PHOTO_AT) { inclusive = true }
+                                    launchSingleTop = true
+                                }
+                            }
+                        },
+                    )
+                }
+            }
+
             composable(
                 route = Routes.PHOTO,
                 arguments = listOf(navArgument("index") { type = NavType.IntType }),
@@ -408,6 +450,44 @@ private fun AppNavHost(viewModel: MainViewModel, backController: BackController)
                         }
                     },
                 )
+            }
+
+            // Opened from the album popup: address by message, walk the handed-over list.
+            composable(
+                route = Routes.PLAYER_AT,
+                arguments = listOf(navArgument("messageId") { type = NavType.LongType }),
+                enterTransition = { EnterTransition.None },
+                exitTransition = { ExitTransition.None },
+                popEnterTransition = { EnterTransition.None },
+                popExitTransition = { ExitTransition.None },
+            ) { entry ->
+                val messageId = entry.arguments?.getLong("messageId") ?: 0L
+                val context by viewModel.viewerContext.collectAsStateWithLifecycle()
+                val list = remember(context, messageId) {
+                    context?.items.orEmpty().filter { it.type != MediaType.Photo }
+                }
+                val start = list.indexOfFirst { it.messageId == messageId }.coerceAtLeast(0)
+                if (list.isEmpty()) {
+                    LaunchedEffect(Unit) { navController.popBackStack() }
+                } else {
+                    PlayerScreen(
+                        viewModel = viewModel,
+                        index = start,
+                        items = list,
+                        onClose = {
+                            viewModel.clearViewerContext()
+                            navController.popBackStack()
+                        },
+                        onNavigateTo = { newIndex ->
+                            list.getOrNull(newIndex)?.let { next ->
+                                navController.navigate(Routes.playerAt(next.messageId)) {
+                                    popUpTo(Routes.PLAYER_AT) { inclusive = true }
+                                    launchSingleTop = true
+                                }
+                            }
+                        },
+                    )
+                }
             }
 
             composable(
