@@ -242,7 +242,8 @@ internal fun HomeScreen(
         AlbumPopup(
             members = album.albumMembers,
             state = state,
-            caption = album.caption,
+            // The caption can sit on any member, not just the first.
+            caption = albumHeaderCaption(album.albumMembers),
             onOpenMember = { index ->
                 album.albumMembers.getOrNull(index)?.let { member ->
                     state.openViewerByMessage(album.albumMembers, member.messageId)

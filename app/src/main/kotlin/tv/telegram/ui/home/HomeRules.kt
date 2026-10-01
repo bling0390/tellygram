@@ -111,3 +111,11 @@ internal fun indexOfMessage(items: List<MediaItem>, messageId: Long): Int =
  */
 internal fun verifiedIconColor(highlighted: Boolean): Color =
     if (highlighted) HomeSpec.InverseOnSurface else HomeSpec.Primary
+
+/**
+ * The album popup's header caption. Telegram hangs an album's caption on ONE of its messages
+ * (usually the first, but not always), and only the members know which — the representative
+ * alone can be blank. Pure, so it is unit tested.
+ */
+internal fun albumHeaderCaption(members: List<MediaItem>): String? =
+    members.firstNotNullOfOrNull { it.caption?.takeIf { text -> text.isNotBlank() } }

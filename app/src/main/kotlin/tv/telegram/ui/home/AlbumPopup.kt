@@ -136,11 +136,11 @@ internal fun AlbumPopup(
                     )
                     if (hasCaption) {
                         Text(
+                            // Free to wrap: the caption grows the header (and the panel with
+                            // it) instead of being clipped to two lines (product, 2026-10-01).
                             text = caption.orEmpty(),
                             style = MaterialTheme.typography.bodyMedium,
                             color = AlbumPopupSpec.Body,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
                         )
                     }
                 }

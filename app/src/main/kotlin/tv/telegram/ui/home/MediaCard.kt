@@ -223,7 +223,9 @@ private fun BoxScope.MediaThumbnail(item: MediaItem, state: HomeState, isVideo: 
         AsyncImage(
             model = remember(localPath) { ImageRequest.Builder(ctx).data(File(localPath!!)).crossfade(false).build() },
             contentDescription = item.caption,
-            contentScale = ContentScale.Crop,
+            // Fit the long edge instead of cropping: the whole frame stays visible and the
+            // card's fill shows beside it (product, 2026-10-01).
+            contentScale = ContentScale.Fit,
             onError = { imageFailed = true },
             modifier = Modifier
                 .align(Alignment.Center)
@@ -303,7 +305,14 @@ internal fun MediaCard(
             .let { if (tag != null) it.testTag(tag) else it }
             .clip(RoundedCornerShape(HomeSpec.Corner))
             .background(HomeSpec.SurfaceContainer, RoundedCornerShape(HomeSpec.Corner))
-            .focusStroke(focused, HomeSpec.FocusBorder, HomeSpec.White, HomeSpec.Corner)
+            // The ring is always drawn — 3dp outside the card — so every card has the same
+            // edge: tinted like the fill at rest, white once focused (product, 2026-10-01).
+            .focusStroke(
+                draw = true,
+                width = HomeSpec.FocusBorder,
+                color = if (focused) HomeSpec.White else HomeSpec.SurfaceContainer,
+                corner = HomeSpec.Corner,
+            )
             .then(modifier),
         content = content,
     )
@@ -315,11 +324,11 @@ internal fun MediaCard(
  * Modifier.border draws inside instead). The corner radius grows with it to stay concentric.
  */
 internal fun Modifier.focusStroke(
-    focused: Boolean,
+    draw: Boolean,
     width: Dp,
     color: Color,
     corner: Dp,
-): Modifier = if (!focused) {
+): Modifier = if (!draw) {
     this
 } else {
     drawWithContent {

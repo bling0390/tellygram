@@ -376,7 +376,11 @@ class TdMediaRepository(
             // re-querying them later would cost a round trip we already paid for.
             val members = run.mapNotNull { parseMessage(it, chatId) }
             members.firstOrNull()?.let {
-                out += it.copy(albumId = albumId, albumSize = members.size, albumMembers = members)
+                out += it.copy(
+                    albumId = albumId,
+                    albumSize = members.size,
+                    albumMembers = albumMembersInDisplayOrder(members),
+                )
             }
             i = j
         }
@@ -402,3 +406,11 @@ class TdMediaRepository(
  */
 internal fun shouldStopPaging(added: Int, extraPages: Int, maxExtraPages: Int = 3): Boolean =
     added > 0 || extraPages >= maxExtraPages
+
+/**
+ * Album members in display order. TDLib hands messages back newest-first, but an album reads in
+ * the order it was sent — oldest first (product, 2026-10-01). The popup's strip and the viewer's
+ * next/previous share this list, so both follow the same order. The card's cover is unaffected:
+ * it is the item the whole album hangs off, not members[0].
+ */
+internal fun albumMembersInDisplayOrder(members: List<MediaItem>): List<MediaItem> = members.reversed()

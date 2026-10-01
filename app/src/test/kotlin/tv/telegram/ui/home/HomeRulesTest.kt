@@ -177,4 +177,18 @@ class HomeRulesTest {
         assertEquals(HomeSpec.InverseOnSurface, verifiedIconColor(highlighted = true))
         assertEquals(HomeSpec.Primary, verifiedIconColor(highlighted = false))
     }
+
+    @Test
+    fun `the album header takes the first member that actually has a caption`() {
+        fun m(id: Long, caption: String?) = MediaItem(
+            messageId = id, type = MediaType.Photo, fileId = 0, caption = caption,
+        )
+        // The representative is blank but a later member carries it (Telegram's usual case).
+        assertEquals("hi", albumHeaderCaption(listOf(m(1, null), m(2, "hi"), m(3, "later"))))
+        // Blank strings are not captions either.
+        assertEquals("hi", albumHeaderCaption(listOf(m(1, "   "), m(2, "hi"))))
+        // Nothing anywhere -> no header block at all.
+        assertNull(albumHeaderCaption(listOf(m(1, null), m(2, "  "))))
+        assertNull(albumHeaderCaption(emptyList()))
+    }
 }
