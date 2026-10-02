@@ -37,6 +37,7 @@ import tv.telegram.td.MediaItem
 import tv.telegram.td.MediaType
 import tv.telegram.ui.focus.BackController
 import tv.telegram.ui.focus.LocalBackController
+import tv.telegram.td.SenderInfo
 
 /** Stand-in for MainViewModel: the real one starts TDLib, which cannot run on the JVM. */
 internal class FakeHomeState : HomeState {
@@ -99,6 +100,11 @@ internal class FakeHomeState : HomeState {
     override fun openViewerByMessage(items: List<MediaItem>, messageId: Long) {
         viewerHandover = items.size to messageId
     }
+    /** What the text popup resolves as the sender; null keeps the fallback label. */
+    var senderInfo: SenderInfo? = null
+
+    override suspend fun senderInfoFor(item: MediaItem): SenderInfo? = senderInfo
+
     override suspend fun isGroupOwner(chatId: Long): Boolean = ownerAnswer
     override fun loadMoreMedia() { loadedMore = true }
     override fun setMediaFilter(filter: MediaFilter) { filterSet = filter }

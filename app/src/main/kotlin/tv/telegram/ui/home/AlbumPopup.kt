@@ -67,8 +67,6 @@ internal object AlbumPopupSpec {
     val Body = Color(0xFF43474E)         // surface-variant
     /** The hairline between the caption and the strip: outline at 10%. */
     val Divider = Color(0x1A8E9099)
-    val Tile = Color(0xFF1E2023)         // surface-container
-    val White = Color(0xFFFFFFFF)
     /** Same dim as the dialogs: the frames' blur is not used (product, 2026-09-30). */
     val Scrim = Color(0x991A1C1E)
 }
@@ -159,7 +157,7 @@ internal fun AlbumPopup(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(126.dp),
-                    horizontalArrangement = Arrangement.spacedBy(20.dp),
+                    horizontalArrangement = Arrangement.spacedBy(slotGap(20.dp, HomeSpec.FocusBorder)),
                     contentPadding = PaddingValues(0.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -198,6 +196,8 @@ private fun AlbumMemberTile(
     MediaCard(
         focused = focused,
         tag = tag,
+        // At rest the popup's cards carry a light outline (inverse-surface), not a hidden one.
+        borderColor = AlbumPopupSpec.Panel,
         modifier = Modifier
             .focusProperties {
                 // One row: only Left/Right move, and the ends stop.

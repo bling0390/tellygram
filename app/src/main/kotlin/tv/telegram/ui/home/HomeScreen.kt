@@ -109,6 +109,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.ui.platform.LocalDensity
 import kotlinx.coroutines.Job
 import tv.telegram.ui.components.ConfirmDialog
+import tv.telegram.td.SenderInfo
 
 /**
  * HomeScreen — Figma node 1243:1724 ("HomeScreen").
@@ -235,9 +236,29 @@ internal fun HomeScreen(
     var deleteTarget by remember { mutableStateOf<ChatItem?>(null) }
     // The album popup's target (frames 3558:2184); null when closed.
     var albumTarget by remember { mutableStateOf<MediaItem?>(null) }
+    // The text popup's target (frames 3588:2212); null when closed.
+    var textTarget by remember { mutableStateOf<MediaItem?>(null) }
+    // Resolved the moment the popup opens (one request), like the group-owner lookup.
+    var textSender by remember { mutableStateOf<SenderInfo?>(null) }
     var deleteRadioChecked by remember { mutableStateOf(false) }
 
     // Closing the popover hands focus back to the row it came from.
+    textTarget?.let { item ->
+        val sender = textSender
+        TextPopup(
+            text = item.caption.orEmpty(),
+            senderName = sender?.name,
+            avatarFileId = sender?.avatarFileId,
+            senderId = item.senderId,
+            state = state,
+            onDismiss = {
+                state.setPlayerReturnFocus(item.messageId)
+                textTarget = null
+                textSender = null
+            },
+        )
+    }
+
     albumTarget?.let { album ->
         AlbumPopup(
             members = album.albumMembers,
@@ -481,6 +502,12 @@ internal fun HomeScreen(
                         onOpen = onOpenPlayer,
                         onPreview = onOpenPhoto,
                         onOpenAlbum = { albumTarget = it },
+                        onOpenText = { item ->
+                            scope.launch {
+                                textSender = state.senderInfoFor(item)
+                                textTarget = item
+                            }
+                        },
                         onEnterGrid = { jumpToGrid(rememberedGridIndex) },
                     )
                 }
@@ -959,6 +986,8 @@ private fun MediaGrid(
     onOpen: (Int) -> Unit,
     /** Confirming an album card opens the popup instead of a viewer. */
     onOpenAlbum: (MediaItem) -> Unit = {},
+    /** Confirming a text card opens its content instead of a viewer. */
+    onOpenText: (MediaItem) -> Unit = {},
     /** Land focus on the remembered cell; HomeScreen owns the scroll-then-request dance. */
     onEnterGrid: () -> Unit,
 ) {
@@ -1003,8 +1032,9 @@ private fun MediaGrid(
         modifier = Modifier
             .width(HomeSpec.GridWidth)
             .height(HomeSpec.GridHeight),
-        horizontalArrangement = Arrangement.spacedBy(HomeSpec.CellGap),
-        verticalArrangement = Arrangement.spacedBy(HomeSpec.CellGap),
+        // Slots are 6dp wider/taller than the cards (3dp of ring each side).
+        horizontalArrangement = Arrangement.spacedBy(slotGap(HomeSpec.CellGap, HomeSpec.FocusBorder)),
+        verticalArrangement = Arrangement.spacedBy(slotGap(HomeSpec.CellGap, HomeSpec.FocusBorder)),
         contentPadding = PaddingValues(0.dp),
     ) {
         itemsIndexed(items, key = { _, item -> item.messageId }) { index, item ->
@@ -1023,6 +1053,7 @@ private fun MediaGrid(
                 onOpen = { onOpen(index) },
                 onPreview = { onPreview(index) },
                 onOpenAlbum = { onOpenAlbum(item) },
+                onOpenText = { onOpenText(item) },
             )
         }
     }
@@ -1047,6 +1078,7 @@ private fun MediaCell(
     onOpen: () -> Unit,
     onPreview: () -> Unit,
     onOpenAlbum: () -> Unit = {},
+    onOpenText: () -> Unit = {},
 ) {
     val kind = remember(item.messageId, item.type, item.albumSize) { item.cellKind() }
     var focused by remember { mutableStateOf(false) }
@@ -1055,6 +1087,8 @@ private fun MediaCell(
         focused = focused,
         // Stable handle for the UI tests that drive the D-pad graph.
         tag = "home-media-cell-$index",
+        // At rest the grid's ring reads as the app background (#1A1C1E), per the design tokens.
+        borderColor = HomeSpec.Background,
         modifier = Modifier
             .focusProperties {
                 // Media grid: four-way with explicit edges (annotation 3) — column 0
@@ -1088,8 +1122,11 @@ private fun MediaCell(
                 ) {
 
 
-                    // An album card opens the popup; everything else keeps its viewer.
-                    if (kind is MediaCellKind.Album && item.albumMembers.isNotEmpty()) {
+                    // Text shows its content in a popup; an album opens its members; the
+                    // rest keep their viewer.
+                    if (kind is MediaCellKind.Text) {
+                        onOpenText()
+                    } else if (kind is MediaCellKind.Album && item.albumMembers.isNotEmpty()) {
                         onOpenAlbum()
                     } else {                    when (mediaOpenTarget(kind)) {
                                             MediaOpenTarget.PhotoPreview -> onPreview()

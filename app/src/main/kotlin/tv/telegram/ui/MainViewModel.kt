@@ -29,6 +29,7 @@ import tv.telegram.td.TdClient
 import tv.telegram.td.TdFileRepository
 import tv.telegram.td.TdMediaRepository
 import tv.telegram.td.TdUser
+import tv.telegram.td.SenderInfo
 
 sealed class NavEvent {
     data object GoToQrCode : NavEvent()
@@ -82,6 +83,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app), HomeState, Settin
     override fun toggleChatArchive(chatId: Long, archived: Boolean) {
         viewModelScope.launch { chatRepo.setChatArchived(chatId, archived) }
     }
+
+    override suspend fun senderInfoFor(item: MediaItem): SenderInfo? = mediaRepo.senderInfo(item)
 
     override suspend fun isGroupOwner(chatId: Long): Boolean =
         chatRepo.isGroupOwner(chatId, currentUser.value?.id ?: 0L)

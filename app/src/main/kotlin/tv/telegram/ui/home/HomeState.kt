@@ -5,6 +5,7 @@ import tv.telegram.td.ChatItem
 import tv.telegram.td.FileDownloadState
 import tv.telegram.td.MediaFilter
 import tv.telegram.td.MediaItem
+import tv.telegram.td.SenderInfo
 
 /**
  * Everything the home screen needs from the app, behind one interface so the UI can
@@ -40,6 +41,9 @@ internal interface HomeState {
     fun deleteChat(chat: ChatItem, revoke: Boolean)
     /** Resolved on demand for groups; cached, so a long press costs one call at most. */
     suspend fun isGroupOwner(chatId: Long): Boolean
+    /** Resolved lazily when a text popup opens; null when it cannot be resolved. */
+    suspend fun senderInfoFor(item: MediaItem): SenderInfo?
+
     /** Plan (a): the list a message-addressed viewer walks, and where it starts. */
     fun openViewerByMessage(items: List<MediaItem>, messageId: Long)
 }

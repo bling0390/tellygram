@@ -3,6 +3,7 @@ package tv.telegram.ui.home
 import androidx.compose.ui.graphics.Color
 import tv.telegram.td.MediaItem
 import tv.telegram.td.MediaType
+import androidx.compose.ui.unit.Dp
 
 /**
  * The home screen's pure rules, kept out of the composables so they can be unit
@@ -119,3 +120,9 @@ internal fun verifiedIconColor(highlighted: Boolean): Color =
  */
 internal fun albumHeaderCaption(members: List<MediaItem>): String? =
     members.firstNotNullOfOrNull { it.caption?.takeIf { text -> text.isNotBlank() } }
+
+/**
+ * The space BETWEEN slots, given the gap the design wants between the visible cards: the ring
+ * band sits inside each slot, so two adjacent slots contribute a band each (2026-10-01).
+ */
+internal fun slotGap(cellGap: Dp, ring: Dp): Dp = cellGap - ring * 2

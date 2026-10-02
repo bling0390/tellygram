@@ -126,4 +126,6 @@
     <string name="chat_delete_radio">Delete for Me and %1$s</string>
     <string name="chat_delete_cancel">Cancel</string>
     <string name="album_popup_title">Albums</string>
+    <string name="text_popup_title">Text</string>
+    <string name="text_popup_sender_fallback">Sender</string>
 </resources>

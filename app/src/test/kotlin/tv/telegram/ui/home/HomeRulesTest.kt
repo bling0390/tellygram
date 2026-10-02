@@ -7,6 +7,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import tv.telegram.td.MediaItem
 import tv.telegram.td.MediaType
+import androidx.compose.ui.unit.dp
 
 /**
  * The home screen's D-pad and card rules, straight from the design annotations.
@@ -190,5 +191,14 @@ class HomeRulesTest {
         // Nothing anywhere -> no header block at all.
         assertNull(albumHeaderCaption(listOf(m(1, null), m(2, "  "))))
         assertNull(albumHeaderCaption(emptyList()))
+    }
+
+    @Test
+    fun `slot gap keeps the visible cards 20dp apart`() {
+        // The ring band lives inside each slot, so two neighbours contribute one band each.
+        assertEquals(14.dp, slotGap(cellGap = 20.dp, ring = 3.dp))
+        // And the slot itself is the card plus a band on each side: 160+3+3 x 120+3+3.
+        assertEquals(166.dp, 160.dp + 3.dp * 2)
+        assertEquals(126.dp, 120.dp + 3.dp * 2)
     }
 }

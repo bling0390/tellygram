@@ -18,6 +18,10 @@ data class MediaItem(
     val caption: String? = null,
     val date: Int = 0,
     val chatId: Long = 0,
+    // Who sent it. Only the id is stored here (no request at parse time); the popup resolves
+    // the name and avatar lazily, the same way group ownership is resolved (2026-10-02).
+    val senderId: Long = 0,
+    val senderIsChat: Boolean = false,
     val supportsStreaming: Boolean = false,
     // Video duration in seconds (0 for non-video / unknown). Displayed as a
     // badge on video cards only.
@@ -30,4 +34,10 @@ data class MediaItem(
     // The album's members, in the order they were grouped. The representative above is
     // members.first(); the popup renders this list (product, 2026-09-30).
     val albumMembers: List<MediaItem> = emptyList(),
+)
+
+/** Who sent a message, for the text popup: both come from one request (2026-10-02). */
+data class SenderInfo(
+    val name: String?,
+    val avatarFileId: Int?,
 )

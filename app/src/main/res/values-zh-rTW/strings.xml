@@ -116,4 +116,6 @@
     <string name="chat_delete_radio">同時為 %1$s 刪除</string>
     <string name="chat_delete_cancel">取消</string>
     <string name="album_popup_title">相簿</string>
+    <string name="text_popup_title">文字</string>
+    <string name="text_popup_sender_fallback">傳送者</string>
 </resources>

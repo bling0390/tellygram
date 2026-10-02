@@ -264,6 +264,12 @@ class TdMediaRepository(
                     caption = c.caption.text,
                     date = message.date,
                     chatId = chatId,
+                    senderId = when (val sd = message.senderId) {
+                        is TdApi.MessageSenderUser -> sd.userId
+                        is TdApi.MessageSenderChat -> sd.chatId
+                        else -> 0L
+                    },
+                    senderIsChat = message.senderId is TdApi.MessageSenderChat,
                 )
             }
             is TdApi.MessageVideo -> {
@@ -280,6 +286,12 @@ class TdMediaRepository(
                     caption = c.caption.text,
                     date = message.date,
                     chatId = chatId,
+                    senderId = when (val sd = message.senderId) {
+                        is TdApi.MessageSenderUser -> sd.userId
+                        is TdApi.MessageSenderChat -> sd.chatId
+                        else -> 0L
+                    },
+                    senderIsChat = message.senderId is TdApi.MessageSenderChat,
                     supportsStreaming = video.supportsStreaming,
                     duration = video.duration,
                 )
@@ -298,6 +310,12 @@ class TdMediaRepository(
                     caption = c.caption.text,
                     date = message.date,
                     chatId = chatId,
+                    senderId = when (val sd = message.senderId) {
+                        is TdApi.MessageSenderUser -> sd.userId
+                        is TdApi.MessageSenderChat -> sd.chatId
+                        else -> 0L
+                    },
+                    senderIsChat = message.senderId is TdApi.MessageSenderChat,
                     duration = anim.duration,
                 )
             }
@@ -310,6 +328,12 @@ class TdMediaRepository(
                     caption = c.caption.text,
                     date = message.date,
                     chatId = chatId,
+                    senderId = when (val sd = message.senderId) {
+                        is TdApi.MessageSenderUser -> sd.userId
+                        is TdApi.MessageSenderChat -> sd.chatId
+                        else -> 0L
+                    },
+                    senderIsChat = message.senderId is TdApi.MessageSenderChat,
                     duration = audio.duration,
                 )
             }
@@ -326,6 +350,12 @@ class TdMediaRepository(
                     caption = body,
                     date = message.date,
                     chatId = chatId,
+                    senderId = when (val sd = message.senderId) {
+                        is TdApi.MessageSenderUser -> sd.userId
+                        is TdApi.MessageSenderChat -> sd.chatId
+                        else -> 0L
+                    },
+                    senderIsChat = message.senderId is TdApi.MessageSenderChat,
                 )
             }
             else -> null
@@ -396,6 +426,23 @@ class TdMediaRepository(
 
     companion object {
         private const val TAG = "TdMediaRepo"
+    }
+    /** The sender's name and avatar for the text popup: one request for both (2026-10-02). */
+    suspend fun senderInfo(item: MediaItem): SenderInfo? {
+        if (item.senderId == 0L) return null
+        return if (item.senderIsChat) {
+            val chat = client.execute(TdApi.GetChat(item.senderId), timeoutMs = 5_000L)
+                .valueOrNull<TdApi.Chat>() ?: return null
+            SenderInfo(chat.title.takeIf { it.isNotBlank() }, chat.photo?.small?.id)
+        } else {
+            val user = client.execute(TdApi.GetUser(item.senderId), timeoutMs = 5_000L)
+                .valueOrNull<TdApi.User>() ?: return null
+            val name = listOfNotNull(
+                user.firstName.takeIf { it.isNotBlank() },
+                user.lastName.takeIf { it.isNotBlank() },
+            ).joinToString(" ").takeIf { it.isNotBlank() }
+            SenderInfo(name, user.profilePhoto?.small?.id)
+        }
     }
 }
 

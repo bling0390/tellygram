@@ -296,24 +296,35 @@ private fun BoxScope.MediaThumbnail(item: MediaItem, state: HomeState, isVideo: 
 internal fun MediaCard(
     focused: Boolean,
     tag: String? = null,
+    /** The ring's tint while unfocused: the card's own fill by default, a light outline in the popup. */
+    borderColor: Color = HomeSpec.SurfaceContainer,
     modifier: Modifier = Modifier,
     content: @Composable BoxScope.() -> Unit,
 ) {
     Box(
         modifier = Modifier
-            .size(width = HomeSpec.CellWidth, height = HomeSpec.CellHeight)
+            // The SLOT is the box model now: 166x126 holds the 3dp ring plus the 160x120 card,
+            // so the ring lives inside a layout box and no ancestor's clip can cut it (2026-10-01).
+            .size(
+                width = HomeSpec.CellWidth + HomeSpec.FocusBorder * 2,
+                height = HomeSpec.CellHeight + HomeSpec.FocusBorder * 2,
+            )
             .let { if (tag != null) it.testTag(tag) else it }
-            .clip(RoundedCornerShape(HomeSpec.Corner))
-            .background(HomeSpec.SurfaceContainer, RoundedCornerShape(HomeSpec.Corner))
-            // The ring is always drawn — 3dp outside the card — so every card has the same
-            // edge: tinted like the fill at rest, white once focused (product, 2026-10-01).
+            // The ring is drawn BEFORE the clip. Compose's clip() also clips the drawing of the
+            // modifiers after it, and the ring sits entirely OUTSIDE the card — so drawing it
+            // after the clip left only its corners visible (2026-10-01 report). Drawn first, the
+            // card paints over its inner half and the outer 3dp is the visible edge.
             .focusStroke(
                 draw = true,
                 width = HomeSpec.FocusBorder,
-                color = if (focused) HomeSpec.White else HomeSpec.SurfaceContainer,
+                color = if (focused) HomeSpec.White else borderColor,
                 corner = HomeSpec.Corner,
             )
-            .then(modifier),
+            .then(modifier)
+            // Inside the slot: the ring's band, then the visual card itself.
+            .padding(HomeSpec.FocusBorder)
+            .clip(RoundedCornerShape(HomeSpec.Corner))
+            .background(HomeSpec.SurfaceContainer, RoundedCornerShape(HomeSpec.Corner)),
         content = content,
     )
 }
@@ -333,12 +344,16 @@ internal fun Modifier.focusStroke(
 } else {
     drawWithContent {
         drawContent()
-        val grow = width.toPx() / 2f
+        // Inset by half the stroke so the ring's OUTER edge is flush with the slot's bounds.
+        val half = width.toPx() / 2f
         drawRoundRect(
             color = color,
-            topLeft = Offset(-grow, -grow),
-            size = Size(size.width + grow * 2f, size.height + grow * 2f),
-            cornerRadius = CornerRadius(corner.toPx() + grow),
+            topLeft = Offset(half, half),
+            size = Size(
+                (size.width - width.toPx()).coerceAtLeast(0f),
+                (size.height - width.toPx()).coerceAtLeast(0f),
+            ),
+            cornerRadius = CornerRadius(corner.toPx() + half),
             style = Stroke(width = width.toPx()),
         )
     }
