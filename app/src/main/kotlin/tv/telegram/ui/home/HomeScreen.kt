@@ -228,6 +228,11 @@ internal fun HomeScreen(
 
     // Long-press popover: which chat it belongs to, and where focus goes when it closes.
     var menuChat by remember { mutableStateOf<ChatItem?>(null) }
+    // Which row focus should go back to once the menu closes. A stored id (like the media
+    // grid's return hint) rather than "the row the menu is open on": the requester has to stay
+    // attached after menuChat clears, or the post-close request targets a detached node and
+    // focus lands nowhere (2026-10-02).
+    var returnFocusChatId by remember { mutableStateOf<Long?>(null) }
     var hadMenu by remember { mutableStateOf(false) }
     val menuReturnFocus = remember { FocusRequester() }
     // Resolved on the long press (one cached call for groups; false for private/channels).
@@ -314,6 +319,7 @@ internal fun HomeScreen(
             hadMenu = false
             withFrameNanos { }
             runCatching { menuReturnFocus.requestFocus() }
+            returnFocusChatId = null
         }
     }
     val media by state.mediaItems.collectAsStateWithLifecycle()
@@ -436,6 +442,7 @@ internal fun HomeScreen(
                     menuChat = menuChat,
                     menuIsOwner = menuIsOwner,
                     menuReturnFocus = menuReturnFocus,
+                    returnFocusChatId = returnFocusChatId,
                     onMenuOpen = { chat ->
                         scope.launch {
                             menuIsOwner = state.isGroupOwner(chat.id)
@@ -446,9 +453,20 @@ internal fun HomeScreen(
                     onMenuAction = { action ->
                         menuChat?.let { chat ->
                             when (action) {
-                                ChatMenuAction.Pin -> state.toggleChatPin(chat.id, showingArchived, !chat.isPinned)
-                                ChatMenuAction.Mute -> state.toggleChatMute(chat.id, !chat.isMuted)
-                                ChatMenuAction.Archive -> state.toggleChatArchive(chat.id, !showingArchived)
+                                ChatMenuAction.Pin -> {
+                                    state.toggleChatPin(chat.id, showingArchived, !chat.isPinned)
+                                    returnFocusChatId = chat.id
+                                }
+                                ChatMenuAction.Mute -> {
+                                    state.toggleChatMute(chat.id, !chat.isMuted)
+                                    returnFocusChatId = chat.id
+                                }
+                                ChatMenuAction.Archive -> {
+                                    // The row moves to the archive list, so nothing is left to
+                                    // hold focus here; fall back to the first row instead.
+                                    state.toggleChatArchive(chat.id, !showingArchived)
+                                    returnFocusChatId = null
+                                }
                                 // Destructive: never immediate — open the confirm dialog first.
                                 ChatMenuAction.Delete -> {
                                     deleteRadioChecked = false
@@ -534,6 +552,8 @@ private fun ChatList(
     menuChat: ChatItem?,
     menuIsOwner: Boolean,
     menuReturnFocus: FocusRequester,
+    /** Non-null while focus should return to that chat after the menu closes. */
+    returnFocusChatId: Long?,
     onMenuOpen: (ChatItem) -> Unit,
     onMenuClose: () -> Unit,
     onMenuAction: (ChatMenuAction) -> Unit,
@@ -598,7 +618,7 @@ private fun ChatList(
                 canEnterGrid = canEnterGrid,
                 onRegion = onRegion,
                 onLongPress = { onMenuOpen(chat) },
-                menuReturn = if (chat.id == menuChat?.id) menuReturnFocus else null,
+                menuReturn = if (chat.id == (menuChat?.id ?: returnFocusChatId)) menuReturnFocus else null,
                 onClick = { onSelect(chat) },
             )
         }

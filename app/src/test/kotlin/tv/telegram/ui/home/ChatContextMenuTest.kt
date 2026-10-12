@@ -4,7 +4,7 @@ package tv.telegram.ui.home
 
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.test.assertIsFocused
-import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.pressKey
@@ -28,7 +28,7 @@ import androidx.compose.ui.test.requestFocus
 class ChatContextMenuTest {
 
     @get:Rule
-    val rule = createComposeRule()
+    val rule = createAndroidComposeRule<androidx.activity.ComponentActivity>()
 
     private var picked: ChatMenuAction? = null
     private var dismissed = false
@@ -89,7 +89,8 @@ class ChatContextMenuTest {
     @Test
     fun `back closes the popover`() {
         show()
-        rule.onNodeWithTag("chat-menu-pin").performKeyInput { pressKey(Key.Back) }
+        // Back is a window/dispatcher affair, not a key the menu sees: drive the real one.
+        rule.activity.onBackPressedDispatcher.onBackPressed()
         rule.waitForIdle()
         assertTrue(dismissed)
     }

@@ -52,6 +52,7 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.type
+import androidx.activity.compose.BackHandler
 
 /**
  * The long-press popover: a 268x188 panel (radius 16, Elevation Dark/4) holding four fixed
@@ -81,19 +82,15 @@ internal fun ChatContextMenu(
         }
     }
 
+    // Back closes the popover from anywhere inside it. NOT via onKeyEvent on this Column:
+    // key events only bubble along the FOCUS path, and this Column is not a focus node, so a
+    // handler here never saw them (2026-10-02 report).
+    BackHandler(enabled = true) { onDismiss() }
+
     Column(
         modifier = Modifier
             // The screen's own origin is already the list's left edge (the shell insets it).
             .padding(top = top)
-            // Unhandled keys bubble up here, so Back closes the popover from anywhere in it.
-            .onKeyEvent { event: androidx.compose.ui.input.key.KeyEvent ->
-                if (event.type == KeyEventType.KeyUp && event.key == Key.Back) {
-                    onDismiss()
-                    true
-                } else {
-                    false
-                }
-            }
             .width(HomeSpec.ListWidth)
             .height(ChatMenuHeightDp.dp)
             .testTag("chat-menu")
