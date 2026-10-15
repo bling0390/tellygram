@@ -506,16 +506,7 @@ internal fun HomeScreen(
                             }
                         }
                     },
-                    onConfirm = { chat ->
-                        // OK is an explicit "open this one": no waiting, and it stays the
-                        // documented retry after a failed load.
-                        selectedChatId = chat.id
-                        pendingOpen?.cancel()
-                        pendingOpen = null
-                        filter = MediaFilter.All
-                        state.openChat(chat.id)
-                        openedChatId = chat.id
-                    },
+                    onConfirm = { jumpToGrid(0) },
                 )
 
                 Spacer(Modifier.width(HomeSpec.GutterBetweenColumns))
@@ -592,8 +583,11 @@ private fun ChatList(
     onMenuAction: (ChatMenuAction) -> Unit,
     /** Focus landed on this chat: select it now, and open it once focus settles. */
     onSelect: (ChatItem) -> Unit,
-    /** OK landed on this chat: open it right away, skipping the settle wait. */
-    onConfirm: (ChatItem) -> Unit,
+    /**
+     * OK landed on a chat: move into the pane's first card. It does NOT query — the row was
+     * selected when it took focus, and that load is already on its way (2026-10-15).
+     */
+    onConfirm: () -> Unit,
 ) {
     // The design's 268x412 box is exactly eight rows of (48 + 4), so anything
     // past seven chats has to scroll. It is a LazyColumn for that reason only —
@@ -655,7 +649,7 @@ private fun ChatList(
                 onLongPress = { onMenuOpen(chat) },
                 menuReturn = if (chat.id == (menuChat?.id ?: returnFocusChatId)) menuReturnFocus else null,
                 onFocused = { onSelect(chat) },
-                onConfirmed = { onConfirm(chat) },
+                onConfirmed = onConfirm,
             )
         }
     }

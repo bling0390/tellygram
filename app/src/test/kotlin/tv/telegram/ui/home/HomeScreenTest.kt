@@ -184,14 +184,12 @@ class HomeScreenTest {
     // ── 会话列表 → 媒体格 ─────────────────────────────────────────────────────
 
     @Test
-    fun `right from the chat list enters the media grid`() {
+    fun `OK on a chat row enters the media grid`() {
         show()
         rule.onNodeWithTag("home-chat-row-1").requestFocus()
         rule.waitForIdle()
-        // Right only exists once a chat is selected (the pane then has cells).
+        // OK is the "go into the pane" key now: it lands on the pane's first card (2026-10-15).
         rule.onNodeWithTag("home-chat-row-1").performKeyInput { pressKey(Key.DirectionCenter) }
-        rule.waitForIdle()
-        rule.onNodeWithTag("home-chat-row-1").performKeyInput { pressKey(Key.DirectionRight) }
         rule.waitForIdle()
         rule.onNodeWithTag("home-media-cell-0").assertIsFocused()
     }
@@ -308,13 +306,20 @@ class HomeScreenTest {
     // ── OK / Enter must actually do something ─────────────────────────────────
 
     @Test
-    fun `OK on a chat row loads that chat's media`() {
+    fun `OK on a chat row does not query it`() {
+        // The row was selected when it took focus and that load is on its way; OK is the
+        // "go into the pane" key, not a second query (2026-10-15).
         show()
         rule.onNodeWithTag("home-chat-row-2").requestFocus()
         rule.waitForIdle()
+        rule.mainClock.advanceTimeBy(ChatOpenDebounceMs + 50)
+        rule.waitForIdle()
+        assertEquals(1, state.openCount)
+
         rule.onNodeWithTag("home-chat-row-2").performKeyInput { pressKey(Key.DirectionCenter) }
         rule.waitForIdle()
-        assertEquals(2L, state.openedChatId)
+
+        assertEquals(1, state.openCount)
     }
 
     @Test
@@ -483,7 +488,9 @@ class HomeScreenTest {
     }
 
     @Test
-    fun `OK opens the chat without waiting for focus to settle`() {
+    fun `OK leaves the pending load alone and enters the pane`() {
+        // OK used to cancel the settle timer and query at once. It no longer queries, so the
+        // load the focus started has to still arrive — otherwise the pane stays empty.
         show()
         rule.onNodeWithTag("home-chat-row-2").requestFocus()
         rule.waitForIdle()
@@ -491,8 +498,14 @@ class HomeScreenTest {
 
         rule.onNodeWithTag("home-chat-row-2").performKeyInput { pressKey(Key.DirectionCenter) }
         rule.waitForIdle()
+        rule.onNodeWithTag("home-media-cell-0").assertIsFocused()
+        assertNull(state.openedChatId)
+
+        rule.mainClock.advanceTimeBy(ChatOpenDebounceMs + 50)
+        rule.waitForIdle()
 
         assertEquals(2L, state.openedChatId)
+        assertEquals(1, state.openCount)
     }
 
     @Test
@@ -548,8 +561,6 @@ class HomeScreenTest {
         rule.onNodeWithTag("home-chat-row-1").requestFocus()
         rule.waitForIdle()
         rule.onNodeWithTag("home-chat-row-1").performKeyInput { pressKey(Key.DirectionCenter) }
-        rule.waitForIdle()
-        rule.onNodeWithTag("home-chat-row-1").performKeyInput { pressKey(Key.DirectionRight) }
         rule.waitForIdle()
         rule.onNodeWithTag("home-media-cell-0").assertIsFocused()
 
