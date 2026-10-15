@@ -431,7 +431,12 @@ internal fun HomeScreen(
 
     Box(
         modifier = Modifier
-            .fillMaxSize(),
+            .fillMaxSize()
+            // The page paints its own backdrop (2026-10-15). The window has one too, but the
+            // NavHost keeps the outgoing destination composed while a tab switch settles, and
+            // with a transparent root both pages drew into the same box — two content areas
+            // superimposed. An opaque root lets the incoming page cover it instead.
+            .background(HomeSpec.Background),
     ) {
         // The top bar is provided by the app shell (MainActivity) so it survives
         // navigation; this screen only owns the lower part of the design — the

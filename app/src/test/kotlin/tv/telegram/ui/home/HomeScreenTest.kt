@@ -21,6 +21,8 @@ import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.pressKey
 import androidx.compose.ui.test.requestFocus
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.graphics.toArgb
+import androidx.core.content.ContextCompat
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import org.junit.Assert.assertEquals
@@ -29,6 +31,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import tv.telegram.td.ChatItem
 import tv.telegram.td.ChatType
@@ -571,5 +574,18 @@ class HomeScreenTest {
         rule.waitForIdle()
         rule.onNodeWithTag("home-chat-row-2").performKeyInput { pressKey(Key.DirectionRight) }
         rule.waitForIdle()
+    }
+
+    @Test
+    fun `the page backdrop matches the window backdrop`() {
+        // Both shell pages now paint an opaque root, because the NavHost can keep the outgoing
+        // page composed while a tab switch settles. The window paints one too (themes.xml), and
+        // colors.xml says it is kept in sync so the sliver behind Compose — cold start, a
+        // transition — matches the pages. Drift between the two would show up as a seam.
+        val window = ContextCompat.getColor(
+            RuntimeEnvironment.getApplication(),
+            tv.telegram.R.color.window_background,
+        )
+        assertEquals(window, HomeSpec.Background.toArgb())
     }
 }

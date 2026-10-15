@@ -123,7 +123,10 @@ internal fun SettingsScreen(
     val user by state.currentUser.collectAsStateWithLifecycle()
     val language by state.language.collectAsStateWithLifecycle()
 
-    Box(modifier = modifier.fillMaxSize()) {
+    // Opaque like the home screen's root (2026-10-15): the window has a backdrop, but the
+    // NavHost keeps the outgoing page composed while a tab switch settles, and a transparent
+    // root let the two content areas draw into the same box.
+    Box(modifier = modifier.fillMaxSize().background(HomeSpec.Background)) {
     Row(
         // The frame's 10dp: shell content starts at 96, the frame draws from 106.
         modifier = Modifier
