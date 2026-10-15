@@ -13,15 +13,15 @@ import tv.telegram.ui.components.confirmDialogButtonColors
 class SettingsRulesTest {
 
     @Test
-    fun `the selected section is a white pill with the dark label`() {
-        val on = sectionItemColors(selected = true)
+    fun `the focused section is a white pill with the dark label`() {
+        val on = sectionItemColors(focused = true)
         assertEquals(HomeSpec.White, on.fill)
         assertEquals(HomeSpec.InverseOnSurface, on.text)
     }
 
     @Test
-    fun `an unselected section is unfilled with the on-surface label`() {
-        val off = sectionItemColors(selected = false)
+    fun `an unfocused section is unfilled with the on-surface label`() {
+        val off = sectionItemColors(focused = false)
         assertEquals(HomeSpec.OnSurface, off.text)
     }
 

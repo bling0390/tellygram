@@ -70,7 +70,11 @@ class SettingsScreenTest {
         rule.waitForIdle()
     }
 
-    /** Selects a section the way a remote does: focus it, then press OK. */
+    /**
+     * Moves the way a remote does. Taking focus is what selects a section now
+     * (2026-10-15), so the focus request alone already switches the pane; the OK press
+     * stays in to cover the key path.
+     */
     private fun select(section: String) {
         rule.onNodeWithTag("settings-section-$section").requestFocus()
         rule.waitForIdle()
@@ -253,15 +257,30 @@ class SettingsScreenTest {
     }
 
     @Test
-    fun `focusing a section highlights it, even before it is chosen`() {
+    fun `taking focus switches the pane with no OK press`() {
+        show()
+        // Accounts is the default pane.
+        rule.onNodeWithText("ID").assertExists()
+
+        rule.onNodeWithTag("settings-section-About").requestFocus()
+        rule.waitForIdle()
+
+        rule.onNodeWithText("Version").assertExists()
+        rule.onNodeWithText("ID").assertDoesNotExist()
+    }
+
+    @Test
+    fun `only the focused section is filled`() {
         show()
         rule.onNodeWithTag("settings-section-About").requestFocus()
         rule.waitForIdle()
 
-        // The design's List item Focused variant is the same white pill.
+        // The design's List item Focused variant is the same white pill...
         rule.onNodeWithTag("settings-section-About-highlighted", useUnmergedTree = true).assertExists()
-        // ...and the chosen section keeps its highlight at the same time.
-        rule.onNodeWithTag("settings-section-Accounts-highlighted", useUnmergedTree = true).assertExists()
+        // ...and focus IS the selection, so the section focus left is no longer filled.
+        rule.onNodeWithTag("settings-section-Accounts-plain", useUnmergedTree = true).assertExists()
+        rule.onNodeWithTag("settings-section-Accounts-highlighted", useUnmergedTree = true)
+            .assertDoesNotExist()
     }
 
     @Test
@@ -408,7 +427,8 @@ class SettingsScreenTest {
     @Test
     fun `leaving a pane remembers the section it came from`() {
         show()
-        // The chosen section stays Accounts, but focus visits About before entering the pane.
+        // Focus is the selection now, so visiting About also chooses it; Right then enters
+        // that pane, and Left has to come back to the same item.
         rule.onNodeWithTag("settings-section-About").requestFocus()
         rule.waitForIdle()
         rule.onNodeWithTag("settings-section-About").performKeyInput { pressKey(Key.DirectionRight) }

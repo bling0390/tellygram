@@ -75,10 +75,11 @@ import tv.telegram.ui.components.ConfirmDialog
  * shell supplies the 58dp side margin, so this screen only adds the 10dp that lifts
  * its content from the shell's 96dp origin to the frame's 106dp.
  *
- * Row rules, straight from the frames: the selected section is a white pill with the
- * dark inverse label; display-only rows (Version, License) are unfilled; the
- * actionable row ("Check for updates") sits on a surface-container panel and turns
- * white while focused. Everything is 4dp rounded.
+ * Row rules, straight from the frames: the section holding focus is a white pill with the
+ * dark inverse label, and taking focus selects it (2026-10-15: focus IS the selection, as in
+ * the top bar); display-only rows (Version, License) are unfilled; the actionable row
+ * ("Check for updates") sits on a surface-container panel and turns white while focused.
+ * Everything is 4dp rounded.
  */
 @Composable
 internal fun SettingsScreen(
@@ -102,13 +103,11 @@ internal fun SettingsScreen(
     // Left/Right between the section list and the pane: Right from the list always reaches
     // the pane's entry stop, and a pane row going Left returns to the CHOSEN section (the
     // default geometric search drifted to whichever item happened to sit leftwards).
+    // Where a pane row's Left lands. Taking focus selects a section (2026-10-15), so the
+    // chosen section is always the one that last held focus: one requester covers both the
+    // "return to the chosen section" and the "return where I came from" cases.
     val selectedSectionFocus = remember { FocusRequester() }
     val paneEntryFocus = remember { FocusRequester() }
-    // Which section item last held focus. A pane row going Left returns there — not to the
-    // chosen section, which may be a different item entirely — and to the first item when
-    // the list has never been visited.
-    val rememberedSectionFocus = remember { FocusRequester() }
-    var lastSectionFocus by remember { mutableStateOf<SettingsSection?>(null) }
     var lastLanguageFocus by remember { mutableStateOf<Language?>(null) }
 
     // Only panes that compose a focusable row may be the list's Right target: Help has none,
@@ -147,20 +146,15 @@ internal fun SettingsScreen(
             SettingsSection.entries.forEachIndexed { index, section ->
                 SectionItem(
                     section = section,
-                    selected = section == selected,
+                    // Focus IS the selection: taking focus switches the pane (2026-10-15).
                     onSelect = { selected = section },
                     // Only the first entry is the bar's Down target.
                     requester = if (index == 0) contentEntryFocus else null,
-                    selectedRequester = if (section == selected) selectedSectionFocus else null,
-                    rememberedRequester = if (section == (lastSectionFocus ?: SettingsSection.entries.first())) {
-                        rememberedSectionFocus
-                    } else {
-                        null
-                    },
+                    // A pane row going Left comes back to the chosen section.
+                    sectionFocus = if (section == selected) selectedSectionFocus else null,
                     rightRequester = paneEntryOrNull,
                     // The last item ends the list: Down must not escape below it.
                     cancelDown = section == SettingsSection.entries.last(),
-                    onFocus = { lastSectionFocus = section },
                 )
             }
         }
@@ -186,7 +180,7 @@ internal fun SettingsScreen(
                         label = stringResource(R.string.settings_account_row_log_out),
                         tag = "settings-log-out",
                         onClick = { showLogOut = true },
-                        leftRequester = rememberedSectionFocus,
+                        leftRequester = selectedSectionFocus,
                         entryRequester = paneEntryFocus,
                     )
                 }
@@ -196,7 +190,7 @@ internal fun SettingsScreen(
                     VersionRow(versionName)
                     LicenseRow()
                     CheckForUpdatesRow(
-                        leftRequester = rememberedSectionFocus,
+                        leftRequester = selectedSectionFocus,
                         entryRequester = paneEntryFocus,
                     )
                 }
@@ -208,7 +202,7 @@ internal fun SettingsScreen(
                             label = languageLabel(option),
                             selected = option == language,
                             onSelect = { state.setLanguage(option) },
-                            leftRequester = rememberedSectionFocus,
+                            leftRequester = selectedSectionFocus,
                             // Right from the list lands on the remembered row, else the first.
                             entryRequester = if (option == (lastLanguageFocus ?: Language.entries.first())) {
                                 paneEntryFocus
@@ -283,19 +277,16 @@ private enum class SettingsSection(val labelRes: Int, val icon: ImageVector) {
 @Composable
 private fun SectionItem(
     section: SettingsSection,
-    selected: Boolean,
+    /** Called when this row takes focus and when OK lands on it: focus IS the selection. */
     onSelect: () -> Unit,
     requester: FocusRequester? = null,
-    selectedRequester: FocusRequester? = null,
-    rememberedRequester: FocusRequester? = null,
+    /** The chosen row's own requester, so a pane row's Left can return to it. */
+    sectionFocus: FocusRequester? = null,
     rightRequester: FocusRequester? = null,
     cancelDown: Boolean = false,
-    onFocus: () -> Unit = {},
 ) {
     var focused by remember { mutableStateOf(false) }
-    // The design's List item has a Focused variant that is the same white pill, so a
-    // focused section lights up even before it is chosen.
-    val colors = sectionItemColors(selected || focused)
+    val colors = sectionItemColors(focused)
     Row(
         modifier = Modifier
             .testTag("settings-section-${section.name}")
@@ -306,13 +297,13 @@ private fun SectionItem(
             .background(colors.fill, RoundedCornerShape(HomeSpec.Corner))
             // The requester must sit before focusable() to be the focus target.
             .let { if (requester != null) it.focusRequester(requester) else it }
-            .let { if (selectedRequester != null) it.focusRequester(selectedRequester) else it }
-            .let { if (rememberedRequester != null) it.focusRequester(rememberedRequester) else it }
+            .let { if (sectionFocus != null) it.focusRequester(sectionFocus) else it }
             .focusProperties {
                 if (rightRequester != null) right = rightRequester
                 down = if (cancelDown) FocusRequester.Cancel else FocusRequester.Default
             }
-            .onFocusState { focused = it; if (it) onFocus() }
+            // Focus selects, exactly like the top bar: no separate chosen-only look.
+            .onFocusState { focused = it; if (it) onSelect() }
             .focusable()
             .onKeyEvent { event: KeyEvent ->
                 if (event.type == KeyEventType.KeyUp &&
@@ -339,16 +330,13 @@ private fun SectionItem(
             color = colors.text,
             style = MaterialTheme.typography.labelLarge,
             modifier = Modifier.testTag(
-                if (selected || focused) {
+                if (focused) {
                     "settings-section-${section.name}-highlighted"
                 } else {
                     "settings-section-${section.name}-plain"
                 },
             ),
         )
-        if (focused && !selected) {
-            Spacer(Modifier.width(0.dp))
-        }
     }
 }
 

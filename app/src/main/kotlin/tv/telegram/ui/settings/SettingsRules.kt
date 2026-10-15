@@ -10,10 +10,11 @@ import tv.telegram.ui.components.RowColors
 internal fun orDash(value: String): String = value.ifBlank { "—" }
 
 /**
- * The selected section in the left list: the design fills it white and flips the label to
- * the dark inverse colour — the same treatment the home screen's list uses.
+ * A section row in the left list: the one holding focus is filled white with the dark
+ * inverse label. Focus IS the selection (2026-10-15), so there is no second, chosen-only
+ * look — the same rule the top bar follows.
  */
-internal fun sectionItemColors(selected: Boolean): RowColors = if (selected) {
+internal fun sectionItemColors(focused: Boolean): RowColors = if (focused) {
     RowColors(HomeSpec.White, HomeSpec.InverseOnSurface)
 } else {
     RowColors(Color.Transparent, HomeSpec.OnSurface)
