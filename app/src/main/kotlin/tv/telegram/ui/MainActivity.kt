@@ -293,11 +293,13 @@ private fun AppNavHost(viewModel: MainViewModel, backController: BackController)
                         }
                     },
                     onTabConfirmed = { tab ->
-                        // OK on the Chat tab hands focus to the chat list's entry: the Archived
-                        // Chats row, the list's first focusable (2026-10-15). The same
-                        // requester the bar's Down uses, so both take one path.
-                        if (tab == TopNavTab.Chat) {
-                            runCatching { homeContentFocus.requestFocus() }
+                        // OK on a tab hands focus to that page's content (2026-10-15): the chat
+                        // list's entry for Chat — its Archived row, the list's first
+                        // focusable — and the first section row for Setting. Both are the
+                        // requesters the bar's Down already uses, so the two keys take one
+                        // path per page.
+                        runCatching {
+                            contentEntryFor(tab, homeContentFocus, settingsContentFocus).requestFocus()
                         }
                     },
                     onSearchClick = { },
@@ -720,4 +722,19 @@ internal fun authStartRoute(state: tv.telegram.td.AuthState): String = when {
         state is AuthState.WaitEncryptionKey ||
         state is AuthState.Idle -> Routes.COLD_START
     else -> Routes.QR_LOGIN
+}
+
+/**
+ * Which page's content entry an OK on [tab] hands focus to — each page's own entry requester,
+ * the one the top bar's Down already targets. Extracted the way [showsRail] and
+ * [authStartRoute] are, so the mapping is unit tested rather than living inside the bar's
+ * callback.
+ */
+internal fun contentEntryFor(
+    tab: TopNavTab,
+    home: FocusRequester,
+    settings: FocusRequester,
+): FocusRequester = when (tab) {
+    TopNavTab.Chat -> home
+    TopNavTab.Setting -> settings
 }

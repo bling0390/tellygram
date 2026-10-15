@@ -1,10 +1,13 @@
 package tv.telegram.ui
 
+import androidx.compose.ui.focus.FocusRequester
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import tv.telegram.td.AuthState
+import tv.telegram.ui.components.TopNavTab
 import tv.telegram.ui.nav.Routes
 
 /**
@@ -40,6 +43,17 @@ class ShellLayoutRulesTest {
         assertEquals(Routes.QR_LOGIN, authStartRoute(AuthState.LoggingIn))
         assertEquals(Routes.QR_LOGIN, authStartRoute(AuthState.Closed))
         assertEquals(Routes.QR_LOGIN, authStartRoute(AuthState.Error("x")))
+    }
+
+    @Test
+    fun `OK on a tab is turned into that page's content entry`() {
+        // The bar reports the tab — this is the half that turns the report into the right
+        // page's entry requester, the same one the bar's Down already targets. Chat lands on
+        // the chat list's first focusable (its Archived row); Setting on its first section row.
+        val home = FocusRequester()
+        val settings = FocusRequester()
+        assertSame(home, contentEntryFor(TopNavTab.Chat, home, settings))
+        assertSame(settings, contentEntryFor(TopNavTab.Setting, home, settings))
     }
 
     @Test
