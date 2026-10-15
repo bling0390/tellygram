@@ -87,6 +87,7 @@ import tv.telegram.ui.components.TopNavTab
 import tv.telegram.ui.focus.BackController
 import tv.telegram.ui.focus.BackPriority
 import tv.telegram.ui.focus.BackRegistration
+import tv.telegram.ui.focus.EntryFocus
 import tv.telegram.ui.focus.LocalBackController
 import tv.telegram.ui.focus.dpadNavigationSounds
 import tv.telegram.ui.theme.TellygramTheme
@@ -311,6 +312,12 @@ private fun AppNavHost(viewModel: MainViewModel, backController: BackController)
                 )
                 Spacer(Modifier.height(TopNavBarBottomGap))
             }
+
+            // Entering the shell hands focus to the bar's Chat entry, once (2026-10-15):
+            // nothing else requests it, and the platform does not choose a first focusable
+            // on its own. Keyed on isShellPage, so a page switch inside the shell — which
+            // keeps it true — never takes focus back out of the list the user moved into.
+            EntryFocus(active = isShellPage, target = homeTopBarFocus)
 
             NavHost(
             navController = navController,
