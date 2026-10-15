@@ -40,16 +40,13 @@ import tv.telegram.ui.focus.LocalBackController
 import tv.telegram.td.SenderInfo
 
 /** Stand-in for MainViewModel: the real one starts TDLib, which cannot run on the JVM. */
-internal class FakeHomeState : HomeState {
+internal class FakeHomeState(media: List<MediaItem> = defaultMedia) : HomeState {
     override val chatList: StateFlow<List<ChatItem>> = MutableStateFlow(
 
         listOf(chat(1, "Alpha"), chat(2, "Beta")),
     )
     override val archiveChats: StateFlow<List<ChatItem>> = MutableStateFlow(emptyList())
-    override val mediaItems: StateFlow<List<MediaItem>> = MutableStateFlow(
-        // Index 2 is a video, so the confirm tests can tell the two destinations apart.
-        listOf(media(1), media(2), video(3), media(4), media(5)),
-    )
+    override val mediaItems: StateFlow<List<MediaItem>> = MutableStateFlow(media)
     override val mediaLoadingMore: StateFlow<Boolean> = MutableStateFlow(false)
     override val mediaExhausted: StateFlow<Boolean> = MutableStateFlow(false)
     override val fileStates: StateFlow<Map<Int, FileDownloadState>> = MutableStateFlow(emptyMap())
@@ -110,6 +107,9 @@ internal class FakeHomeState : HomeState {
     override fun setMediaFilter(filter: MediaFilter) { filterSet = filter }
 
     private companion object {
+        /** Index 2 is a video, so the confirm tests can tell the two destinations apart. */
+        val defaultMedia = listOf(media(1), media(2), video(3), media(4), media(5))
+
         fun chat(id: Long, title: String) = ChatItem(
             id = id,
             title = title,
@@ -149,6 +149,8 @@ class HomeScreenTest {
         withTopBar: Boolean = true,
         onOpenPlayer: (Int) -> Unit = { },
         onOpenPhoto: (Int) -> Unit = { },
+        // Override to drive the page with different data (e.g. a chat that has no media).
+        withState: HomeState = state,
     ) {
         val topBar = FocusRequester()
         rule.setContent {
@@ -164,7 +166,7 @@ class HomeScreenTest {
                         )
                     }
                     HomeScreen(
-                        state = state,
+                        state = withState,
                         onOpenPlayer = onOpenPlayer,
                         onOpenPhoto = onOpenPhoto,
                         contentEntryFocus = contentEntry,
@@ -388,17 +390,13 @@ class HomeScreenTest {
     }
 
 @Test
-    fun `the filter row is drawn only once a chat is selected`() {
-        // Reported behaviour: with nothing selected the right pane must not draw the
-        // ALL/Video/… row. Focus alone is not selection — a chat has to be confirmed.
+    fun `the filter row is drawn as soon as a chat holds focus`() {
+        // The pane has no subject until a chat is selected, and focus IS the selection
+        // (2026-10-15): landing on a row is enough — it no longer takes an OK press.
         show()
         rule.onNodeWithText("ALL").assertDoesNotExist()
 
         rule.onNodeWithTag("home-chat-row-2").requestFocus()
-        rule.waitForIdle()
-        rule.onNodeWithText("ALL").assertDoesNotExist()
-
-        rule.onNodeWithTag("home-chat-row-2").performKeyInput { pressKey(Key.DirectionCenter) }
         rule.waitForIdle()
         rule.onNodeWithText("ALL").assertExists()
     }
@@ -416,10 +414,23 @@ class HomeScreenTest {
     }
 
     @Test
-    fun `right from the chat list is cancelled until a chat is selected`() {
-        // Nothing is loaded on the right, so there is no cell to move into: Right must stay
-        // put instead of aiming at a requester that is not attached.
+    fun `right from the chat list reaches the pane as soon as a chat holds focus`() {
+        // Focus IS the selection (2026-10-15), so landing on a row already makes it the
+        // pane's subject: Right moves into the grid with no OK press.
         show()
+        rule.onNodeWithTag("home-chat-row-1").requestFocus()
+        rule.waitForIdle()
+        rule.onNodeWithTag("home-chat-row-1").performKeyInput { pressKey(Key.DirectionRight) }
+        rule.waitForIdle()
+        rule.onNodeWithTag("home-media-cell-0").assertIsFocused()
+    }
+
+    @Test
+    fun `right stays put when the pane has no cells`() {
+        // The guard that has to survive the change: with nothing loaded on the right there
+        // is no cell to move into, so Right must stay put instead of aiming at a requester
+        // that is not attached (the focus search throws on those).
+        show(withState = FakeHomeState(media = emptyList()))
         rule.onNodeWithTag("home-chat-row-1").requestFocus()
         rule.waitForIdle()
         rule.onNodeWithTag("home-chat-row-1").performKeyInput { pressKey(Key.DirectionRight) }

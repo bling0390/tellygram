@@ -76,10 +76,11 @@ internal data class ChatRowColors(val fill: Color, val text: Color, val unreadDo
 /**
  * Row state -> colours.
  *
- * The design annotates the chat-name row so the filled background belongs to FOCUS OR
- * SELECTION only. A pinned chat keeps the plain styling and shows its state through
- * the pin glyph. `pinned` is accepted and deliberately ignored so the rule is stated
- * once and can be asserted: a pinned row must look exactly like a plain one.
+ * The design annotates the chat-name row so the filled background belongs to the row that
+ * holds focus — which is also the selected chat, since focus IS the selection (2026-10-15).
+ * A pinned chat keeps the plain styling and shows its state through the pin glyph. `pinned`
+ * is accepted and deliberately ignored so the rule is stated once and can be asserted: a
+ * pinned row must look exactly like a plain one.
  */
 internal fun chatRowColors(highlighted: Boolean, pinned: Boolean): ChatRowColors = if (highlighted) {
     // The 2026-09-26 frames draw the focused/selected row as the white pill with the dark

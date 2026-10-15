@@ -179,6 +179,11 @@ internal enum class HomeRegion { ChatList, Chips, Grid }
 internal class HomeFocus(
     /** What the top bar's Down lands on: the Archived Chats / Back row. */
     val entry: FocusRequester,
+    /**
+     * The chat row Back (from the grid or the chips) returns to. Focus IS the selection
+     * (2026-10-15), so this is simply the row that last held focus — the same node the
+     * fill follows.
+     */
     val selectedChat: FocusRequester,
     val topBar: FocusRequester?,
     val selectedChip: FocusRequester,
@@ -331,7 +336,7 @@ internal fun HomeScreen(
     // Compose's nearest-candidate search (design annotations 1-4).
     // Two separate targets. `entry` is what the shell's top bar drops onto — the Archived
     // Chats / Back row, the list's first focusable. `selectedChat` is the row that Back from
-    // the grid or chips returns to, which is a different thing entirely.
+    // the grid or chips returns to, which is the chat that last held focus.
     val entryFocus = remember(contentEntryFocus) { contentEntryFocus ?: FocusRequester() }
     val selectedChatFocus = remember { FocusRequester() }
     val gridContainerFocus = remember { FocusRequester() }
@@ -604,13 +609,12 @@ private fun ChatList(
             )
         }
         items(items = if (showingArchived) archivedChats else chats, key = { it.id }) { chat ->
-            // The row the bar's Down lands on and Back returns to: the selected chat,
-            // or the first row before anything is selected.
+            // The row the bar's Down lands on and Back returns to: the chat that holds focus,
+            // or the first row before anything has been selected.
             val isEntry = chat.id == selectedChatId || (selectedChatId == null && chat.id == chats.firstOrNull()?.id)
             val isFirst = chat.id == chats.firstOrNull()?.id
             ChatRow(
                 chat = chat,
-                selected = chat.id == selectedChatId,
                 state = state,
                 focus = focus,
                 isEntry = isEntry,
@@ -619,7 +623,7 @@ private fun ChatList(
                 onRegion = onRegion,
                 onLongPress = { onMenuOpen(chat) },
                 menuReturn = if (chat.id == (menuChat?.id ?: returnFocusChatId)) menuReturnFocus else null,
-                onClick = { onSelect(chat) },
+                onSelected = { onSelect(chat) },
             )
         }
     }
@@ -690,7 +694,6 @@ private fun ArchivedChatsRow(
 @Composable
 private fun ChatRow(
     chat: ChatItem,
-    selected: Boolean,
     state: HomeState,
     focus: HomeFocus,
     isEntry: Boolean,
@@ -699,15 +702,17 @@ private fun ChatRow(
     onRegion: (HomeRegion) -> Unit,
     onLongPress: () -> Unit,
     menuReturn: FocusRequester?,
-    onClick: () -> Unit,
+    /** Fired when this row takes focus and again when OK lands on it: focus IS the selection. */
+    onSelected: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     var longPressJob by remember { mutableStateOf<Job?>(null) }
     var longPressed by remember { mutableStateOf(false) }
-    // Figma shows three row states: plain, pinned (60% fill, dark text) and
-    // focused/selected (full fill, dark text).
-    val highlighted = focused || selected
+    // Figma shows three row states: plain, pinned (60% fill, dark text) and focused
+    // (full fill, dark text). Focus IS the selection (2026-10-15): the filled row is the
+    // selected chat, and there is no second, chosen-only fill.
+    val highlighted = focused
     val pinned = chat.isPinned
     // Only focus/selection fills a row (the design annotates the chat-name row that
     // way); a pinned chat keeps the plain styling and shows its state through the pin.
@@ -745,6 +750,8 @@ private fun ChatRow(
                     longPressJob?.cancel()
                     longPressJob = null
                     onRegion(HomeRegion.ChatList)
+                    // Focus selects: this chat becomes the pane's subject right away.
+                    onSelected()
                 }
             }
             .let { if (isEntry) it.focusRequester(focus.selectedChat) else it }
@@ -769,7 +776,7 @@ private fun ChatRow(
                     event.type == KeyEventType.KeyUp && ok -> {
                         longPressJob?.cancel()
                         longPressJob = null
-                        if (longPressed) longPressed = false else onClick()
+                        if (longPressed) longPressed = false else onSelected()
                         true
                     }
                     else -> false
