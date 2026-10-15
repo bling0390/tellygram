@@ -63,12 +63,8 @@ val TopNavBarTopMargin = 32.dp
 val TopNavBarBottomGap = 32.dp
 val TopNavBarSideMargin = 58.dp
 
-/** The bar's focusable entries, in left-to-right order. */
-internal enum class TopNavItem { Chat, Setting, Search }
-
 @Composable
 fun TopNavBar(
-    selectedTab: TopNavTab,
     onTabSelected: (TopNavTab) -> Unit,
     onSearchClick: () -> Unit,
     modifier: Modifier = Modifier,
@@ -84,9 +80,6 @@ fun TopNavBar(
     selectedTabFocus: FocusRequester? = null,
     contentFocus: FocusRequester? = null,
 ) {
-    val active = selectedNavItem(selectedTab)
-
-
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -100,9 +93,9 @@ fun TopNavBar(
             Spacer(Modifier.width(20.dp))
             TopNavTabButton(
                 label = "Chat",
+                containerTag = "topnav-tab-Chat",
                 cancelLeft = true,
-                active = active == TopNavItem.Chat,
-                onClick = { onTabSelected(TopNavTab.Chat) },
+                onSelected = { onTabSelected(TopNavTab.Chat) },
                 downFocus = contentFocus,
                 requester = selectedTabFocus,
             )
@@ -110,20 +103,19 @@ fun TopNavBar(
             Spacer(Modifier.width(4.dp))
             TopNavTabButton(
                 label = "Setting",
-                active = active == TopNavItem.Setting,
-                onClick = { onTabSelected(TopNavTab.Setting) },
+                containerTag = "topnav-tab-Setting",
+                onSelected = { onTabSelected(TopNavTab.Setting) },
                 downFocus = contentFocus,
             )
             Spacer(Modifier.width(4.dp))
 
             var searchFocused by remember { mutableStateOf(false) }
-            val searchActive = active == TopNavItem.Search
             Box(
                 modifier = Modifier
-                    .testTag(if (searchActive) "topnav-active-search" else "topnav-idle-search")
+                    .testTag("topnav-search")
                     .size(width = 42.dp, height = TopNavBarHeight)
                     .clip(RoundedCornerShape(4.dp))
-                    .background(navPillColor(searchActive || searchFocused) ?: Color.Transparent)
+                    .background(navPillColor(searchFocused) ?: Color.Transparent)
                     .focusProperties {
                         // The bar only moves sideways and down (design annotations
                         // #1-#3): Down leaves for the chat list, Up does nothing.
@@ -149,7 +141,7 @@ fun TopNavBar(
                 Icon(
                     imageVector = Icons.Outlined.Search,
                     contentDescription = "Search",
-                    tint = navLabelColor(searchActive || searchFocused),
+                    tint = navLabelColor(searchFocused),
                     modifier = Modifier
                         .size(22.dp)
                         .testTag(if (searchFocused) "topnav-focus-search" else "topnav-blur-search"),
@@ -190,8 +182,12 @@ private fun TopNavDefaultAvatar() {
 @Composable
 private fun TopNavTabButton(
     label: String,
-    active: Boolean,
-    onClick: () -> Unit,
+    // One testTag per node: the container keeps this stable name, and the focus/blur
+    // tag rides on the label below.
+    containerTag: String,
+    /** Focus IS selection (2026-10-15): called when this entry takes focus, and again
+     *  when OK lands on it. */
+    onSelected: () -> Unit,
     downFocus: FocusRequester? = null,
     requester: FocusRequester? = null,
     // The bar's edges: Left at the first entry and Right at the last one stop there,
@@ -202,14 +198,12 @@ private fun TopNavTabButton(
     var focused by remember { mutableStateOf(false) }
     Box(
         modifier = Modifier
-            // Selection tag on the container (one testTag per node, so the focus tag
-            // lives on the label below).
-            .testTag(if (active) "topnav-active-$label" else "topnav-idle-$label")
+            .testTag(containerTag)
             .height(TopNavBarHeight)
             .clip(RoundedCornerShape(4.dp))
-            // Focus and selection deliberately share ONE treatment: the entry that
-            // holds focus is drawn exactly like the selected one.
-            .background(navPillColor(active || focused) ?: Color.Transparent)
+            // Exactly one entry is filled at a time: the one holding focus. There is
+            // no second, page-driven "selected" look any more (2026-10-15).
+            .background(navPillColor(focused) ?: Color.Transparent)
             .focusProperties {
                 down = downFocus ?: FocusRequester.Default
                 up = FocusRequester.Cancel
@@ -217,13 +211,17 @@ private fun TopNavTabButton(
                 if (cancelRight) right = FocusRequester.Cancel
             }
             .let { if (requester != null) it.focusRequester(requester) else it }
-            .onFocusChanged { focused = it.isFocused }
+            .onFocusChanged {
+                focused = it.isFocused
+                // Focus selects: the bar has no separate "selected" look any more (2026-10-15).
+                if (it.isFocused) onSelected()
+            }
             .focusable()
             .onKeyEvent { event: KeyEvent ->
                 if (event.type == KeyEventType.KeyUp &&
                     (event.key == Key.DirectionCenter || event.key == Key.Enter)
                 ) {
-                    onClick()
+                    onSelected()
                     true
                 } else {
                     false
@@ -235,35 +233,28 @@ private fun TopNavTabButton(
         Text(
             text = label,
             style = MaterialTheme.typography.labelLarge,
-            color = navLabelColor(active || focused),
+            color = navLabelColor(focused),
             modifier = Modifier.testTag(if (focused) "topnav-focus-$label" else "topnav-blur-$label"),
         )
     }
 }
 
 private object TopNavColors {
-    /** Unselected tab and logo label: the design's material-theme/sys/dark/on-surface. */
+    /** Unfocused tab and logo label: the design's material-theme/sys/dark/on-surface. */
     val Label = Color(0xFFC7C6CA)
-    /** Label sitting on the selected pill: material-theme/sys/dark/inverse-on-surface. */
+    /** Label sitting on the filled pill: material-theme/sys/dark/inverse-on-surface. */
     val LabelActive = Color(0xFF1A1C1E)
-    /** The selected pill itself: material-theme/white, 81x32, 4dp rounded. */
+    /** The pill itself: material-theme/white, 81x32, 4dp rounded. */
     val Pill = Color(0xFFFFFFFF)
 }
 
 /**
- * The bar's two-state rule, kept out of the composables so it can be asserted:
- * the active entry gets the white pill with the dark inverse label; the rest stay
+ * The bar's two-state rule, kept out of the composables so it can be asserted: the
+ * entry holding focus gets the white pill with the dark inverse label; the rest stay
  * unfilled and are labelled on-surface. (Design: Nav in frames 3239:2418 / 3240:2375.)
  */
-internal fun navPillColor(active: Boolean): Color? = if (active) TopNavColors.Pill else null
+internal fun navPillColor(focused: Boolean): Color? = if (focused) TopNavColors.Pill else null
 
-internal fun navLabelColor(active: Boolean): Color =
-    if (active) TopNavColors.LabelActive else TopNavColors.Label
+internal fun navLabelColor(focused: Boolean): Color =
+    if (focused) TopNavColors.LabelActive else TopNavColors.Label
 
-/**
- * Which entry the bar shows as selected: the shell's page (or a confirmed switch),
- * NOT focus. Moving sideways leaves Chat's pill in place while the user stays on the
- * home screen. (Product decision, 2026-09-23, revising the focus-follows rule.)
- */
-internal fun selectedNavItem(selectedTab: TopNavTab): TopNavItem =
-    if (selectedTab == TopNavTab.Chat) TopNavItem.Chat else TopNavItem.Setting

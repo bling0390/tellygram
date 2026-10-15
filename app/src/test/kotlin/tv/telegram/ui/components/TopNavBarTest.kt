@@ -13,6 +13,7 @@ import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.requestFocus
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -29,7 +30,9 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 /**
- * The bar's D-pad rules: sideways inside the bar, Down leaving for the content.
+ * The bar's D-pad rules: sideways inside the bar, Down leaving for the content, and
+ * focus standing in for selection — taking focus is what switches the module
+ * (2026-10-15), so there is no separate "selected" state to assert.
  * Focus is asserted through semantics, so these run on the JVM via Robolectric.
  */
 @RunWith(RobolectricTestRunner::class)
@@ -43,14 +46,13 @@ class TopNavBarTest {
         const val CONTENT_TAG = "content-entry"
     }
 
-    private fun showBar(): FocusRequester {
+    private fun showBar(onTabSelected: (TopNavTab) -> Unit = {}): FocusRequester {
         val content = FocusRequester()
         val chat = FocusRequester()
         rule.setContent {
             Column {
                 TopNavBar(
-                    selectedTab = TopNavTab.Chat,
-                    onTabSelected = { },
+                    onTabSelected = onTabSelected,
                     onSearchClick = { },
                     selectedTabFocus = chat,
                     contentFocus = content,
@@ -73,8 +75,36 @@ class TopNavBarTest {
         rule.runOnIdle { chat.requestFocus() }
         rule.onNodeWithText("Chat").onParent().assertIsFocused()
 
-        rule.onNodeWithText("Chat").onParent().performKeyInput { pressKey(Key.DirectionRight) }
+        rule.onNodeWithText("Chat").performKeyInput { pressKey(Key.DirectionRight) }
         rule.onNodeWithText("Setting").onParent().assertIsFocused()
+    }
+
+    @Test
+    fun `taking focus reports the tab, so the shell switches with no OK press`() {
+        val reported = mutableListOf<TopNavTab>()
+        showBar(onTabSelected = { reported += it })
+
+        rule.onNodeWithTag("topnav-tab-Setting", useUnmergedTree = true).requestFocus()
+        rule.waitForIdle()
+
+        assertEquals(listOf(TopNavTab.Setting), reported)
+    }
+
+    @Test
+    fun `OK on an entry reports its tab as well`() {
+        val reported = mutableListOf<TopNavTab>()
+        showBar(onTabSelected = { reported += it })
+
+        rule.onNodeWithTag("topnav-tab-Setting", useUnmergedTree = true).requestFocus()
+        rule.waitForIdle()
+        val afterFocus = reported.size
+
+        rule.onNodeWithTag("topnav-tab-Setting", useUnmergedTree = true)
+            .performKeyInput { pressKey(Key.DirectionCenter) }
+        rule.waitForIdle()
+
+        assertTrue("OK must still fire the tab callback", reported.size > afterFocus)
+        assertEquals(TopNavTab.Setting, reported.last())
     }
 
     @Test
@@ -87,22 +117,7 @@ class TopNavBarTest {
     }
 
     @Test
-    fun `the selection stays on Chat while focus moves sideways`() {
-        val chat = showBar()
-        rule.runOnIdle { chat.requestFocus() }
-        rule.waitForIdle()
-        rule.onNodeWithTag("topnav-active-Chat", useUnmergedTree = true).assertExists()
-
-        rule.onNodeWithText("Chat").performKeyInput { pressKey(Key.DirectionRight) }
-        rule.waitForIdle()
-
-        // The pill is page-driven: focus moved, the selection did not.
-        rule.onNodeWithTag("topnav-active-Chat", useUnmergedTree = true).assertExists()
-        rule.onNodeWithTag("topnav-idle-Setting", useUnmergedTree = true).assertExists()
-    }
-
-    @Test
-    fun `the focus indicator follows sideways movement`() {
+    fun `the filled pill follows focus sideways`() {
         val chat = showBar()
         rule.runOnIdle { chat.requestFocus() }
         rule.waitForIdle()
@@ -117,53 +132,14 @@ class TopNavBarTest {
     }
 
     @Test
-    fun `rendering the settings page selects Setting`() {
-        rule.setContent {
-            TopNavBar(
-                selectedTab = TopNavTab.Setting,
-                onTabSelected = { },
-                onSearchClick = { },
-            )
-        }
-        rule.waitForIdle()
-        rule.onNodeWithTag("topnav-active-Setting", useUnmergedTree = true).assertExists()
-        rule.onNodeWithTag("topnav-idle-Chat", useUnmergedTree = true).assertExists()
-    }
-
-    @Test
-    fun `OK on a tab reports the tab, so the shell can switch pages`() {
-        var picked: TopNavTab? = null
-        rule.setContent {
-            TopNavBar(
-                selectedTab = TopNavTab.Chat,
-                onTabSelected = { picked = it },
-                onSearchClick = { },
-            )
-        }
-        rule.waitForIdle()
-        rule.onNodeWithTag("topnav-idle-Setting", useUnmergedTree = true).requestFocus()
-        rule.waitForIdle()
-        rule.onNodeWithTag("topnav-idle-Setting", useUnmergedTree = true)
-            .performKeyInput { pressKey(Key.DirectionCenter) }
-        rule.waitForIdle()
-        assertEquals(TopNavTab.Setting, picked)
-    }
-
-    @Test
     fun `the bar's entries sit 4dp apart`() {
-        rule.setContent {
-            TopNavBar(
-                selectedTab = TopNavTab.Chat,
-                onTabSelected = { },
-                onSearchClick = { },
-            )
-        }
+        showBar()
         rule.waitForIdle()
-        val chat = rule.onNodeWithTag("topnav-active-Chat", useUnmergedTree = true)
+        val chat = rule.onNodeWithTag("topnav-tab-Chat", useUnmergedTree = true)
             .getUnclippedBoundsInRoot()
-        val setting = rule.onNodeWithTag("topnav-idle-Setting", useUnmergedTree = true)
+        val setting = rule.onNodeWithTag("topnav-tab-Setting", useUnmergedTree = true)
             .getUnclippedBoundsInRoot()
-        val search = rule.onNodeWithTag("topnav-idle-search", useUnmergedTree = true)
+        val search = rule.onNodeWithTag("topnav-search", useUnmergedTree = true)
             .getUnclippedBoundsInRoot()
 
         assertEquals(4f, (setting.left - chat.right).value, 0.5f)
@@ -178,7 +154,6 @@ class TopNavBarTest {
         rule.setContent {
             Column {
                 TopNavBar(
-                    selectedTab = TopNavTab.Chat,
                     onTabSelected = { },
                     onSearchClick = { },
                 )
@@ -195,11 +170,11 @@ class TopNavBarTest {
             }
         }
         rule.waitForIdle()
-        rule.onNodeWithTag("topnav-idle-search", useUnmergedTree = true).requestFocus()
+        rule.onNodeWithTag("topnav-search", useUnmergedTree = true).requestFocus()
         rule.waitForIdle()
-        rule.onNodeWithTag("topnav-idle-search", useUnmergedTree = true)
+        rule.onNodeWithTag("topnav-search", useUnmergedTree = true)
             .performKeyInput { pressKey(Key.DirectionRight) }
         rule.waitForIdle()
-        rule.onNodeWithTag("topnav-idle-search", useUnmergedTree = true).assertIsFocused()
+        rule.onNodeWithTag("topnav-search", useUnmergedTree = true).assertIsFocused()
     }
 }

@@ -243,9 +243,8 @@ private fun AppNavHost(viewModel: MainViewModel, backController: BackController)
     // Pages that render inside the app shell: they get the shared top bar and
     // the design's content box (y=96, x=58). Everything else (login, player)
     // keeps the whole window.
-    // Both shell pages share the global top bar; each one says which tab is active.
+    // Both shell pages share the global top bar.
     val isShellPage = currentRoute == Routes.HOME_SCREEN || currentRoute == Routes.HOME_SETTINGS
-    val shellTab = if (currentRoute == Routes.HOME_SETTINGS) TopNavTab.Setting else TopNavTab.Chat
 
     // Focus bridge between the shell's top bar and the home screen's chat list: Down
     // from the bar lands on the selected chat row, and Back from that list returns to
@@ -279,7 +278,6 @@ private fun AppNavHost(viewModel: MainViewModel, backController: BackController)
                     if (me?.photoFileId == null) viewModel.refreshMe()
                 }
                 TopNavBar(
-                    selectedTab = shellTab,
                     onTabSelected = { tab ->
                         // Chat and Setting are the two shell pages; search stays inert.
                         val target = when (tab) {
