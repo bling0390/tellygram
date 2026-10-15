@@ -292,6 +292,14 @@ private fun AppNavHost(viewModel: MainViewModel, backController: BackController)
                             }
                         }
                     },
+                    onTabConfirmed = { tab ->
+                        // OK on the Chat tab hands focus to the chat list's entry: the Archived
+                        // Chats row, the list's first focusable (2026-10-15). The same
+                        // requester the bar's Down uses, so both take one path.
+                        if (tab == TopNavTab.Chat) {
+                            runCatching { homeContentFocus.requestFocus() }
+                        }
+                    },
                     onSearchClick = { },
                     modifier = Modifier.padding(horizontal = TopNavBarSideMargin),
                     selectedTabFocus = homeTopBarFocus,

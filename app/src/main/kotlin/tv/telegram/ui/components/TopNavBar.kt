@@ -66,6 +66,12 @@ val TopNavBarSideMargin = 58.dp
 @Composable
 fun TopNavBar(
     onTabSelected: (TopNavTab) -> Unit,
+    /**
+     * OK on a tab: hand focus to that page's content. Separate from [onTabSelected], which
+     * fires the moment an entry takes focus (focus IS the selection) — merely moving across
+     * the bar must not also drop focus into a page.
+     */
+    onTabConfirmed: (TopNavTab) -> Unit = {},
     onSearchClick: () -> Unit,
     modifier: Modifier = Modifier,
     // The signed-in user's avatar. Injected rather than loaded here so the bar
@@ -95,7 +101,8 @@ fun TopNavBar(
                 label = "Chat",
                 containerTag = "topnav-tab-Chat",
                 cancelLeft = true,
-                onSelected = { onTabSelected(TopNavTab.Chat) },
+                onFocused = { onTabSelected(TopNavTab.Chat) },
+                onConfirmed = { onTabConfirmed(TopNavTab.Chat) },
                 downFocus = contentFocus,
                 requester = selectedTabFocus,
             )
@@ -104,7 +111,8 @@ fun TopNavBar(
             TopNavTabButton(
                 label = "Setting",
                 containerTag = "topnav-tab-Setting",
-                onSelected = { onTabSelected(TopNavTab.Setting) },
+                onFocused = { onTabSelected(TopNavTab.Setting) },
+                onConfirmed = { onTabConfirmed(TopNavTab.Setting) },
                 downFocus = contentFocus,
             )
             Spacer(Modifier.width(4.dp))
@@ -185,9 +193,10 @@ private fun TopNavTabButton(
     // One testTag per node: the container keeps this stable name, and the focus/blur
     // tag rides on the label below.
     containerTag: String,
-    /** Focus IS selection (2026-10-15): called when this entry takes focus, and again
-     *  when OK lands on it. */
-    onSelected: () -> Unit,
+    /** Focus IS selection (2026-10-15): taking focus switches the module. */
+    onFocused: () -> Unit,
+    /** OK on this entry: hand focus to the page's content. */
+    onConfirmed: () -> Unit,
     downFocus: FocusRequester? = null,
     requester: FocusRequester? = null,
     // The bar's edges: Left at the first entry and Right at the last one stop there,
@@ -214,14 +223,14 @@ private fun TopNavTabButton(
             .onFocusChanged {
                 focused = it.isFocused
                 // Focus selects: the bar has no separate "selected" look any more (2026-10-15).
-                if (it.isFocused) onSelected()
+                if (it.isFocused) onFocused()
             }
             .focusable()
             .onKeyEvent { event: KeyEvent ->
                 if (event.type == KeyEventType.KeyUp &&
                     (event.key == Key.DirectionCenter || event.key == Key.Enter)
                 ) {
-                    onSelected()
+                    onConfirmed()
                     true
                 } else {
                     false

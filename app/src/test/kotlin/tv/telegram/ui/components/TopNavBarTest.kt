@@ -91,20 +91,31 @@ class TopNavBarTest {
     }
 
     @Test
-    fun `OK on an entry reports its tab as well`() {
+    fun `OK on an entry enters the page instead of re-reporting the tab`() {
         val reported = mutableListOf<TopNavTab>()
-        showBar(onTabSelected = { reported += it })
-
+        val confirmed = mutableListOf<TopNavTab>()
+        rule.setContent {
+            TopNavBar(
+                onTabSelected = { reported += it },
+                onTabConfirmed = { confirmed += it },
+                onSearchClick = { },
+            )
+        }
+        rule.waitForIdle()
         rule.onNodeWithTag("topnav-tab-Setting", useUnmergedTree = true).requestFocus()
         rule.waitForIdle()
-        val afterFocus = reported.size
+
+        // Taking focus switches the module — and on its own never enters the page.
+        assertEquals(listOf(TopNavTab.Setting), reported)
+        assertTrue("focus alone must not enter the page", confirmed.isEmpty())
 
         rule.onNodeWithTag("topnav-tab-Setting", useUnmergedTree = true)
             .performKeyInput { pressKey(Key.DirectionCenter) }
         rule.waitForIdle()
 
-        assertTrue("OK must still fire the tab callback", reported.size > afterFocus)
-        assertEquals(TopNavTab.Setting, reported.last())
+        // OK hands the page its focus target instead of reporting the tab again.
+        assertEquals(listOf(TopNavTab.Setting), confirmed)
+        assertEquals(1, reported.size)
     }
 
     @Test
