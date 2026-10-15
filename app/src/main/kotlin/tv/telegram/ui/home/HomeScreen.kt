@@ -331,6 +331,11 @@ internal fun HomeScreen(
 
     var selectedChatId by rememberSaveable { mutableStateOf<Long?>(null) }
     var filter by rememberSaveable { mutableStateOf(MediaFilter.All) }
+    // Focus selects a chat at once — the row fills and the pane's subject changes — but the
+    // query waits for focus to settle (2026-10-15). Same shape as the long-press job: the
+    // pending open is cancelled whenever focus moves on, so only the chat the user lands on
+    // is ever queried.
+    var pendingOpen by remember { mutableStateOf<Job?>(null) }
 
     // D-pad graph: the edges of each region are routed explicitly rather than left to
     // Compose's nearest-candidate search (design annotations 1-4).
@@ -483,8 +488,20 @@ internal fun HomeScreen(
                     },
                     onSelect = { chat ->
                         selectedChatId = chat.id
-                        // A chat opens on the unfiltered first page, so the chip state and the
-                        // query state stay in step.
+                        pendingOpen?.cancel()
+                        pendingOpen = scope.launch {
+                            delay(ChatOpenDebounceMs)
+                            // A chat opens on the unfiltered first page, so the chip state and
+                            // the query state stay in step.
+                            filter = MediaFilter.All
+                            state.openChat(chat.id)
+                        }
+                    },
+                    onConfirm = { chat ->
+                        // OK is an explicit "open this one": no waiting.
+                        selectedChatId = chat.id
+                        pendingOpen?.cancel()
+                        pendingOpen = null
                         filter = MediaFilter.All
                         state.openChat(chat.id)
                     },
@@ -562,7 +579,10 @@ private fun ChatList(
     onMenuOpen: (ChatItem) -> Unit,
     onMenuClose: () -> Unit,
     onMenuAction: (ChatMenuAction) -> Unit,
+    /** Focus landed on this chat: select it now, and open it once focus settles. */
     onSelect: (ChatItem) -> Unit,
+    /** OK landed on this chat: open it right away, skipping the settle wait. */
+    onConfirm: (ChatItem) -> Unit,
 ) {
     // The design's 268x412 box is exactly eight rows of (48 + 4), so anything
     // past seven chats has to scroll. It is a LazyColumn for that reason only —
@@ -623,7 +643,8 @@ private fun ChatList(
                 onRegion = onRegion,
                 onLongPress = { onMenuOpen(chat) },
                 menuReturn = if (chat.id == (menuChat?.id ?: returnFocusChatId)) menuReturnFocus else null,
-                onSelected = { onSelect(chat) },
+                onFocused = { onSelect(chat) },
+                onConfirmed = { onConfirm(chat) },
             )
         }
     }
@@ -702,8 +723,10 @@ private fun ChatRow(
     onRegion: (HomeRegion) -> Unit,
     onLongPress: () -> Unit,
     menuReturn: FocusRequester?,
-    /** Fired when this row takes focus and again when OK lands on it: focus IS the selection. */
-    onSelected: () -> Unit,
+    /** This row took focus: it is the selection now, and its media is queried shortly. */
+    onFocused: () -> Unit,
+    /** OK landed on this row: open the chat without waiting for focus to settle. */
+    onConfirmed: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
@@ -751,7 +774,7 @@ private fun ChatRow(
                     longPressJob = null
                     onRegion(HomeRegion.ChatList)
                     // Focus selects: this chat becomes the pane's subject right away.
-                    onSelected()
+                    onFocused()
                 }
             }
             .let { if (isEntry) it.focusRequester(focus.selectedChat) else it }
@@ -776,7 +799,7 @@ private fun ChatRow(
                     event.type == KeyEventType.KeyUp && ok -> {
                         longPressJob?.cancel()
                         longPressJob = null
-                        if (longPressed) longPressed = false else onSelected()
+                        if (longPressed) longPressed = false else onConfirmed()
                         true
                     }
                     else -> false

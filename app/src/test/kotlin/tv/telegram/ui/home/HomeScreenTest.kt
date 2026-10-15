@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -436,6 +437,60 @@ class HomeScreenTest {
         rule.onNodeWithTag("home-chat-row-1").performKeyInput { pressKey(Key.DirectionRight) }
         rule.waitForIdle()
         rule.onNodeWithTag("home-chat-row-1").assertIsFocused()
+    }
+
+    // ── 焦点去抖（2026-10-15）─────────────────────────────────────────────────
+
+    @Test
+    fun `focusing a chat does not fire the query until focus settles`() {
+        // Focus selects for the eye at once, but the query waits: holding Down through a
+        // long list must not fire one TDLib query per row it passes.
+        show()
+        rule.onNodeWithTag("home-chat-row-1").requestFocus()
+        rule.waitForIdle()
+        assertNull(state.openedChatId)
+    }
+
+    @Test
+    fun `the chat opens once focus has settled`() {
+        show()
+        rule.onNodeWithTag("home-chat-row-2").requestFocus()
+        rule.waitForIdle()
+
+        rule.mainClock.advanceTimeBy(ChatOpenDebounceMs + 50)
+        rule.waitForIdle()
+
+        assertEquals(2L, state.openedChatId)
+    }
+
+    @Test
+    fun `only the chat focus lands on is opened`() {
+        // The pending open is cancelled when focus moves on, so passing through a row does
+        // not query it.
+        show()
+        rule.onNodeWithTag("home-chat-row-1").requestFocus()
+        rule.waitForIdle()
+        rule.mainClock.advanceTimeBy(100)
+
+        rule.onNodeWithTag("home-chat-row-2").requestFocus()
+        rule.waitForIdle()
+        rule.mainClock.advanceTimeBy(ChatOpenDebounceMs + 50)
+        rule.waitForIdle()
+
+        assertEquals(2L, state.openedChatId)
+    }
+
+    @Test
+    fun `OK opens the chat without waiting for focus to settle`() {
+        show()
+        rule.onNodeWithTag("home-chat-row-2").requestFocus()
+        rule.waitForIdle()
+        assertNull(state.openedChatId)
+
+        rule.onNodeWithTag("home-chat-row-2").performKeyInput { pressKey(Key.DirectionCenter) }
+        rule.waitForIdle()
+
+        assertEquals(2L, state.openedChatId)
     }
 
     @Test

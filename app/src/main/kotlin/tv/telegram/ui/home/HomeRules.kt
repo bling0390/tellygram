@@ -74,6 +74,13 @@ internal fun formatDuration(totalSeconds: Int): String {
 internal data class ChatRowColors(val fill: Color, val text: Color, val unreadDot: Color)
 
 /**
+ * How long focus must rest on a chat before its media is queried (2026-10-15). Focus
+ * selects a chat for the eye at once, but the query waits: holding Down through a long
+ * list would otherwise fire one TDLib query per row it passes. OK skips the wait.
+ */
+internal const val ChatOpenDebounceMs = 300L
+
+/**
  * Row state -> colours.
  *
  * The design annotates the chat-name row so the filled background belongs to the row that
