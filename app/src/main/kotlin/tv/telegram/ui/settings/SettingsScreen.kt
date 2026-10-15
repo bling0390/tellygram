@@ -50,8 +50,6 @@ import tv.telegram.ui.focus.dpadNavigationSounds
 import tv.telegram.ui.home.HomeSpec
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
@@ -92,7 +90,9 @@ internal fun SettingsScreen(
     /**
      * The shell hands the top bar's Down here: it must point at something *this* page
      * actually composes, otherwise the bar's focus search targets an unattached requester
-     * and throws (see the settings crasher).
+     * and throws (see the settings crasher). It is only the Down target — arriving on the
+     * page deliberately does NOT take focus (2026-10-15), so switching to the Setting tab
+     * leaves focus on the bar.
      */
     contentEntryFocus: FocusRequester? = null,
     modifier: Modifier = Modifier,
@@ -114,17 +114,6 @@ internal fun SettingsScreen(
     // and pointing the search at an unattached requester throws.
     val paneEntryOrNull = if (selected == SettingsSection.HelpAndSupport) null else paneEntryFocus
 
-    // Arriving on the page takes focus: the shell hands the bar's Down target here, and
-    // without this the top bar keeps focus and the pane looks inert. Waits a frame — a
-    // request during the first composition has nothing to land on — and retries once.
-    LaunchedEffect(contentEntryFocus) {
-        val target = contentEntryFocus ?: return@LaunchedEffect
-        withFrameNanos { }
-        if (!runCatching { target.requestFocus() }.isSuccess) {
-            withFrameNanos { }
-            runCatching { target.requestFocus() }
-        }
-    }
     val authState by state.authState.collectAsStateWithLifecycle()
     val user by state.currentUser.collectAsStateWithLifecycle()
     val language by state.language.collectAsStateWithLifecycle()

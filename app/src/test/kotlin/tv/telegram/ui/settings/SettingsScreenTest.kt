@@ -5,6 +5,7 @@ package tv.telegram.ui.settings
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.test.assertHasNoClickAction
 import androidx.compose.ui.test.assertIsFocused
+import androidx.compose.ui.test.assertIsNotFocused
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -245,15 +246,15 @@ class SettingsScreenTest {
     }
 
     @Test
-    fun `the page takes focus on arrival, on the Accounts entry`() {
-        // What the product asked for: opening Settings lands on the Accounts entry, which
-        // is both the focused and the selected section.
+    fun `the page leaves focus alone on arrival`() {
+        // Reversed on 2026-10-15: switching to the Setting tab must leave focus on the bar,
+        // so the page never requests focus itself — it only offers the bar a Down target.
         val entry = FocusRequester()
         rule.setContent {
             SettingsScreen(state = FakeSettingsState(), versionName = "9.9.9-test", contentEntryFocus = entry)
         }
         rule.waitForIdle()
-        rule.onNodeWithTag("settings-section-Accounts").assertIsFocused()
+        rule.onNodeWithTag("settings-section-Accounts").assertIsNotFocused()
     }
 
     @Test
