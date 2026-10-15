@@ -284,6 +284,53 @@ class SettingsScreenTest {
             .assertDoesNotExist()
     }
 
+    // ── 侧边栏的 OK：进面板首个可聚焦行（2026-10-15）────────────────────────────
+
+    @Test
+    fun `OK on a section row enters the pane's first focusable row`() {
+        show()
+
+        // Accounts: its one focusable row is the Log out panel.
+        select("Accounts")
+        rule.onNodeWithTag("settings-log-out").assertIsFocused()
+
+        // About: same shape — the "Check for updates" row.
+        rule.onNodeWithTag("settings-section-About").requestFocus()
+        rule.waitForIdle()
+        rule.onNodeWithTag("settings-section-About").performKeyInput { pressKey(Key.DirectionCenter) }
+        rule.waitForIdle()
+        rule.onNodeWithTag("settings-check-updates").assertIsFocused()
+
+        // Language: the FIRST language, not the remembered one.
+        rule.onNodeWithTag("settings-section-PreferredLanguage").requestFocus()
+        rule.waitForIdle()
+        rule.onNodeWithTag("settings-section-PreferredLanguage").performKeyInput { pressKey(Key.DirectionCenter) }
+        rule.waitForIdle()
+        rule.onNodeWithTag("settings-language-English").assertIsFocused()
+    }
+
+    @Test
+    fun `OK on the help section stays on the row`() {
+        // Its pane is display-only, so there is no focusable row to hand focus to.
+        show()
+        rule.onNodeWithTag("settings-section-HelpAndSupport").requestFocus()
+        rule.waitForIdle()
+        rule.onNodeWithTag("settings-section-HelpAndSupport")
+            .performKeyInput { pressKey(Key.DirectionCenter) }
+        rule.waitForIdle()
+        rule.onNodeWithTag("settings-section-HelpAndSupport").assertIsFocused()
+    }
+
+    @Test
+    fun `taking focus alone does not enter the pane`() {
+        show()
+        rule.onNodeWithTag("settings-section-About").requestFocus()
+        rule.waitForIdle()
+
+        rule.onNodeWithTag("settings-section-About").assertIsFocused()
+        rule.onNodeWithTag("settings-check-updates").assertIsNotFocused()
+    }
+
     @Test
     fun `the highlighted section spans the whole list row`() {
         // The design's list column stretches, so the white pill must be the full 268dp —

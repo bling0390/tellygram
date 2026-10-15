@@ -108,6 +108,11 @@ internal fun SettingsScreen(
     // "return to the chosen section" and the "return where I came from" cases.
     val selectedSectionFocus = remember { FocusRequester() }
     val paneEntryFocus = remember { FocusRequester() }
+    // Where OK on a section row lands: the pane's FIRST focusable row (2026-10-15). In
+    // Accounts and About that is the single actionable row; in the language pane it is the
+    // first language. Deliberately separate from paneEntryFocus, which the Right key uses and
+    // which remembers the row the user last visited.
+    val paneFirstFocus = remember { FocusRequester() }
     var lastLanguageFocus by remember { mutableStateOf<Language?>(null) }
 
     // Only panes that compose a focusable row may be the list's Right target: Help has none,
@@ -137,6 +142,13 @@ internal fun SettingsScreen(
                     section = section,
                     // Focus IS the selection: taking focus switches the pane (2026-10-15).
                     onSelect = { selected = section },
+                    // OK enters the pane this section shows. Help composes no focusable row, so
+                    // there is nowhere to go and the press stays on the row.
+                    onConfirmed = {
+                        if (section != SettingsSection.HelpAndSupport) {
+                            runCatching { paneFirstFocus.requestFocus() }
+                        }
+                    },
                     // Only the first entry is the bar's Down target.
                     requester = if (index == 0) contentEntryFocus else null,
                     // A pane row going Left comes back to the chosen section.
@@ -171,6 +183,7 @@ internal fun SettingsScreen(
                         onClick = { showLogOut = true },
                         leftRequester = selectedSectionFocus,
                         entryRequester = paneEntryFocus,
+                        firstRequester = paneFirstFocus,
                     )
                 }
 
@@ -181,6 +194,7 @@ internal fun SettingsScreen(
                     CheckForUpdatesRow(
                         leftRequester = selectedSectionFocus,
                         entryRequester = paneEntryFocus,
+                        firstRequester = paneFirstFocus,
                     )
                 }
 
@@ -192,6 +206,9 @@ internal fun SettingsScreen(
                             selected = option == language,
                             onSelect = { state.setLanguage(option) },
                             leftRequester = selectedSectionFocus,
+                            // OK on the section row lands on the FIRST language; Right keeps
+                            // its remembered-row behaviour through entryRequester.
+                            firstRequester = if (index == 0) paneFirstFocus else null,
                             // Right from the list lands on the remembered row, else the first.
                             entryRequester = if (option == (lastLanguageFocus ?: Language.entries.first())) {
                                 paneEntryFocus
@@ -266,8 +283,10 @@ private enum class SettingsSection(val labelRes: Int, val icon: ImageVector) {
 @Composable
 private fun SectionItem(
     section: SettingsSection,
-    /** Called when this row takes focus and when OK lands on it: focus IS the selection. */
+    /** Called when this row takes focus: focus IS the selection. */
     onSelect: () -> Unit,
+    /** Called when OK lands on it: hand focus to the pane this section shows. */
+    onConfirmed: () -> Unit,
     requester: FocusRequester? = null,
     /** The chosen row's own requester, so a pane row's Left can return to it. */
     sectionFocus: FocusRequester? = null,
@@ -298,7 +317,7 @@ private fun SectionItem(
                 if (event.type == KeyEventType.KeyUp &&
                     (event.key == Key.DirectionCenter || event.key == Key.Enter)
                 ) {
-                    onSelect()
+                    onConfirmed()
                     true
                 } else {
                     false
@@ -373,6 +392,7 @@ private fun LicenseRow() =
 private fun CheckForUpdatesRow(
     leftRequester: FocusRequester? = null,
     entryRequester: FocusRequester? = null,
+    firstRequester: FocusRequester? = null,
 ) = ActionRow(
     label = stringResource(R.string.settings_about_row_check_updates),
     tag = "settings-check-updates",
@@ -380,6 +400,7 @@ private fun CheckForUpdatesRow(
     onClick = { },
     leftRequester = leftRequester,
     entryRequester = entryRequester,
+    firstRequester = firstRequester,
 )
 
 /** An actionable row: surface-container at rest, white with the dark label once focused. */
@@ -390,6 +411,8 @@ private fun ActionRow(
     onClick: () -> Unit,
     leftRequester: FocusRequester? = null,
     entryRequester: FocusRequester? = null,
+    /** OK on the section row above lands here: this is the pane's first focusable row. */
+    firstRequester: FocusRequester? = null,
 ) {
     var focused by remember { mutableStateOf(false) }
     val colors = actionableRowColors(focused)
@@ -398,6 +421,7 @@ private fun ActionRow(
             .testTag(tag)
             .background(colors.fill, RoundedCornerShape(HomeSpec.Corner))
             .let { if (entryRequester != null) it.focusRequester(entryRequester) else it }
+            .let { if (firstRequester != null) it.focusRequester(firstRequester) else it }
             .focusProperties {
                 if (leftRequester != null) left = leftRequester
                 // A pane with a single actionable row is a closed list: Up, Down and Right
@@ -441,6 +465,8 @@ private fun LanguageRow(
     onSelect: () -> Unit,
     leftRequester: FocusRequester? = null,
     entryRequester: FocusRequester? = null,
+    /** Carried by the pane's first row, where OK on the section row above lands. */
+    firstRequester: FocusRequester? = null,
     // The list is a closed column: Up at the first row, Down at the last one and Right
     // anywhere stop there instead of letting the default search escape to the section list.
     cancelUp: Boolean = false,
@@ -456,6 +482,7 @@ private fun LanguageRow(
             .testTag("settings-language-$label")
             .background(colors.fill, RoundedCornerShape(HomeSpec.Corner))
             .let { if (entryRequester != null) it.focusRequester(entryRequester) else it }
+            .let { if (firstRequester != null) it.focusRequester(firstRequester) else it }
             .focusProperties {
                 if (leftRequester != null) left = leftRequester
                 up = if (cancelUp) FocusRequester.Cancel else FocusRequester.Default
