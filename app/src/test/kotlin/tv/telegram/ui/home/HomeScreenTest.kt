@@ -68,11 +68,13 @@ internal class FakeHomeState(media: List<MediaItem> = defaultMedia) : HomeState 
     fun requestReturnFocus(messageId: Long) { returnFocus.value = messageId }
 
     var openedChatId: Long? = null
+    /** How many times the UI asked for a chat to be loaded, so a re-query is visible. */
+    var openCount = 0
     var filterSet: MediaFilter? = null
     var loadedMore = false
 
     override fun ensureMediaFile(fileId: Int, priority: Int) = Unit
-    override fun openChat(chatId: Long) { openedChatId = chatId }
+    override fun openChat(chatId: Long) { openedChatId = chatId; openCount++ }
 
     var pinnedTo: Pair<Long, Boolean>? = null
     var mutedTo: Pair<Long, Boolean>? = null
@@ -491,6 +493,51 @@ class HomeScreenTest {
         rule.waitForIdle()
 
         assertEquals(2L, state.openedChatId)
+    }
+
+    @Test
+    fun `focus coming back to the same chat does not query it again`() {
+        // Left from the grid lands on the row it left. openAndLoad blanks the pane, resets the
+        // pagination cursor and drops the chosen filter, so coming back must not run it.
+        show()
+        rule.onNodeWithTag("home-chat-row-1").requestFocus()
+        rule.waitForIdle()
+        rule.mainClock.advanceTimeBy(ChatOpenDebounceMs + 50)
+        rule.waitForIdle()
+        assertEquals(1, state.openCount)
+
+        rule.onNodeWithTag("home-chat-row-1").performKeyInput { pressKey(Key.DirectionRight) }
+        rule.waitForIdle()
+        rule.onNodeWithTag("home-media-cell-0").performKeyInput { pressKey(Key.DirectionLeft) }
+        rule.waitForIdle()
+        rule.onNodeWithTag("home-chat-row-1").assertIsFocused()
+
+        rule.mainClock.advanceTimeBy(ChatOpenDebounceMs + 50)
+        rule.waitForIdle()
+        assertEquals(1, state.openCount)
+    }
+
+    @Test
+    fun `going to another chat and back queries it again`() {
+        // The guard is about the chat on screen, not about querying once and never again.
+        show()
+        rule.onNodeWithTag("home-chat-row-1").requestFocus()
+        rule.waitForIdle()
+        rule.mainClock.advanceTimeBy(ChatOpenDebounceMs + 50)
+        rule.waitForIdle()
+
+        rule.onNodeWithTag("home-chat-row-2").requestFocus()
+        rule.waitForIdle()
+        rule.mainClock.advanceTimeBy(ChatOpenDebounceMs + 50)
+        rule.waitForIdle()
+
+        rule.onNodeWithTag("home-chat-row-1").requestFocus()
+        rule.waitForIdle()
+        rule.mainClock.advanceTimeBy(ChatOpenDebounceMs + 50)
+        rule.waitForIdle()
+
+        assertEquals(3, state.openCount)
+        assertEquals(1L, state.openedChatId)
     }
 
     @Test

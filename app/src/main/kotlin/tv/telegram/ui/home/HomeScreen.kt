@@ -336,6 +336,10 @@ internal fun HomeScreen(
     // pending open is cancelled whenever focus moves on, so only the chat the user lands on
     // is ever queried.
     var pendingOpen by remember { mutableStateOf<Job?>(null) }
+    // The chat the pane is actually showing. Focus coming back to the list lands on the row
+    // it left, and that must not re-query: openAndLoad blanks the pane, resets the pagination
+    // cursor and would drop the chosen filter with it.
+    var openedChatId by remember { mutableStateOf<Long?>(null) }
 
     // D-pad graph: the edges of each region are routed explicitly rather than left to
     // Compose's nearest-candidate search (design annotations 1-4).
@@ -488,22 +492,29 @@ internal fun HomeScreen(
                     },
                     onSelect = { chat ->
                         selectedChatId = chat.id
-                        pendingOpen?.cancel()
-                        pendingOpen = scope.launch {
-                            delay(ChatOpenDebounceMs)
-                            // A chat opens on the unfiltered first page, so the chip state and
-                            // the query state stay in step.
-                            filter = MediaFilter.All
-                            state.openChat(chat.id)
+                        // Same chat already on screen — focus simply came back to the list
+                        // (Left from the grid, Back from a viewer). Nothing to load.
+                        if (chat.id != openedChatId) {
+                            pendingOpen?.cancel()
+                            pendingOpen = scope.launch {
+                                delay(ChatOpenDebounceMs)
+                                // A chat opens on the unfiltered first page, so the chip state
+                                // and the query state stay in step.
+                                filter = MediaFilter.All
+                                state.openChat(chat.id)
+                                openedChatId = chat.id
+                            }
                         }
                     },
                     onConfirm = { chat ->
-                        // OK is an explicit "open this one": no waiting.
+                        // OK is an explicit "open this one": no waiting, and it stays the
+                        // documented retry after a failed load.
                         selectedChatId = chat.id
                         pendingOpen?.cancel()
                         pendingOpen = null
                         filter = MediaFilter.All
                         state.openChat(chat.id)
+                        openedChatId = chat.id
                     },
                 )
 
