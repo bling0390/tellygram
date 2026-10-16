@@ -156,7 +156,8 @@ internal object HomeSpec {
     val ListHeight = 412.dp
     val ListGap = 4.dp
     val GutterBetweenColumns = 32.dp
-    val ChipsHeight = 36.dp                  // all chips fixed; the design's ALL chip hugs to this
+    // The chips row is 36dp tall by construction (10dp padding + a 16dp label line + 10dp),
+    // so there is no fixed height constant for it.
     val ChipsToGrid = 32.dp                  // 96 + 36 + 32 = 164, so the grid keeps its design Y
 
     val GridWidth = 544.dp
@@ -962,7 +963,8 @@ private fun FilterChip(
     val colors = filterChipColors(focused)
     Row(
         modifier = Modifier
-            .height(HomeSpec.ChipsHeight)
+            // Stable handle for the tests that measure a chip's box.
+            .testTag("home-filter-chip-$label")
             .clip(RoundedCornerShape(HomeSpec.Corner))
             .background(colors.fill)
             .border(
@@ -1002,15 +1004,11 @@ private fun FilterChip(
                 }
 
             }
-            // Horizontal padding only. The chip is a fixed 32dp tall as drawn and
-            // the content is centred inside it; keeping the design's 10dp of
-            // vertical padding on top of that left a 12dp content box for a 16dp
-            // text line, so the label was taller than its own box and got clipped
-            // (the descender in "Image" was the visible casualty).
-            .padding(
-                start = if (selected) 16.dp else 20.dp,
-                end = 20.dp,
-            ),
+            // Uniform 10/20, and the height now comes from this padding instead of a fixed
+            // box (design update, 2026-10-16): 10 + a 16dp label line + 10 = the frame's
+            // 36dp. The old fixed 32dp box plus this padding left a 12dp content box, which
+            // clipped the label's descender ("Image" was the visible casualty).
+            .padding(horizontal = 20.dp, vertical = 10.dp),
         // Vertical centring: the design says alignItems=center. The row width
         // hugs its content, so the chip is centred horizontally by construction.
         verticalAlignment = Alignment.CenterVertically,

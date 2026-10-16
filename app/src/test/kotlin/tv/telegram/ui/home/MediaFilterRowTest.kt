@@ -11,6 +11,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.assertIsFocused
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -133,6 +134,31 @@ class MediaFilterRowTest {
 
         rule.onNodeWithTag("home-filter-check-Video", useUnmergedTree = true).assertExists()
         rule.onNodeWithTag("home-filter-check-ALL", useUnmergedTree = true).assertDoesNotExist()
+    }
+
+    @Test
+    fun `the chips pad 20 left and right and 10 top and bottom`() {
+        // Design update 2026-10-16: both variants share one padding, so carrying the check no
+        // longer narrows a chip. The height then comes from the padding rather than a fixed box.
+        showRow(selected = MediaFilter.Video)
+
+        val chip = rule.onNodeWithTag("home-filter-chip-Video", useUnmergedTree = true)
+            .getUnclippedBoundsInRoot()
+        val check = rule.onNodeWithTag("home-filter-check-Video", useUnmergedTree = true)
+            .getUnclippedBoundsInRoot()
+
+        // The check starts exactly 20dp inside the chip's left edge...
+        assertEquals(20f, (check.left - chip.left).value, 0.5f)
+        // ...and the chip's height is its label plus 10dp top and bottom, so there is no fixed
+        // box any more. Asserted as a relationship rather than the frame's absolute 36dp: the
+        // JVM harness's text metrics are not the device's (a 16sp line measures ~36dp here,
+        // where on a device it is the design's 16dp and the chip lands on 36).
+        val label = rule.onNodeWithText("Video", useUnmergedTree = true).getUnclippedBoundsInRoot()
+        assertEquals(
+            (label.bottom - label.top).value + 20f,
+            (chip.bottom - chip.top).value,
+            0.5f,
+        )
     }
 
 }
