@@ -194,14 +194,13 @@ fun PlayerScreen(
         onClose()
     }
 
-    val videoIndices = remember(mediaItems) {
-        mediaItems.mapIndexedNotNull { i, m -> if (m.type == MediaType.Video) i else null }
-    }
-    val posInVideos = remember(videoIndices, index) { videoIndices.indexOf(index) }
-    val hasPrevVideo = posInVideos > 0
-    val hasNextVideo = posInVideos in 0 until videoIndices.lastIndex
+    // The videos this screen walks with prev/next. The type is a parameter because the audio
+    // player walks its own list through the same rule (2026-10-16).
+    val videoIndices = remember(mediaItems) { walkIndices(mediaItems, MediaType.Video) }
+    val hasPrevVideo = hasPreviousIn(videoIndices, index)
+    val hasNextVideo = hasNextIn(videoIndices, index)
 
-    fun neighborVideo(delta: Int): Int? = videoIndices.getOrNull(posInVideos + delta)
+    fun neighborVideo(delta: Int): Int? = neighbourIn(videoIndices, index, delta)
 
     // Reactive file state: collect the repo's state map so this screen
     // recomposes when a download completes (path appears) or fails. The old
