@@ -83,6 +83,7 @@ import tv.telegram.ui.components.TopNavBar
 import tv.telegram.ui.components.TopNavBarBottomGap
 import tv.telegram.ui.components.TopNavBarSideMargin
 import tv.telegram.ui.components.TopNavBarTopMargin
+import tv.telegram.ui.audio.AudioPlayerScreen
 import tv.telegram.ui.components.TopNavTab
 import tv.telegram.ui.focus.BackController
 import tv.telegram.ui.focus.BackPriority
@@ -366,6 +367,7 @@ private fun AppNavHost(viewModel: MainViewModel, backController: BackController)
                         )
                     },
                     onOpenPhoto = { index -> navController.navigate(Routes.photo(index)) },
+                    onOpenAudio = { index -> navController.navigate(Routes.audioPlayer(index)) },
                     contentEntryFocus = homeContentFocus,
                     topBarFocus = homeTopBarFocus,
                 )
@@ -503,6 +505,31 @@ private fun AppNavHost(viewModel: MainViewModel, backController: BackController)
                         },
                     )
                 }
+            }
+
+            composable(
+                route = Routes.AUDIO_PLAYER,
+                arguments = listOf(navArgument("index") { type = NavType.IntType }),
+                // Cut in rather than animate, like the video player: the screen builds an
+                // ExoPlayer as it enters, and a page animation on top of that is what dropped
+                // frames when the video player was added.
+                enterTransition = { EnterTransition.None },
+                exitTransition = { ExitTransition.None },
+                popEnterTransition = { EnterTransition.None },
+                popExitTransition = { ExitTransition.None },
+            ) { entry ->
+                val index = entry.arguments?.getInt("index") ?: 0
+                AudioPlayerScreen(
+                    viewModel = viewModel,
+                    index = index,
+                    onClose = { navController.popBackStack() },
+                    onNavigateTo = { newIndex ->
+                        navController.navigate(Routes.audioPlayer(newIndex)) {
+                            popUpTo(Routes.AUDIO_PLAYER) { inclusive = true }
+                            launchSingleTop = true
+                        }
+                    },
+                )
             }
 
             composable(

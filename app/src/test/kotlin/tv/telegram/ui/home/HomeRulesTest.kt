@@ -159,7 +159,7 @@ class HomeRulesTest {
     fun `photos open the preview and everything else opens the player`() {
         assertEquals(MediaOpenTarget.PhotoPreview, mediaOpenTarget(MediaCellKind.Photo))
         assertEquals(MediaOpenTarget.Player, mediaOpenTarget(MediaCellKind.Video))
-        assertEquals(MediaOpenTarget.Player, mediaOpenTarget(MediaCellKind.Audio))
+        assertEquals(MediaOpenTarget.AudioPlayer, mediaOpenTarget(MediaCellKind.Audio))
         assertEquals(MediaOpenTarget.Player, mediaOpenTarget(MediaCellKind.Text))
         assertEquals(MediaOpenTarget.Player, mediaOpenTarget(MediaCellKind.Album(4)))
     }

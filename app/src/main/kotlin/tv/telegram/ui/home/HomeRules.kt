@@ -110,7 +110,7 @@ internal fun filterChipColors(focused: Boolean): RowColors = if (focused) {
 }
 
 /** What confirming a media card opens. */
-internal enum class MediaOpenTarget { Player, PhotoPreview }
+internal enum class MediaOpenTarget { Player, AudioPlayer, PhotoPreview }
 
 /**
  * Photo cards open the full-screen preview; videos open the player; the remaining
@@ -118,6 +118,9 @@ internal enum class MediaOpenTarget { Player, PhotoPreview }
  */
 internal fun mediaOpenTarget(kind: MediaCellKind): MediaOpenTarget = when (kind) {
     is MediaCellKind.Photo -> MediaOpenTarget.PhotoPreview
+    // A track gets its own screen (2026-10-16): the video-shaped player has no picture to show
+    // for it and its walk list is videos only, so it is the wrong home for audio.
+    is MediaCellKind.Audio -> MediaOpenTarget.AudioPlayer
     else -> MediaOpenTarget.Player
 }
 

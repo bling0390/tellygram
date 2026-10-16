@@ -13,6 +13,11 @@ object Routes {
 
     fun player(index: Int): String = "player/$index"
 
+    // The audio player: a track gets its own screen rather than the video-shaped one
+    // (decision, 2026-10-16).
+    const val AUDIO_PLAYER = "audioPlayer/{index}"
+    fun audioPlayer(index: Int): String = "audioPlayer/$index"
+
     // Full-screen photo preview, opened by confirming an image card.
     const val PHOTO = "photo/{index}"
     fun photo(index: Int): String = "photo/$index"

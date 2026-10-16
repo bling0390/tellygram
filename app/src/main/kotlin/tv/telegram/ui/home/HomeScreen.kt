@@ -220,6 +220,8 @@ internal fun HomeScreen(
     state: HomeState,
     onOpenPlayer: (Int) -> Unit = {},
     onOpenPhoto: (Int) -> Unit = {},
+    /** Confirming an audio card opens the audio player (2026-10-16). */
+    onOpenAudio: (Int) -> Unit = {},
     /** A member picked inside the album popup: the shell routes it by type. */
     onOpenMediaItem: (MediaItem) -> Unit = {},
     // Focus bridge from the shell: Down from the top bar lands on the selected chat
@@ -549,6 +551,7 @@ internal fun HomeScreen(
                         },
                         onOpen = onOpenPlayer,
                         onPreview = onOpenPhoto,
+                        onOpenAudio = onOpenAudio,
                         onOpenAlbum = { albumTarget = it },
                         onOpenText = { item ->
                             scope.launch {
@@ -1049,6 +1052,8 @@ private fun MediaGrid(
     onPreview: (Int) -> Unit,
     onGridFocus: (Int) -> Unit,
     onOpen: (Int) -> Unit,
+    /** Confirming an audio card opens the audio player, not the video-shaped one (2026-10-16). */
+    onOpenAudio: (Int) -> Unit = {},
     /** Confirming an album card opens the popup instead of a viewer. */
     onOpenAlbum: (MediaItem) -> Unit = {},
     /** Confirming a text card opens its content instead of a viewer. */
@@ -1117,6 +1122,7 @@ private fun MediaGrid(
                 onGridFocus = onGridFocus,
                 onOpen = { onOpen(index) },
                 onPreview = { onPreview(index) },
+                onOpenAudio = { onOpenAudio(index) },
                 onOpenAlbum = { onOpenAlbum(item) },
                 onOpenText = { onOpenText(item) },
             )
@@ -1142,6 +1148,8 @@ private fun MediaCell(
     onGridFocus: (Int) -> Unit,
     onOpen: () -> Unit,
     onPreview: () -> Unit,
+    /** Confirming an audio card opens the audio player (2026-10-16). */
+    onOpenAudio: () -> Unit = {},
     onOpenAlbum: () -> Unit = {},
     onOpenText: () -> Unit = {},
 ) {
@@ -1195,6 +1203,7 @@ private fun MediaCell(
                         onOpenAlbum()
                     } else {                    when (mediaOpenTarget(kind)) {
                                             MediaOpenTarget.PhotoPreview -> onPreview()
+                                            MediaOpenTarget.AudioPlayer -> onOpenAudio()
                                             MediaOpenTarget.Player -> onOpen()
                                         }
                     }
