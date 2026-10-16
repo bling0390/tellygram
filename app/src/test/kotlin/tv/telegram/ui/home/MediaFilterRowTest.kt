@@ -124,5 +124,15 @@ class MediaFilterRowTest {
         assertEquals(MediaFilter.Video, selectedByClick)
     }
 
+    @Test
+    fun `the check marks the filter in effect, whichever one it is`() {
+        // Design 3608:2203 draws the check on ALL (focused AND applied) and on Video (applied
+        // but outlined). The marker therefore follows the applied filter instead of being an
+        // ALL-only badge (2026-10-16).
+        showRow(selected = MediaFilter.Video)
+
+        rule.onNodeWithTag("home-filter-check-Video", useUnmergedTree = true).assertExists()
+        rule.onNodeWithTag("home-filter-check-ALL", useUnmergedTree = true).assertDoesNotExist()
+    }
 
 }

@@ -4,6 +4,7 @@ import androidx.compose.ui.graphics.Color
 import tv.telegram.td.MediaItem
 import tv.telegram.td.MediaType
 import androidx.compose.ui.unit.Dp
+import tv.telegram.ui.components.RowColors
 
 /**
  * The home screen's pure rules, kept out of the composables so they can be unit
@@ -95,6 +96,17 @@ internal fun chatRowColors(highlighted: Boolean, pinned: Boolean): ChatRowColors
     ChatRowColors(HomeSpec.White, HomeSpec.InverseOnSurface, HomeSpec.TertiaryFixed)
 } else {
     ChatRowColors(HomeSpec.SurfaceContainer, HomeSpec.OnSurface, HomeSpec.Tertiary)
+}
+
+/**
+ * The filter chips' two looks (design 3608:2203, 2026-10-16): the white pill with the dark
+ * label belongs to FOCUS alone, and the check — not the fill — is what marks the filter in
+ * effect. A chip that is merely applied therefore keeps the outlined look with a white label.
+ */
+internal fun filterChipColors(focused: Boolean): RowColors = if (focused) {
+    RowColors(HomeSpec.White, HomeSpec.InverseOnSurface)
+} else {
+    RowColors(Color.Transparent, HomeSpec.White)
 }
 
 /** What confirming a media card opens. */

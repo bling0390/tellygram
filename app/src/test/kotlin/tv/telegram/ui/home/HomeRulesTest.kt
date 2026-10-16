@@ -194,6 +194,20 @@ class HomeRulesTest {
     }
 
     @Test
+    fun `the chip's pill is focus, and the applied filter keeps the outlined look`() {
+        // Design 3608:2203 (2026-10-16): the white pill with the dark label is the FOCUS
+        // treatment. The filter in effect is marked by the check, not by the fill, so a chip
+        // that is merely applied keeps the outlined look.
+        val focused = filterChipColors(focused = true)
+        assertEquals(HomeSpec.White, focused.fill)
+        assertEquals(HomeSpec.InverseOnSurface, focused.text)
+
+        val rest = filterChipColors(focused = false)
+        assertEquals(androidx.compose.ui.graphics.Color.Transparent, rest.fill)
+        assertEquals(HomeSpec.White, rest.text)
+    }
+
+    @Test
     fun `slot gap keeps the visible cards 20dp apart`() {
         // The ring band lives inside each slot, so two neighbours contribute one band each.
         assertEquals(14.dp, slotGap(cellGap = 20.dp, ring = 3.dp))

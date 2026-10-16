@@ -932,8 +932,9 @@ internal fun MediaFilterRow(
         MediaFilter.entries.forEachIndexed { index, entry ->
             FilterChip(
                 label = entry.label,
+                // The check marks the filter in effect — any of them, not just ALL
+                // (2026-10-16).
                 selected = entry == selected,
-                showCheck = entry == MediaFilter.All && entry == selected,
                 isFirst = index == 0,
                 isLast = index == MediaFilter.entries.lastIndex,
                 focus = focus,
@@ -947,8 +948,8 @@ internal fun MediaFilterRow(
 @Composable
 private fun FilterChip(
     label: String,
+    /** True for the filter in effect: it carries the check and is the list's return target. */
     selected: Boolean,
-    showCheck: Boolean,
     isFirst: Boolean,
     isLast: Boolean,
     focus: HomeFocus,
@@ -956,15 +957,17 @@ private fun FilterChip(
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
-    val active = selected || focused
+    // The pill is the FOCUS treatment; being the filter in effect only adds the check
+    // (design 3608:2203, 2026-10-16).
+    val colors = filterChipColors(focused)
     Row(
         modifier = Modifier
             .height(HomeSpec.ChipsHeight)
             .clip(RoundedCornerShape(HomeSpec.Corner))
-            .background(if (active) HomeSpec.White else Color.Transparent)
+            .background(colors.fill)
             .border(
-                width = if (active) 0.dp else 1.dp,
-                color = if (active) Color.Transparent else HomeSpec.ChipOutline,
+                width = if (focused) 0.dp else 1.dp,
+                color = if (focused) Color.Transparent else HomeSpec.ChipOutline,
                 shape = RoundedCornerShape(HomeSpec.Corner),
             )
             .focusProperties {
@@ -1005,7 +1008,7 @@ private fun FilterChip(
             // text line, so the label was taller than its own box and got clipped
             // (the descender in "Image" was the visible casualty).
             .padding(
-                start = if (showCheck) 16.dp else 20.dp,
+                start = if (selected) 16.dp else 20.dp,
                 end = 20.dp,
             ),
         // Vertical centring: the design says alignItems=center. The row width
@@ -1013,18 +1016,22 @@ private fun FilterChip(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        if (showCheck) {
+        if (selected) {
             Icon(
                 imageVector = Icons.Outlined.Done,
                 contentDescription = null,
-                tint = HomeSpec.InverseOnSurface,
-                modifier = Modifier.size(14.dp),
+                // The check rides the chip's own label colour: white on the outlined chip,
+                // dark once the row is the focused pill.
+                tint = colors.text,
+                modifier = Modifier
+                    .size(14.dp)
+                    .testTag("home-filter-check-$label"),
             )
         }
         Text(
             text = label,
             style = MaterialTheme.typography.labelMedium,
-            color = if (active) HomeSpec.InverseOnSurface else HomeSpec.White,
+            color = colors.text,
         )
     }
 }
