@@ -1,5 +1,7 @@
 package tv.telegram.ui.audio
 
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.exp
@@ -7,6 +9,7 @@ import kotlin.math.ln
 import kotlin.math.log10
 import kotlin.math.sin
 import kotlin.math.sqrt
+import tv.telegram.ui.home.HomeSpec
 
 /**
  * The circular spectrum's maths, kept out of the drawing code so it can be unit tested
@@ -195,3 +198,21 @@ internal fun spectrumFrame(
     attack = attack,
     release = release,
 )
+
+/**
+ * D1 (2026-10-16): the ring is mirrored. Bands run clockwise from the top, so the partner of band
+ * i across the vertical axis is band (n - i). The pair takes the louder of the two, which keeps
+ * the energy visible while making the shape symmetric about the vertical.
+ */
+internal fun mirroredLevels(levels: FloatArray): FloatArray {
+    val n = levels.size
+    if (n == 0) return levels
+    return FloatArray(n) { i -> maxOf(levels[i], levels[(n - i) % n]) }
+}
+
+/**
+ * D2 (2026-10-16): the colour follows the radius — the app's primary at the resting ring, its
+ * tertiary at the outer edge. A level *is* a radius fraction here, so it maps straight to colour.
+ */
+internal fun spectrumColor(level: Float): Color =
+    lerp(HomeSpec.Primary, HomeSpec.Tertiary, level.coerceIn(0f, 1f))

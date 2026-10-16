@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.LinearProgressIndicator
@@ -27,6 +28,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -112,7 +114,21 @@ fun AudioPlayerScreen(
         if (path == null) viewModel.ensureMediaFile(current.fileId, priority = 32)
     }
 
-    val exo = remember(current.fileId) { buildAudioPlayer(context, viewModel.fileRepo) }
+    // The spectrum: the processor sits in the player's audio chain, the analyser runs the FFT on a
+    // scope of its own (never on the playback thread), and the ring draws what it measured.
+    val analyserScope = rememberCoroutineScope()
+    val analyser = remember { SpectrumAnalyzer(analyserScope) }
+    LaunchedEffect(analyser) { analyser.start() }
+    val spectrum = remember { SpectrumAudioProcessor(onWindow = { window -> analyser.offer(window) }) }
+    DisposableEffect(spectrum, analyser) {
+        // The band layout follows the stream's own rate, which the processor learns when it is
+        // configured. A path whose PCM we cannot read simply never reports (decision E2).
+        spectrum.onFormat = { rate -> analyser.adoptSampleRate(rate) }
+        onDispose { spectrum.onFormat = null }
+    }
+    val levels by analyser.bands.collectAsStateWithLifecycle()
+
+    val exo = remember(current.fileId) { buildAudioPlayer(context, viewModel.fileRepo, spectrum) }
 
     // The listener outlives recompositions (it is keyed on the player), so it reads the queue
     // through these: otherwise a track that ends after loadMore grew the queue would decide
@@ -178,9 +194,19 @@ fun AudioPlayerScreen(
             .padding(horizontal = 48.dp),
     ) {
         Column(
-            modifier = Modifier.align(Alignment.CenterStart),
+            modifier = Modifier.align(Alignment.Center),
+            horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            // The spectrum took the cover's place (decisions D1-D3). It only ever draws what the
+            // tap measured, so silence, a paused track and an unreadable stream all rest as the
+            // ring rather than animating a lie.
+            SpectrumRing(
+                levels = levels,
+                modifier = Modifier
+                    .size(220.dp)
+                    .testTag("audio-spectrum"),
+            )
             Text(
                 text = audioTitle(current),
                 style = MaterialTheme.typography.headlineMedium,

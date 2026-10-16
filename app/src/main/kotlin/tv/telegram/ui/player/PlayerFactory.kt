@@ -2,12 +2,14 @@ package tv.telegram.ui.player
 
 import android.content.Context
 import androidx.media3.common.AudioAttributes
+import androidx.media3.common.audio.AudioProcessor
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import tv.telegram.td.TdDataSourceFactory
 import tv.telegram.td.TdFileRepository
+import tv.telegram.ui.audio.SpectrumRenderersFactory
 
 /**
  * How a correctly configured player is built (decision A1, 2026-10-16): the one place that knows
@@ -21,8 +23,22 @@ import tv.telegram.td.TdFileRepository
 internal fun buildAudioPlayer(
     context: Context,
     fileRepo: TdFileRepository,
+    /**
+     * The spectrum tap, when this player should feed one (2026-10-16). Null builds an untouched
+     * player — the switch decision A1 asked for, so a caller that does not want the ring pays
+     * nothing for it.
+     */
+    spectrum: AudioProcessor? = null,
 ): ExoPlayer = ExoPlayer.Builder(context)
-    .setRenderersFactory(DefaultRenderersFactory(context).setEnableDecoderFallback(true))
+    .setRenderersFactory(
+        (
+            if (spectrum == null) {
+                DefaultRenderersFactory(context)
+            } else {
+                SpectrumRenderersFactory(context, spectrum)
+            }
+            ).setEnableDecoderFallback(true),
+    )
     .setAudioAttributes(AudioAttributes.DEFAULT, /* handleAudioFocus = */ true)
     .setMediaSourceFactory(
         DefaultMediaSourceFactory(context).setDataSourceFactory(

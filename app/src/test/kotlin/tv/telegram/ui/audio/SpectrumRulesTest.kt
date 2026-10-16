@@ -3,6 +3,7 @@ package tv.telegram.ui.audio
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import tv.telegram.ui.home.HomeSpec
 import kotlin.math.PI
 import kotlin.math.sin
 
@@ -85,5 +86,35 @@ class SpectrumRulesTest {
         assertEquals(SpectrumMinRadius, radiusFraction(0f), 1e-4f)
         assertEquals(1f, radiusFraction(1f), 1e-4f)
         assertTrue(radiusFraction(0.6f) > radiusFraction(0.3f))
+    }
+
+    @Test
+    fun `the ring is mirrored about the vertical axis`() {
+        // Bands run clockwise from the top, so band i's partner is band (n - i) — the pairing the
+        // drawing code relies on (decision D1).
+        val levels = FloatArray(SpectrumBands).also { it[3] = 0.8f }
+        val mirrored = mirroredLevels(levels)
+
+        assertEquals(0.8f, mirrored[3], 1e-6f)
+        assertEquals(0.8f, mirrored[SpectrumBands - 3], 1e-6f)
+        for (i in mirrored.indices) {
+            assertEquals(
+                "band $i and its mirror must agree",
+                mirrored[i],
+                mirrored[(SpectrumBands - i) % SpectrumBands],
+                1e-6f,
+            )
+        }
+        // Only that pair shows: mirroring must not invent energy elsewhere.
+        assertEquals(2, mirrored.count { it > 0f })
+    }
+
+    @Test
+    fun `the colour runs from the primary at rest to the tertiary at the edge`() {
+        assertEquals(HomeSpec.Primary, spectrumColor(0f))
+        assertEquals(HomeSpec.Tertiary, spectrumColor(1f))
+        // A level outside the range is clamped rather than extrapolated.
+        assertEquals(HomeSpec.Primary, spectrumColor(-1f))
+        assertEquals(HomeSpec.Tertiary, spectrumColor(2f))
     }
 }
