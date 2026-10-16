@@ -26,6 +26,14 @@ data class MediaItem(
     // Video duration in seconds (0 for non-video / unknown). Displayed as a
     // badge on video cards only.
     val duration: Int = 0,
+    // Audio metadata, straight off TdApi.Audio (2026-10-16). The player screen shows the
+    // title and the artist, and its fallback chain needs the file name for the case where a
+    // track carries no title at all. fileSize is the audio file's own size.
+    val title: String? = null,
+    val performer: String? = null,
+    val fileName: String? = null,
+    val mimeType: String? = null,
+    val fileSize: Int = 0,
     // Album grouping: messages sharing a mediaAlbumId collapse into one card.
     // albumId == 0 means "not part of an album"; albumSize is the number of
     // messages the album holds, which is what the card's "+N" shows.

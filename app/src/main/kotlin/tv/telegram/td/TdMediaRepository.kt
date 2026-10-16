@@ -319,24 +319,19 @@ class TdMediaRepository(
                     duration = anim.duration,
                 )
             }
-            is TdApi.MessageAudio -> {
-                val audio = c.audio
-                MediaItem(
-                    messageId = message.id,
-                    type = MediaType.Audio,
-                    fileId = audio.audio.id,
-                    caption = c.caption.text,
-                    date = message.date,
-                    chatId = chatId,
-                    senderId = when (val sd = message.senderId) {
-                        is TdApi.MessageSenderUser -> sd.userId
-                        is TdApi.MessageSenderChat -> sd.chatId
-                        else -> 0L
-                    },
-                    senderIsChat = message.senderId is TdApi.MessageSenderChat,
-                    duration = audio.duration,
-                )
-            }
+            is TdApi.MessageAudio -> audioMediaItem(
+                messageId = message.id,
+                chatId = chatId,
+                date = message.date,
+                senderId = when (val sd = message.senderId) {
+                    is TdApi.MessageSenderUser -> sd.userId
+                    is TdApi.MessageSenderChat -> sd.chatId
+                    else -> 0L
+                },
+                senderIsChat = message.senderId is TdApi.MessageSenderChat,
+                audio = c.audio,
+                caption = c.caption.text,
+            )
             // Text messages: exactly "content is MessageText" (media captions are
             // not MessageText — they ride along on their own content type). Blank
             // bodies are dropped rather than shown as empty cards.
@@ -451,6 +446,40 @@ class TdMediaRepository(
  * another try (the cursor moved on), but only a couple of times; anything beyond that is
  * a chat that simply has no more displayable media in this stretch.
  */
+/**
+ * The audio branch of the message mapping, lifted out of [TdMediaRepository.parseMessage] so it
+ * can be unit tested without a TDLib client. It is the only place a track's own metadata — title,
+ * artist, file name, mime type, size — reaches a [MediaItem] (2026-10-16).
+ *
+ * TDLib reports an absent ID3 field as an empty string rather than null, and the player's
+ * fallback chain (title -> file name -> "unknown track") keys on null, so the empty case is
+ * normalised away here rather than at each call site.
+ */
+internal fun audioMediaItem(
+    messageId: Long,
+    chatId: Long,
+    date: Int,
+    senderId: Long,
+    senderIsChat: Boolean,
+    audio: TdApi.Audio,
+    caption: String,
+): MediaItem = MediaItem(
+    messageId = messageId,
+    type = MediaType.Audio,
+    fileId = audio.audio.id,
+    caption = caption,
+    date = date,
+    chatId = chatId,
+    senderId = senderId,
+    senderIsChat = senderIsChat,
+    duration = audio.duration,
+    title = audio.title.takeIf { it.isNotBlank() },
+    performer = audio.performer.takeIf { it.isNotBlank() },
+    fileName = audio.fileName.takeIf { it.isNotBlank() },
+    mimeType = audio.mimeType.takeIf { it.isNotBlank() },
+    fileSize = audio.audio.size,
+)
+
 internal fun shouldStopPaging(added: Int, extraPages: Int, maxExtraPages: Int = 3): Boolean =
     added > 0 || extraPages >= maxExtraPages
 
