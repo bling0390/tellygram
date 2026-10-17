@@ -205,7 +205,9 @@ class HomeRulesTest {
         assertEquals(HomeSpec.InverseOnSurface, focused.text)
 
         val rest = filterChipColors(focused = false)
-        assertEquals(androidx.compose.ui.graphics.Color.Transparent, rest.fill)
+        // Opaque page colour, not transparent (2026-10-17): same look on the page, but nothing
+        // behind the chip can show through it.
+        assertEquals(HomeSpec.Background, rest.fill)
         assertEquals(HomeSpec.White, rest.text)
     }
 

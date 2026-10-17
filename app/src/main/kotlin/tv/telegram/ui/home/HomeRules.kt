@@ -107,7 +107,9 @@ internal fun chatRowColors(highlighted: Boolean, pinned: Boolean): ChatRowColors
 internal fun filterChipColors(focused: Boolean): RowColors = if (focused) {
     RowColors(HomeSpec.White, HomeSpec.InverseOnSurface)
 } else {
-    RowColors(Color.Transparent, HomeSpec.White)
+    // Opaque page colour rather than transparent (2026-10-17): the chip then reads exactly as it
+    // did on the page — the colour is the page's own — but nothing behind it can show through.
+    RowColors(HomeSpec.Background, HomeSpec.White)
 }
 
 /** What confirming a media card opens. */
