@@ -5,6 +5,8 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import tv.telegram.td.ChatItem
+import tv.telegram.td.ChatType
 import tv.telegram.td.MediaItem
 import tv.telegram.td.MediaType
 import androidx.compose.ui.unit.dp
@@ -215,4 +217,25 @@ class HomeRulesTest {
         assertEquals(166.dp, 160.dp + 3.dp * 2)
         assertEquals(126.dp, 120.dp + 3.dp * 2)
     }
+
+    @Test
+    fun `return focus finds the chat by id, wherever the reorder put it`() {
+        // A pin sends the chat to the top, so the index it used to sit at means nothing
+        // (2026-10-17); the return path has to follow the id.
+        val chats = listOf(chat(9), chat(7), chat(3))
+
+        assertEquals(2, returnFocusIndex(chats, 3))
+        assertEquals(0, returnFocusIndex(chats, 9))
+        // Gone from this list (archived/deleted) or nothing pending at all.
+        assertNull(returnFocusIndex(chats, 42))
+        assertNull(returnFocusIndex(chats, null))
+    }
+
+    private fun chat(id: Long) = ChatItem(
+        id = id,
+        title = "chat $id",
+        type = ChatType.Private,
+        unreadCount = 0,
+        lastMessageText = null,
+    )
 }

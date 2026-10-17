@@ -325,9 +325,14 @@ internal fun HomeScreen(
             hadMenu = true
         } else if (hadMenu) {
             hadMenu = false
-            withFrameNanos { }
-            runCatching { menuReturnFocus.requestFocus() }
-            returnFocusChatId = null
+            // A plain dismiss has no list change behind it, so focus goes straight back to the
+            // row that opened the menu. An action that can reorder the list (pin/unpin) leaves
+            // returnFocusChatId set: ChatList re-anchors once the refreshed list arrives
+            // (2026-10-17).
+            if (returnFocusChatId == null) {
+                withFrameNanos { }
+                runCatching { menuReturnFocus.requestFocus() }
+            }
         }
     }
     val media by state.mediaItems.collectAsStateWithLifecycle()
@@ -465,6 +470,7 @@ internal fun HomeScreen(
                     menuIsOwner = menuIsOwner,
                     menuReturnFocus = menuReturnFocus,
                     returnFocusChatId = returnFocusChatId,
+                    onReturnFocusHandled = { returnFocusChatId = null },
                     onMenuOpen = { chat ->
                         scope.launch {
                             menuIsOwner = state.isGroupOwner(chat.id)
@@ -587,6 +593,8 @@ private fun ChatList(
     menuReturnFocus: FocusRequester,
     /** Non-null while focus should return to that chat after the menu closes. */
     returnFocusChatId: Long?,
+    /** Called once focus actually landed back on that chat, so the pending id can be cleared. */
+    onReturnFocusHandled: () -> Unit,
     onMenuOpen: (ChatItem) -> Unit,
     onMenuClose: () -> Unit,
     onMenuAction: (ChatMenuAction) -> Unit,
@@ -606,6 +614,19 @@ private fun ChatList(
     // The popover is hosted here: this Box owns the list's coordinate space, so the menu can
     // sit level with the long-pressed row and be pulled up when it would spill past the bottom.
     val listState = rememberLazyListState()
+
+    // Return focus by id once the list the action produced is on screen (2026-10-17). A pin moves
+    // the chat to the top, which can put it outside LazyColumn's composed window, so bring it back
+    // into view before asking for focus — and only clear the pending id once focus actually
+    // landed, so a refresh that arrives late still gets its anchor.
+    LaunchedEffect(returnFocusChatId, chats, archivedChats, showingArchived, menuChat) {
+        if (menuChat != null) return@LaunchedEffect
+        val visible = if (showingArchived) archivedChats else chats
+        val index = returnFocusIndex(visible, returnFocusChatId) ?: return@LaunchedEffect
+        runCatching { listState.scrollToItem(index) }
+        withFrameNanos { }
+        if (runCatching { menuReturnFocus.requestFocus() }.isSuccess) onReturnFocusHandled()
+    }
     val listScope = rememberCoroutineScope()
     // The entry target is the container, not the Archived row: the row can be recycled by the
     // LazyColumn, and aiming a key at a recycled requester crashes (2026-09-28 report). The

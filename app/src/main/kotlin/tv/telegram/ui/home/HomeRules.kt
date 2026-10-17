@@ -1,6 +1,7 @@
 package tv.telegram.ui.home
 
 import androidx.compose.ui.graphics.Color
+import tv.telegram.td.ChatItem
 import tv.telegram.td.MediaItem
 import tv.telegram.td.MediaType
 import androidx.compose.ui.unit.Dp
@@ -149,3 +150,13 @@ internal fun albumHeaderCaption(members: List<MediaItem>): String? =
  * band sits inside each slot, so two adjacent slots contribute a band each (2026-10-01).
  */
 internal fun slotGap(cellGap: Dp, ring: Dp): Dp = cellGap - ring * 2
+
+/**
+ * Where focus has to go back after a menu action reordered the list: the chat with [id], found by
+ * id rather than by the index it used to sit at — a pin sends it to the top (2026-10-17). Null
+ * when there is nothing to return to: no id, or the chat left this list (archived/deleted).
+ */
+internal fun returnFocusIndex(chats: List<ChatItem>, id: Long?): Int? {
+    if (id == null) return null
+    return chats.indexOfFirst { it.id == id }.takeIf { it >= 0 }
+}
