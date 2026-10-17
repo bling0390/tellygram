@@ -132,6 +132,17 @@ internal fun indexOfMessage(items: List<MediaItem>, messageId: Long): Int =
     items.indexOfFirst { it.messageId == messageId }
 
 /**
+ * The grid card that stands for [messageId]: the card itself, or the album card whose members
+ * include it — album members are grouped under their representative, so a preview opened from
+ * the album popup has to return to that card too (2026-10-17). -1 when the wall holds neither.
+ */
+internal fun gridIndexForMessage(items: List<MediaItem>, messageId: Long): Int {
+    val direct = indexOfMessage(items, messageId)
+    if (direct >= 0) return direct
+    return items.indexOfFirst { item -> item.albumMembers.any { it.messageId == messageId } }
+}
+
+/**
  * The Verified badge. The 2026-09-27 spec: on the focused (white) row it takes the row's
  * own inverse-on-surface, so it reads as part of the label; at rest it keeps the brand
  * primary that the earlier frames drew.

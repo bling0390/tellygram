@@ -409,22 +409,34 @@ internal fun HomeScreen(
     // chips -> selected chat, chat list -> the bar's selected tab.
     // The card a closed viewer asked focus back on, from the shell.
 
-    // Coming back from the player or the photo preview: hand focus to the card that
-    // was open instead of resetting to the first cell. The hint is consumed so the
-    // move happens once, and the index is cleared once focus has landed so the cell
-    // re-attaches its normal entry requester.
+    // Coming back from the player or the photo preview: hand focus to the card that was open
+    // instead of resetting to the first cell. The card is found by message id — an album member
+    // resolves to the album card that holds it — and the pending hint is consumed only once
+    // focus actually landed, so a grid that has not laid out yet gets a few more frames instead
+    // of losing the return (2026-10-17).
     LaunchedEffect(returnHint, media.size) {
         val id = returnHint ?: return@LaunchedEffect
-        val index = indexOfMessage(media, id)
-        if (index < 0) return@LaunchedEffect
-        state.consumePlayerReturnFocus()
-        returnFocusIndex = index
-        withFrameNanos { }
-        if (!runCatching { focus.returnGrid.requestFocus() }.isSuccess) {
-            runCatching { gridState.scrollToItem(index) }
-            delay(16L)
-            runCatching { focus.returnGrid.requestFocus() }
+        val index = gridIndexForMessage(media, id)
+        if (index < 0) {
+            // The loaded wall holds no card for it yet: leave the hint alone so a later page can
+            // still land on it — the contract HomeScreenTest pins.
+            return@LaunchedEffect
         }
+        returnFocusIndex = index
+        repeat(8) { attempt ->
+            withFrameNanos { }
+            if (runCatching { focus.returnGrid.requestFocus() }.isSuccess) {
+                returnFocusIndex = -1
+                state.consumePlayerReturnFocus()
+                return@LaunchedEffect
+            }
+            // A card that is scrolled away — or a grid that has not laid out yet — needs the
+            // scroll first; the following frames give the composition time to catch up.
+            if (attempt == 0) runCatching { gridState.scrollToItem(index) }
+        }
+        // Nothing ever took focus (e.g. the wall is showing its empty state): clear the index so
+        // the cell re-attaches its normal entry requester, but leave the hint alone — it belongs
+        // to the next viewer's return, not to this attempt.
         returnFocusIndex = -1
     }
 

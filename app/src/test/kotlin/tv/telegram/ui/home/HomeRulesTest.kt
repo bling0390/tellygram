@@ -233,6 +233,24 @@ class HomeRulesTest {
         assertNull(returnFocusIndex(chats, null))
     }
 
+    @Test
+    fun `return focus finds the card, and an album member resolves to its album card`() {
+        // Album members are grouped under their representative, so a preview opened from the
+        // album popup has no card of its own to come back to (2026-10-17).
+        val album = item(messageId = 10, albumId = 10, albumSize = 2).copy(
+            albumMembers = listOf(item(messageId = 10), item(messageId = 11)),
+        )
+        val wall = listOf(item(messageId = 1), album, item(messageId = 20))
+
+        // A plain card is itself.
+        assertEquals(0, gridIndexForMessage(wall, 1))
+        // A member resolves to the album's card.
+        assertEquals(1, gridIndexForMessage(wall, 11))
+        assertEquals(1, gridIndexForMessage(wall, 10))
+        // Nothing in the loaded wall holds it.
+        assertEquals(-1, gridIndexForMessage(wall, 99))
+    }
+
     private fun chat(id: Long) = ChatItem(
         id = id,
         title = "chat $id",
