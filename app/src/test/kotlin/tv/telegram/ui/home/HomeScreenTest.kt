@@ -51,6 +51,7 @@ internal class FakeHomeState(media: List<MediaItem> = defaultMedia) : HomeState 
     )
     override val archiveChats: StateFlow<List<ChatItem>> = MutableStateFlow(emptyList())
     override val mediaItems: StateFlow<List<MediaItem>> = MutableStateFlow(media)
+    override val currentChatId = MutableStateFlow<Long?>(null)
     override val mediaLoadingMore: StateFlow<Boolean> = MutableStateFlow(false)
     override val mediaExhausted: StateFlow<Boolean> = MutableStateFlow(false)
     override val fileStates: StateFlow<Map<Int, FileDownloadState>> = MutableStateFlow(emptyMap())
@@ -77,7 +78,7 @@ internal class FakeHomeState(media: List<MediaItem> = defaultMedia) : HomeState 
     var loadedMore = false
 
     override fun ensureMediaFile(fileId: Int, priority: Int) = Unit
-    override fun openChat(chatId: Long) { openedChatId = chatId; openCount++ }
+    override fun openChat(chatId: Long) { openedChatId = chatId; currentChatId.value = chatId; openCount++ }
 
     var pinnedTo: Pair<Long, Boolean>? = null
     var mutedTo: Pair<Long, Boolean>? = null
@@ -323,6 +324,21 @@ class HomeScreenTest {
         rule.waitForIdle()
 
         assertEquals(1, state.openCount)
+    }
+
+    @Test
+    fun `focus returning to the chat already on screen does not reload it`() {
+        // The repository already shows this chat's media, so focus coming back to its row (Left
+        // from the grid, or after a viewer) must not re-query from page one (2026-10-17).
+        state.currentChatId.value = 1L
+
+        show()
+        rule.onNodeWithTag("home-chat-row-1").requestFocus()
+        rule.waitForIdle()
+        rule.mainClock.advanceTimeBy(ChatOpenDebounceMs + 50)
+        rule.waitForIdle()
+
+        assertEquals(0, state.openCount)
     }
 
     @Test

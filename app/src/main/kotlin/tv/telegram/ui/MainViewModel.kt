@@ -168,7 +168,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app), HomeState, Settin
     val mediaError = mediaRepo.error
     override val mediaLoadingMore = mediaRepo.loadingMore
     override val mediaExhausted = mediaRepo.exhausted
-    val currentChatId = mediaRepo.currentChatId
+    override val currentChatId = mediaRepo.currentChatId
 
     private val _playerPlaybackSpeed = MutableStateFlow(1.0f)
     val playerPlaybackSpeed: StateFlow<Float> = _playerPlaybackSpeed.asStateFlow()

@@ -17,6 +17,12 @@ internal interface HomeState {
     /** The archived half of the list: what the Archived Chats row swaps in. */
     val archiveChats: StateFlow<List<ChatItem>>
     val mediaItems: StateFlow<List<MediaItem>>
+    /**
+     * The chat whose media the wall is showing. Owned by the data layer so a viewer round trip
+     * (which tears this screen's composition down) cannot lose it and make focus coming back to
+     * the list re-query the same chat (2026-10-17).
+     */
+    val currentChatId: StateFlow<Long?>
     val mediaLoadingMore: StateFlow<Boolean>
     val mediaExhausted: StateFlow<Boolean>
     /** Live download state per file id, for avatars and thumbnails. */

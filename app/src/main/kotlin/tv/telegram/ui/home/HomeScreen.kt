@@ -376,7 +376,10 @@ internal fun HomeScreen(
     // The chat the pane is actually showing. Focus coming back to the list lands on the row
     // it left, and that must not re-query: openAndLoad blanks the pane, resets the pagination
     // cursor and would drop the chosen filter with it.
-    var openedChatId by remember { mutableStateOf<Long?>(null) }
+    // The chat whose media is on screen comes from the repository, not from a UI mirror: a
+    // viewer round trip tears this composition down, and the lost mirror made focus coming back
+    // to the list re-query the same chat (2026-10-17).
+    val openedChatId by state.currentChatId.collectAsStateWithLifecycle()
 
     // D-pad graph: the edges of each region are routed explicitly rather than left to
     // Compose's nearest-candidate search (design annotations 1-4).
@@ -563,7 +566,6 @@ internal fun HomeScreen(
                                 // and the query state stay in step.
                                 filter = MediaFilter.All
                                 state.openChat(chat.id)
-                                openedChatId = chat.id
                             }
                         }
                     },
