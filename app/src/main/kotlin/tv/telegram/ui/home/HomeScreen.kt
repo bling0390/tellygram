@@ -433,10 +433,16 @@ internal fun HomeScreen(
         val target = { if (index == 0) firstGridFocus else rememberedGridFocus }
         if (runCatching { target().requestFocus() }.isSuccess) return
         scope.launch {
+            // Bring the cell in first, then give the composition a few frames to attach its
+            // requester. One attempt after a fixed 16ms used to be the whole retry, and when it
+            // lost that race `runCatching` swallowed the failure and nothing moved at all — Back
+            // from a scrolled wall looked like it did nothing (2026-10-17).
             runCatching { gridState.scrollToItem(index.coerceAtLeast(0)) }
-            delay(16L)
-            val ok = runCatching { target().requestFocus() }.isSuccess
-            if (!ok) runCatching { firstGridFocus.requestFocus() }
+            repeat(8) {
+                withFrameNanos { }
+                if (runCatching { target().requestFocus() }.isSuccess) return@launch
+            }
+            if (index != 0) runCatching { firstGridFocus.requestFocus() }
         }
     }
 
