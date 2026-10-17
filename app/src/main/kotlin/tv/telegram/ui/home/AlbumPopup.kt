@@ -86,13 +86,20 @@ internal fun AlbumPopup(
     onDismiss: () -> Unit,
     caption: String? = null,
     tagPrefix: String = "album-popup",
+    /** The member the popup should focus when it (re)opens; null focuses the first one. */
+    focusMessageId: Long? = null,
 ) {
     val firstFocus = remember { FocusRequester() }
     val listState = rememberLazyListState()
     val hasCaption = !caption.isNullOrBlank()
+    // Which member owns the entry focus: the one that was opened before a viewer took over, or
+    // the first one on a fresh open (2026-10-17).
+    val focusIndex = remember(members, focusMessageId) { albumFocusIndex(members, focusMessageId) }
 
-    // The Dialog is its own window, so the first request can beat the node; retry a frame.
+    // The Dialog is its own window, so the first request can beat the node; retry a frame. A
+    // reopened popup may also land on a member scrolled out of the row, so bring it in first.
     LaunchedEffect(Unit) {
+        runCatching { listState.scrollToItem(focusIndex.coerceAtLeast(0)) }
         withFrameNanos { }
         if (!runCatching { firstFocus.requestFocus() }.isSuccess) {
             withFrameNanos { }
@@ -164,6 +171,7 @@ internal fun AlbumPopup(
                     itemsIndexed(members) { index, member ->
                         AlbumMemberTile(
                             member = member,
+                            isEntry = index == focusIndex,
                             isFirst = index == 0,
                             isLast = index == members.lastIndex,
                             firstFocus = firstFocus,
@@ -183,6 +191,8 @@ internal fun AlbumPopup(
 private fun AlbumMemberTile(
     member: MediaItem,
     state: HomeState,
+    /** This tile owns the popup's entry focus (the first one, or the member that was reopened). */
+    isEntry: Boolean,
     isFirst: Boolean,
     isLast: Boolean,
     firstFocus: FocusRequester,
@@ -210,7 +220,7 @@ private fun AlbumMemberTile(
                 focused = it.isFocused
                 if (!it.isFocused) confirmArmed = false
             }
-            .let { if (isFirst) it.focusRequester(firstFocus) else it }
+            .let { if (isEntry) it.focusRequester(firstFocus) else it }
             .focusable()
             .onKeyEvent { event: androidx.compose.ui.input.key.KeyEvent ->
                 if (event.key != Key.DirectionCenter && event.key != Key.Enter) return@onKeyEvent false

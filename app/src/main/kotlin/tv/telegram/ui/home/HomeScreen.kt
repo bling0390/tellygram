@@ -250,7 +250,12 @@ internal fun HomeScreen(
     var menuIsOwner by remember { mutableStateOf(false) }
     // The confirm dialog's target and its private-chat toggle, unchecked by default.
     var deleteTarget by remember { mutableStateOf<ChatItem?>(null) }
-    // The album popup's target (frames 3558:2184); null when closed.
+    // The album popup's target (frames 3558:2184); null when closed. Its identity is saved as
+    // message ids — a MediaItem carries a Bitmap — so a trip through a viewer brings the popup
+    // back instead of closing it, with focus returning to the member that was opened
+    // (2026-10-17).
+    var albumTargetId by rememberSaveable { mutableStateOf<Long?>(null) }
+    var albumMemberId by rememberSaveable { mutableStateOf<Long?>(null) }
     var albumTarget by remember { mutableStateOf<MediaItem?>(null) }
     // The text popup's target (frames 3588:2212); null when closed.
     var textTarget by remember { mutableStateOf<MediaItem?>(null) }
@@ -281,16 +286,23 @@ internal fun HomeScreen(
             state = state,
             // The caption can sit on any member, not just the first.
             caption = albumHeaderCaption(album.albumMembers),
+            // On a reopen, the popup focuses the member that was opened before the viewer took
+            // over (2026-10-17).
+            focusMessageId = albumMemberId,
             onOpenMember = { index ->
                 album.albumMembers.getOrNull(index)?.let { member ->
                     state.openViewerByMessage(album.albumMembers, member.messageId)
                     onOpenMediaItem(member)
-                    albumTarget = null
+                    // The popup stays open across the viewer: the ids survive navigation and the
+                    // popup comes back focused on this member.
+                    albumMemberId = member.messageId
                 }
             },
             onDismiss = {
                 state.setPlayerReturnFocus(album.messageId)
                 albumTarget = null
+                albumTargetId = null
+                albumMemberId = null
             },
         )
     }
@@ -339,6 +351,12 @@ internal fun HomeScreen(
         }
     }
     val media by state.mediaItems.collectAsStateWithLifecycle()
+
+    // Re-resolve the album popup from its saved id: the id survives navigation, the MediaItem
+    // does not (2026-10-17).
+    LaunchedEffect(albumTargetId, media) {
+        albumTarget = albumTargetId?.let { id -> media.firstOrNull { it.messageId == id } }
+    }
 
     var selectedChatId by rememberSaveable { mutableStateOf<Long?>(null) }
     var filter by rememberSaveable { mutableStateOf(MediaFilter.All) }
@@ -423,6 +441,12 @@ internal fun HomeScreen(
         if (index < 0) {
             // The loaded wall holds no card for it yet: leave the hint alone so a later page can
             // still land on it — the contract HomeScreenTest pins.
+            return@LaunchedEffect
+        }
+        if (albumTargetId != null) {
+            // The album popup is open again and owns the return: it focuses the member that was
+            // opened, so the grid card behind it must not take focus (2026-10-17).
+            state.consumePlayerReturnFocus()
             return@LaunchedEffect
         }
         returnFocusIndex = index
@@ -573,7 +597,11 @@ internal fun HomeScreen(
                         onOpen = onOpenPlayer,
                         onPreview = onOpenPhoto,
                         onOpenAudio = onOpenAudio,
-                        onOpenAlbum = { albumTarget = it },
+                        onOpenAlbum = {
+                            albumTarget = it
+                            albumTargetId = it.messageId
+                            albumMemberId = null
+                        },
                         onOpenText = { item ->
                             scope.launch {
                                 textSender = state.senderInfoFor(item)

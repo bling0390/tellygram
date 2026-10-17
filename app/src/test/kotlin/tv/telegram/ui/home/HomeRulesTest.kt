@@ -251,6 +251,16 @@ class HomeRulesTest {
         assertEquals(-1, gridIndexForMessage(wall, 99))
     }
 
+    @Test
+    fun `the album popup focuses the member that was opened, or the first`() {
+        val members = listOf(item(messageId = 10), item(messageId = 11), item(messageId = 12))
+
+        assertEquals(1, albumFocusIndex(members, 11))
+        // A fresh open, or a member that is no longer in the album, starts at the first.
+        assertEquals(0, albumFocusIndex(members, null))
+        assertEquals(0, albumFocusIndex(members, 99))
+    }
+
     private fun chat(id: Long) = ChatItem(
         id = id,
         title = "chat $id",
