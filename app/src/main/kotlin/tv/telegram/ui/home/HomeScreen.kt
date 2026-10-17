@@ -673,6 +673,13 @@ private fun ChatList(
     // sit level with the long-pressed row and be pulled up when it would spill past the bottom.
     val listState = rememberLazyListState()
     val visibleChats = if (showingArchived) archivedChats else chats
+    // Chips and grid name the selected chat for Left, but a requester is attached only while its
+    // row is composed, and naming an unattached one throws in the focus search. Ask the list's own
+    // window instead of keeping a flag in effects: when a list swap (main <-> archived, or a
+    // refresh) reorders items, effect ordering can leave a stale false behind and Left then falls
+    // back to the geometric search — which lands on the Back row (2026-10-17).
+    val entryId = entryChatId(selectedChatId, visibleChats)
+    focus.selectedChatAttached = listState.layoutInfo.visibleItemsInfo.any { it.key == entryId }
 
     // Return focus by id once the list the action produced is on screen (2026-10-17). A pin moves
     // the chat to the top, which can put it outside LazyColumn's composed window, so bring it back
@@ -722,19 +729,7 @@ private fun ChatList(
             )
         }
         items(items = visibleChats, key = { it.id }) { chat ->
-            // The row the bar's Down lands on and Back returns to: the chat that holds focus,
-            // or the first row of the list actually showing before anything has been selected
-            // (the archived list used to compare against the main one, 2026-10-17).
-            val isEntry = chat.id == entryChatId(selectedChatId, visibleChats)
-            // Chips and grid name this requester for Left; a row scrolled out of the composed
-            // window is not attached, and the focus search throws on unattached requesters, so
-            // publish whether the entry row is composed right now.
-            if (isEntry) {
-                DisposableEffect(chat.id) {
-                    focus.selectedChatAttached = true
-                    onDispose { focus.selectedChatAttached = false }
-                }
-            }
+            val isEntry = chat.id == entryId
             val isFirst = chat.id == chats.firstOrNull()?.id
             ChatRow(
                 chat = chat,

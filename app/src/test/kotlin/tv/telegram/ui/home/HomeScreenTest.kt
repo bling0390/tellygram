@@ -44,12 +44,15 @@ import tv.telegram.ui.focus.LocalBackController
 import tv.telegram.td.SenderInfo
 
 /** Stand-in for MainViewModel: the real one starts TDLib, which cannot run on the JVM. */
-internal class FakeHomeState(media: List<MediaItem> = defaultMedia) : HomeState {
+internal class FakeHomeState(
+    media: List<MediaItem> = defaultMedia,
+    archive: List<ChatItem> = emptyList(),
+) : HomeState {
     override val chatList: StateFlow<List<ChatItem>> = MutableStateFlow(
 
         listOf(chat(1, "Alpha"), chat(2, "Beta")),
     )
-    override val archiveChats: StateFlow<List<ChatItem>> = MutableStateFlow(emptyList())
+    override val archiveChats: StateFlow<List<ChatItem>> = MutableStateFlow(archive)
     override val mediaItems: StateFlow<List<MediaItem>> = MutableStateFlow(media)
     override val currentChatId = MutableStateFlow<Long?>(null)
     override val mediaLoadingMore: StateFlow<Boolean> = MutableStateFlow(false)
@@ -208,6 +211,44 @@ class HomeScreenTest {
         rule.onNodeWithTag("home-media-cell-0").performKeyInput { pressKey(Key.DirectionLeft) }
         rule.waitForIdle()
         rule.onNodeWithTag("home-chat-row-1").assertIsFocused()
+    }
+
+    @Test
+    fun `left from the wall reaches the archived chat, not the Back row`() {
+        // The archived list's item 0 is the Back row. Left from the wall must go to the chat the
+        // wall belongs to, not to whatever the geometric search meets first (2026-10-17).
+        show(
+            withState = FakeHomeState(
+                archive = listOf(
+                    ChatItem(
+                        id = 3L,
+                        title = "Archived A",
+                        type = ChatType.Private,
+                        unreadCount = 0,
+                        lastMessageText = null,
+                    ),
+                ),
+            ),
+        )
+        rule.onNodeWithTag("home-archived-row").requestFocus()
+        rule.waitForIdle()
+        // The row has to hold focus for its Center to toggle, and swapping lists a few times is
+        // the part that used to leave the entry flag stale.
+        repeat(3) {
+            rule.onNodeWithTag("home-archived-row").performKeyInput { pressKey(Key.DirectionCenter) }
+            rule.waitForIdle()
+        }
+        rule.onNodeWithTag("home-chat-row-3").requestFocus()
+        rule.waitForIdle()
+
+        rule.onNodeWithTag("home-chat-row-3").performKeyInput { pressKey(Key.DirectionCenter) }
+        rule.waitForIdle()
+        rule.onNodeWithTag("home-media-cell-0").assertIsFocused()
+
+        rule.onNodeWithTag("home-media-cell-0").performKeyInput { pressKey(Key.DirectionLeft) }
+        rule.waitForIdle()
+
+        rule.onNodeWithTag("home-chat-row-3").assertIsFocused()
     }
 
     @Test
