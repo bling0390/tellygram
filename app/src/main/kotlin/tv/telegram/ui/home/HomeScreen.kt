@@ -232,7 +232,10 @@ internal fun HomeScreen(
     val chats by state.chatList.collectAsStateWithLifecycle()
     val archivedChats by state.archiveChats.collectAsStateWithLifecycle()
     // Which half of the list the Archived Chats / Back row is currently showing.
-    var showingArchived by remember { mutableStateOf(false) }
+    // rememberSaveable, not remember: a trip through the player or the preview tears this
+    // composition down, and the archived list used to flip back to the main one on return
+    // (2026-10-17). The back-stack entry carries saveable state across that teardown.
+    var showingArchived by rememberSaveable { mutableStateOf(false) }
 
     // Long-press popover: which chat it belongs to, and where focus goes when it closes.
     var menuChat by remember { mutableStateOf<ChatItem?>(null) }
