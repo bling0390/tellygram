@@ -27,11 +27,13 @@ internal fun isLastColumn(index: Int, columns: Int = GridColumns): Boolean =
 internal fun isFirstRow(index: Int, columns: Int = GridColumns): Boolean = index < columns
 
 /**
- * Leaving row 0 upwards remembers that cell so the chips' Down can return to it.
- * Cells below row 0 return null and leave the remembered value alone.
+ * The cell focus enters the grid on: the one the user last left it from, clamped to what the chat
+ * actually has (2026-10-17). The caller resets the remembered value when the chat changes, so a
+ * switched chat always enters at [0,0]; a chat with fewer cells than the remembered index also
+ * falls back to the start instead of landing past the end.
  */
-internal fun rememberedIndexFor(index: Int, columns: Int = GridColumns): Int? =
-    if (isFirstRow(index, columns)) index else null
+internal fun gridEntryIndex(remembered: Int, total: Int): Int =
+    if (remembered in 0 until total) remembered else 0
 
 /** Back rules: grid [0,*] -> selected chat, any deeper cell -> [0,0], chips ->
  *  selected chat, chat list -> the bar's selected menu. */

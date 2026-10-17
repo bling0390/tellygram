@@ -101,11 +101,15 @@ class HomeRulesTest {
     }
 
     @Test
-    fun `only row zero cells are remembered for the chips to return to`() {
-        assertEquals(0, rememberedIndexFor(0))
-        assertEquals(2, rememberedIndexFor(2))
-        assertNull(rememberedIndexFor(3))
-        assertNull(rememberedIndexFor(11))
+    fun `entering the grid lands on the remembered cell, clamped to the chat`() {
+        // Any row counts, not just the first (2026-10-17): leave the wall from [n,0] and Right
+        // back from the chat list has to land on that same cell.
+        assertEquals(4, gridEntryIndex(remembered = 4, total = 10))
+        assertEquals(9, gridEntryIndex(remembered = 9, total = 10))
+        // A shorter chat, or a fresh one whose remembered value was reset to 0: start at [0,0].
+        assertEquals(0, gridEntryIndex(remembered = 12, total = 10))
+        assertEquals(0, gridEntryIndex(remembered = 0, total = 10))
+        assertEquals(0, gridEntryIndex(remembered = 3, total = 0))
     }
 
     // ── Back rules ─────────────────────────────────────────────────────────────

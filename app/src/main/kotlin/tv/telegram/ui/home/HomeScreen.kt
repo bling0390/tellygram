@@ -398,6 +398,9 @@ internal fun HomeScreen(
     var region by remember { mutableStateOf<HomeRegion?>(null) }
     var gridIndex by remember { mutableStateOf(0) }
     var rememberedGridIndex by remember { mutableStateOf(0) }
+    // The remembered cell belongs to the chat it was taken from: switching chats puts the wall
+    // back at [0,0] (2026-10-17).
+    LaunchedEffect(openedChatId) { rememberedGridIndex = 0 }
     // Index of the card a viewer asked focus back on; -1 when none.
     var returnFocusIndex by remember { mutableStateOf(-1) }
     val returnHint by state.playerReturnFocusMessageId.collectAsStateWithLifecycle()
@@ -602,7 +605,9 @@ internal fun HomeScreen(
                         onGridFocus = { index ->
                             region = HomeRegion.Grid
                             gridIndex = index
-                            rememberedIndexFor(index)?.let { rememberedGridIndex = it }
+                            // Remember the exact cell, any row, so Right back from the chat list
+                            // lands where the user left (2026-10-17).
+                            rememberedGridIndex = index
                         },
                         onOpen = onOpenPlayer,
                         onPreview = onOpenPhoto,
@@ -618,7 +623,7 @@ internal fun HomeScreen(
                                 textTarget = item
                             }
                         },
-                        onEnterGrid = { jumpToGrid(rememberedGridIndex) },
+                        onEnterGrid = { jumpToGrid(gridEntryIndex(rememberedGridIndex, media.size)) },
                     )
                 }
             }
