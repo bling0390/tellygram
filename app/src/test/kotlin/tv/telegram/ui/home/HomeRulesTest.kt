@@ -261,6 +261,17 @@ class HomeRulesTest {
         assertEquals(0, albumFocusIndex(members, 99))
     }
 
+    @Test
+    fun `the list's entry row is the selected chat, else the first row on show`() {
+        val chats = listOf(chat(9), chat(7))
+
+        assertEquals(7L, entryChatId(7L, chats))
+        // Nothing selected yet: the first row of the list actually showing is the entry. The
+        // archived list used to compare against the main one and ended up with no entry at all.
+        assertEquals(9L, entryChatId(null, chats))
+        assertNull(entryChatId(null, emptyList()))
+    }
+
     private fun chat(id: Long) = ChatItem(
         id = id,
         title = "chat $id",

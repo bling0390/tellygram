@@ -46,7 +46,10 @@ class MediaFilterRowTest {
 
     private var selectedByClick: MediaFilter? = null
 
-    private fun showRow(selected: MediaFilter = MediaFilter.All): HomeFocus {
+    private fun showRow(
+        selected: MediaFilter = MediaFilter.All,
+        chatRowComposed: Boolean = true,
+    ): HomeFocus {
         val focus = HomeFocus(
             archivedRow = FocusRequester(),
             gridContainer = FocusRequester(),
@@ -60,6 +63,9 @@ class MediaFilterRowTest {
             // The chips' Down reads this field at focus time; point it at the cell the
             // test tags as "remembered".
             gridEntry = rememberedGrid
+            // The chips' Left names the selected chat only while that row is composed; this
+            // harness does attach it, to the CHAT_TAG box above the row.
+            selectedChatAttached = chatRowComposed
         }
         rule.setContent {
             Column {
@@ -96,6 +102,22 @@ class MediaFilterRowTest {
 
         rule.onNodeWithText("ALL").onParent().performKeyInput { pressKey(Key.DirectionLeft) }
         rule.onNodeWithTag(CHAT_TAG).assertIsFocused()
+    }
+
+    @Test
+    fun `left never names a chat row that is not composed`() {
+        // The crash this guards (2026-10-17): a focus property that names an unattached
+        // requester throws inside the focus search — the whole app dies on the key press.
+        // With no composed entry row, Left has to fall back to the geometric search.
+        showRow(chatRowComposed = false)
+        rule.onNodeWithText("ALL").onParent().requestFocus()
+        rule.onNodeWithText("ALL").onParent().assertIsFocused()
+
+        rule.onNodeWithText("ALL").onParent().performKeyInput { pressKey(Key.DirectionLeft) }
+        rule.waitForIdle()
+
+        // No exception, and with nothing to the left focus stays on the chip.
+        rule.onNodeWithText("ALL").onParent().assertIsFocused()
     }
 
     @Test

@@ -153,6 +153,14 @@ internal fun albumFocusIndex(members: List<MediaItem>, messageId: Long?): Int {
 }
 
 /**
+ * The chat row that acts as the list's entry: the selected chat, or the first row of the list
+ * actually showing when nothing is selected yet (2026-10-17 — the archived list used to compare
+ * against the main one, which left it with no entry row at all).
+ */
+internal fun entryChatId(selectedChatId: Long?, visibleChats: List<ChatItem>): Long? =
+    selectedChatId ?: visibleChats.firstOrNull()?.id
+
+/**
  * The Verified badge. The 2026-09-27 spec: on the focused (white) row it takes the row's
  * own inverse-on-surface, so it reads as part of the label; at rest it keeps the brand
  * primary that the earlier frames drew.

@@ -39,6 +39,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -213,6 +214,13 @@ internal class HomeFocus(
      * Reading the field at focus time always sees the current one.
      */
     var gridEntry: FocusRequester = firstGrid
+
+    /**
+     * Whether the selected chat's row is composed right now, so a focus search may name
+     * [selectedChat]. Read live, like [gridEntry]: the row scrolls in and out of the list, and a
+     * focus property that names an unattached requester throws during the search (2026-10-17).
+     */
+    var selectedChatAttached: Boolean = false
 }
 
 @Composable
@@ -657,15 +665,15 @@ private fun ChatList(
     // The popover is hosted here: this Box owns the list's coordinate space, so the menu can
     // sit level with the long-pressed row and be pulled up when it would spill past the bottom.
     val listState = rememberLazyListState()
+    val visibleChats = if (showingArchived) archivedChats else chats
 
     // Return focus by id once the list the action produced is on screen (2026-10-17). A pin moves
     // the chat to the top, which can put it outside LazyColumn's composed window, so bring it back
     // into view before asking for focus — and only clear the pending id once focus actually
     // landed, so a refresh that arrives late still gets its anchor.
-    LaunchedEffect(returnFocusChatId, chats, archivedChats, showingArchived, menuChat) {
+    LaunchedEffect(returnFocusChatId, visibleChats, menuChat) {
         if (menuChat != null) return@LaunchedEffect
-        val visible = if (showingArchived) archivedChats else chats
-        val index = returnFocusIndex(visible, returnFocusChatId) ?: return@LaunchedEffect
+        val index = returnFocusIndex(visibleChats, returnFocusChatId) ?: return@LaunchedEffect
         runCatching { listState.scrollToItem(index) }
         withFrameNanos { }
         if (runCatching { menuReturnFocus.requestFocus() }.isSuccess) onReturnFocusHandled()
@@ -706,10 +714,20 @@ private fun ChatList(
                 focus = focus,
             )
         }
-        items(items = if (showingArchived) archivedChats else chats, key = { it.id }) { chat ->
+        items(items = visibleChats, key = { it.id }) { chat ->
             // The row the bar's Down lands on and Back returns to: the chat that holds focus,
-            // or the first row before anything has been selected.
-            val isEntry = chat.id == selectedChatId || (selectedChatId == null && chat.id == chats.firstOrNull()?.id)
+            // or the first row of the list actually showing before anything has been selected
+            // (the archived list used to compare against the main one, 2026-10-17).
+            val isEntry = chat.id == entryChatId(selectedChatId, visibleChats)
+            // Chips and grid name this requester for Left; a row scrolled out of the composed
+            // window is not attached, and the focus search throws on unattached requesters, so
+            // publish whether the entry row is composed right now.
+            if (isEntry) {
+                DisposableEffect(chat.id) {
+                    focus.selectedChatAttached = true
+                    onDispose { focus.selectedChatAttached = false }
+                }
+            }
             val isFirst = chat.id == chats.firstOrNull()?.id
             ChatRow(
                 chat = chat,
@@ -1042,7 +1060,9 @@ private fun FilterChip(
             .focusProperties {
                 // Chips: sideways plus Down to the remembered grid cell. The first chip
                 // reaches the selected chat, the last one stops (annotations 4, 5).
-                left = if (isFirst) focus.selectedChat else FocusRequester.Default
+                // Name the selected chat only while its row is composed: an unattached
+                // requester throws in the focus search (2026-10-17).
+                left = if (isFirst && focus.selectedChatAttached) focus.selectedChat else FocusRequester.Default
                 right = if (isLast) FocusRequester.Cancel else FocusRequester.Default
                 up = FocusRequester.Cancel
                 down = focus.gridEntry
@@ -1231,7 +1251,7 @@ private fun MediaCell(
                 // Media grid: four-way with explicit edges (annotation 3) — column 0
                 // reaches the selected chat, column 2 stops, row 0 goes up to the
                 // active chip.
-                left = if (isFirstCol) focus.selectedChat else FocusRequester.Default
+                left = if (isFirstCol && focus.selectedChatAttached) focus.selectedChat else FocusRequester.Default
                 right = if (isLastCol) FocusRequester.Cancel else FocusRequester.Default
                 up = if (isFirstRow) focus.selectedChip else FocusRequester.Default
             }
