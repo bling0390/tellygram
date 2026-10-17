@@ -1162,20 +1162,19 @@ private fun MediaGrid(
     // simply stop at the first page and read as "that is all the media there is".
     // Load the next page as soon as the last item comes into view; the exhausted
     // flag stops the requests once the chat runs out.
-    LaunchedEffect(gridState) {
+    LaunchedEffect(gridState, loadingMore, exhausted) {
+        // Re-armed by every finished load: a page can add nothing at all (service messages,
+        // albums already collapsed into an earlier page, or a filter that rejects them), and
+        // then the layout never changes and atEnd stays true — the old distinctUntilChanged
+        // trigger never fired again and the wall stopped after a page or two (2026-10-17).
+        if (loadingMore || exhausted) return@LaunchedEffect
         snapshotFlow {
             val info = gridState.layoutInfo
             val last = info.visibleItemsInfo.lastOrNull()?.index ?: -1
             last >= info.totalItemsCount - 1 && info.totalItemsCount > 0
         }
-            .distinctUntilChanged()
             .collect { atEnd ->
-                // Read the flags live: a snapshot taken at composition time goes stale, and
-                // after the first page the effect is not restarted (no key changes), so the
-                // row could sit at the bottom with nothing ever requesting the next page.
-                if (atEnd && !state.mediaExhausted.value && !state.mediaLoadingMore.value) {
-                    state.loadMoreMedia()
-                }
+                if (atEnd) state.loadMoreMedia()
             }
     }
 

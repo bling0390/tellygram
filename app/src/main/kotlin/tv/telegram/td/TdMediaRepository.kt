@@ -185,11 +185,6 @@ class TdMediaRepository(
             Log.w(TAG, "loadMore: no items yet; call openAndLoad first")
             return
         }
-        val oldestMessageId = if (oldestFetchedMessageId != 0L) {
-            oldestFetchedMessageId
-        } else {
-            current.last().messageId
-        }
         _loadingMore.value = true
         try {
             // Advance the search cursor past the oldest loaded media message.
@@ -200,11 +195,20 @@ class TdMediaRepository(
             // was the bug: the grid stopped loading at the first such page. Keep pulling
             // instead, bounded so a chat full of junk cannot spin here (openAndLoad does
             // the same dance for its first page).
+            //
+            // The cursor is re-read every round (2026-10-17): the page just fetched advances
+            // oldestFetchedMessageId, and keeping the pre-loop value made every retry ask for
+            // the same page again — three identical answers with nothing added.
             var extraPages = 0
             while (true) {
+                val cursor = if (oldestFetchedMessageId != 0L) {
+                    oldestFetchedMessageId
+                } else {
+                    _items.value.lastOrNull()?.messageId ?: 0L
+                }
                 val resp = client.execute(
                     TdApi.SearchChatMessages(
-                        chatId, "", null, oldestMessageId, 0, limit,
+                        chatId, "", null, cursor, 0, limit,
                         currentFilter.searchFilter(), 0L,
                     ),
                 ).valueOrNull<TdApi.Messages>()
