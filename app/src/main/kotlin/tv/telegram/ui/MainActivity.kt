@@ -199,7 +199,11 @@ private fun AppNavHost(viewModel: MainViewModel, backController: BackController)
     // Root Back dispatcher: exactly one BackHandler, priority resolved by
     // the controller. Layers register their own action (BackRegistration)
     // instead of relying on "deepest composed BackHandler wins".
+    LaunchedEffect(backController.hasActive) {
+        android.util.Log.i("HomeBack", "backController.hasActive -> ${backController.hasActive}")
+    }
     BackHandler(enabled = backController.hasActive) {
+        android.util.Log.i("HomeBack", "BackHandler fired; hasActive=${backController.hasActive}")
         backController.dispatch()
     }
 

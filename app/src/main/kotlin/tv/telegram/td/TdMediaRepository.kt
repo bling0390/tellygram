@@ -186,6 +186,10 @@ class TdMediaRepository(
             return
         }
         _loadingMore.value = true
+        Log.i(
+            TAG,
+            "loadMore: start chat=$chatId cursor=$oldestFetchedMessageId items=${current.size} filter=$currentFilter",
+        )
         try {
             // Advance the search cursor past the oldest loaded media message.
             // offset=0 returns matches before fromMessageId; the seen-set below
@@ -235,6 +239,10 @@ class TdMediaRepository(
                 if (shouldStopPaging(added = added.size, extraPages = extraPages)) break
                 extraPages++
             }
+            Log.i(
+                TAG,
+                "loadMore: done items=${_items.value.size} cursor=$oldestFetchedMessageId exhausted=${_exhausted.value}",
+            )
         } finally {
             _loadingMore.value = false
         }

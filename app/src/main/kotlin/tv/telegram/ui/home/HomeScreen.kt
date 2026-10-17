@@ -431,7 +431,11 @@ internal fun HomeScreen(
         // one the D-pad needs to feel instant. Only a cell that is scrolled away (its
         // requester therefore unattached) needs the scroll-then-request detour.
         val target = { if (index == 0) firstGridFocus else rememberedGridFocus }
-        if (runCatching { target().requestFocus() }.isSuccess) return
+        if (runCatching { target().requestFocus() }.isSuccess) {
+            android.util.Log.i("HomeBack", "jumpToGrid($index): direct ok")
+            return
+        }
+        android.util.Log.w("HomeBack", "jumpToGrid($index): direct failed, scrolling")
         scope.launch {
             // Bring the cell in first, then give the composition a few frames to attach its
             // requester. One attempt after a fixed 16ms used to be the whole retry, and when it
@@ -440,8 +444,12 @@ internal fun HomeScreen(
             runCatching { gridState.scrollToItem(index.coerceAtLeast(0)) }
             repeat(8) {
                 withFrameNanos { }
-                if (runCatching { target().requestFocus() }.isSuccess) return@launch
+                if (runCatching { target().requestFocus() }.isSuccess) {
+                    android.util.Log.i("HomeBack", "jumpToGrid($index): ok on a retry frame")
+                    return@launch
+                }
             }
+            android.util.Log.w("HomeBack", "jumpToGrid($index): gave up after 8 frames")
             if (index != 0) runCatching { firstGridFocus.requestFocus() }
         }
     }
@@ -488,12 +496,17 @@ internal fun HomeScreen(
     }
 
     BackRegistration(BackPriority.CHATS, enabled = region != null) {
-        when (backTarget(region, gridIndex)) {
+        val target = backTarget(region, gridIndex)
+        android.util.Log.i("HomeBack", "dispatch region=$region gridIndex=$gridIndex -> $target")
+        when (target) {
             HomeBackTarget.SelectedChat -> runCatching { selectedChatFocus.requestFocus() }
             HomeBackTarget.FirstGridCell -> jumpToGrid(0)
             HomeBackTarget.TopBar -> focus.topBar?.let { runCatching { it.requestFocus() } }
             null -> Unit
         }
+    }
+    LaunchedEffect(region) {
+        android.util.Log.i("HomeBack", "region -> $region")
     }
 
     Box(
@@ -1174,6 +1187,11 @@ private fun MediaGrid(
             last >= info.totalItemsCount - 1 && info.totalItemsCount > 0
         }
             .collect { atEnd ->
+                android.util.Log.i(
+                    "HomePaging",
+                    "atEnd=$atEnd total=${gridState.layoutInfo.totalItemsCount} " +
+                        "items=${items.size} loading=$loadingMore exhausted=$exhausted",
+                )
                 if (atEnd) state.loadMoreMedia()
             }
     }
