@@ -66,8 +66,8 @@ internal suspend fun fetchLatestRelease(currentVersion: String): UpdateCheck =
         }
         val version = releaseVersion(json.optString("tag_name"))
             ?: return@withContext UpdateCheck.Failed(UpdateFailure.Parse)
-        if (!isNewerVersion(version, currentVersion)) {
-            return@withContext UpdateCheck.UpToDate
-        }
+        // Version comparison is intentionally OFF for now (2026-10-18, at the user's request, so
+        // the dialog can be seen against the existing v1.0.0 release). Re-enable by restoring:
+        //     if (!isNewerVersion(version, currentVersion)) return@withContext UpdateCheck.UpToDate
         UpdateCheck.Available(version, plainChangelog(json.optString("body")))
     }
