@@ -142,7 +142,9 @@ class TdMediaRepository(
         _items.value = items
         knownMessageIds.addAll(items.map { it.messageId })
         _loaded.value = true
-        if (raw.size < limit) {
+        // Same rule as loadMore (2026-10-18): a short first page is not the end of the chat —
+        // TDLib can answer a 100-message request with fewer messages while history remains.
+        if (resp.messages.isEmpty()) {
             _exhausted.value = true
         }
 
@@ -227,15 +229,22 @@ class TdMediaRepository(
                 completeTrailingAlbum(chatId, raw)
                 if (raw.isNotEmpty()) oldestFetchedMessageId = raw.last().id
                 val newItems = groupAlbums(raw, chatId).filter { it.matches(currentFilter) }
-                Log.i(TAG, "loadMore: got ${newItems.size} items (albums collapsed) from ${raw.size} messages")
+                Log.i(
+                    TAG,
+                    "loadMore: got ${newItems.size} items from ${resp.messages.size} messages" +
+                        " (+${raw.size - resp.messages.size} album members appended)",
+                )
                 val seen = _items.value.map { it.messageId }.toHashSet()
                 val added = newItems.filter { it.messageId !in seen }
                 if (added.isNotEmpty()) {
                     _items.value = _items.value + added
                     knownMessageIds.addAll(newItems.map { it.messageId })
                 }
-                // A short (or empty) page means the chat really has run out.
-                if (resp.messages.isEmpty() || resp.messages.size < limit) {
+                // Only an EMPTY page means the chat has run out (2026-10-18). TDLib can answer
+                // a 100-message request with fewer messages while plenty of history remains: a
+                // channel with 80k media stopped at 60 items because the fourth page came back
+                // short. A short page just means advance the cursor and ask again.
+                if (resp.messages.isEmpty()) {
                     _exhausted.value = true
                     break
                 }
