@@ -126,6 +126,13 @@ private fun AppNavHost(viewModel: MainViewModel, backController: BackController)
     val authState by viewModel.authState.collectAsStateWithLifecycle()
 
     val navController = rememberNavController()
+    // Back belongs to the controller (see BackController). The NavHost registers its own back
+    // callback after this tree's handler and the dispatcher is LIFO, so it swallowed Back before
+    // our dispatch ever ran — the log showed no "BackHandler fired" at all (2026-10-18).
+    LaunchedEffect(navController) {
+        navController.enableOnBackPressed(false)
+        android.util.Log.i("HomeBack", "NavHost back disabled; the controller owns Back")
+    }
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
     // Legacy rail destinations only. Home and Settings are SHELL pages — they bring the

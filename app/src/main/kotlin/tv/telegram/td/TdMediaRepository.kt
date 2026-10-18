@@ -215,6 +215,9 @@ class TdMediaRepository(
                         chatId, "", null, cursor, 0, limit,
                         currentFilter.searchFilter(), 0L,
                     ),
+                    // Without a timeout a hung request kept `loadingMore` true forever: the grid
+                    // never asked again and the log simply stopped at the last page (2026-10-18).
+                    timeoutMs = 10_000L,
                 ).valueOrNull<TdApi.Messages>()
                 if (resp == null) {
                     Log.w(TAG, "loadMore: searchChatMessages failed")
@@ -385,6 +388,9 @@ class TdMediaRepository(
                     chatId, "", null, cursor, 0, 10,
                     TdApi.SearchMessagesFilterEmpty(), 0L,
                 ),
+                // Same timeout as the page fetches: this runs inside loadMore, and a hang here
+                // would leave its loading flag set exactly the same way (2026-10-18).
+                timeoutMs = 10_000L,
             ).valueOrNull<TdApi.Messages>()?.messages ?: return
             if (extra.isEmpty()) return
             page += extra
