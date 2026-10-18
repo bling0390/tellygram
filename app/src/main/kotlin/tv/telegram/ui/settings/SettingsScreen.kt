@@ -5,6 +5,7 @@ package tv.telegram.ui.settings
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -377,14 +378,29 @@ private fun UpdateFailure.messageRes(): Int = when (this) {
     UpdateFailure.Parse -> R.string.settings_update_failed_parse
 }
 
-/** Opens the download page in whatever browser the box has; false when there is none. */
-private fun openInBrowser(context: Context, url: String): Boolean = try {
-    context.startActivity(
-        Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-    )
-    true
-} catch (e: ActivityNotFoundException) {
-    false
+/**
+ * Opens the download page in a real browser. A TV shell will happily claim a plain VIEW intent
+ * and then show its own "you don't have an app to do that" toast, which never throws — so the
+ * intent is resolved first with BROWSABLE (only browsers answer that) and launched only when
+ * something actually handles it (2026-10-18).
+ */
+private fun openInBrowser(context: Context, url: String): Boolean {
+    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+        .addCategory(Intent.CATEGORY_BROWSABLE)
+        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    val target = context.packageManager
+        .resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY)
+    if (target == null) {
+        android.util.Log.i("SettingsUpdate", "no browser for $url")
+        return false
+    }
+    return try {
+        android.util.Log.i("SettingsUpdate", "opening $url with ${target.activityInfo.packageName}")
+        context.startActivity(intent)
+        true
+    } catch (e: ActivityNotFoundException) {
+        false
+    }
 }
 
 
