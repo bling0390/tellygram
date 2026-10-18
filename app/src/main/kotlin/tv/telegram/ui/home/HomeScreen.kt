@@ -1180,7 +1180,14 @@ private fun MediaGrid(
         // albums already collapsed into an earlier page, or a filter that rejects them), and
         // then the layout never changes and atEnd stays true — the old distinctUntilChanged
         // trigger never fired again and the wall stopped after a page or two (2026-10-17).
-        if (loadingMore || exhausted) return@LaunchedEffect
+        if (loadingMore || exhausted) {
+            android.util.Log.i(
+                "HomePaging",
+                "parked loading=$loadingMore exhausted=$exhausted " +
+                    "total=${gridState.layoutInfo.totalItemsCount}",
+            )
+            return@LaunchedEffect
+        }
         snapshotFlow {
             val info = gridState.layoutInfo
             val last = info.visibleItemsInfo.lastOrNull()?.index ?: -1
