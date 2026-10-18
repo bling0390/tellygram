@@ -7,6 +7,7 @@ package tv.telegram.ui.components
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -24,6 +25,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -32,6 +34,8 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -41,6 +45,7 @@ import androidx.tv.material3.Card
 import androidx.tv.material3.CardDefaults
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
+import kotlinx.coroutines.launch
 import tv.telegram.ui.focus.dpadNavigationSounds
 import androidx.compose.ui.platform.testTag
 import tv.telegram.ui.home.HomeSpec
@@ -115,6 +120,12 @@ fun ConfirmDialog(
     val cancelFocus = remember { FocusRequester() }
     val confirmFocus = remember { FocusRequester() }
     val radioFocus = remember { FocusRequester() }
+    // Long bodies scroll with the D-pad: the panel's preview pass turns Up/Down into scroll
+    // requests, so the buttons keep their focus behaviour — the same trick the text popup uses
+    // (2026-10-18). Up/Down are free here: Cancel's Up is already sealed.
+    val bodyScroll = rememberScrollState()
+    val bodyScope = rememberCoroutineScope()
+    val stepPx = with(LocalDensity.current) { 72.dp.toPx() }
 
     // No focus dance: the design puts the safe button FIRST in the row, so the dialog
     // window focuses it on open by itself. The old loop re-requested focus for ~300ms,
@@ -137,6 +148,26 @@ fun ConfirmDialog(
         Column(
             modifier = modifier
                 .dpadNavigationSounds()
+                .let { m ->
+                    if (!scrollableBody) {
+                        m
+                    } else {
+                        m.onPreviewKeyEvent { ev ->
+                            if (ev.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                            when (ev.key) {
+                                Key.DirectionUp -> {
+                                    bodyScope.launch { bodyScroll.scrollBy(-stepPx) }
+                                    true
+                                }
+                                Key.DirectionDown -> {
+                                    bodyScope.launch { bodyScroll.scrollBy(stepPx) }
+                                    true
+                                }
+                                else -> false
+                            }
+                        }
+                    }
+                }
                 .let { if (tagPrefix != null) it.testTag("$tagPrefix-dialog") else it }
                 .shadow(8.dp, RoundedCornerShape(4.dp))
                 .background(ConfirmDialogSpec.Panel, RoundedCornerShape(4.dp))
@@ -158,7 +189,7 @@ fun ConfirmDialog(
                 modifier = if (scrollableBody) {
                     Modifier
                         .heightIn(max = 320.dp)
-                        .verticalScroll(rememberScrollState())
+                        .verticalScroll(bodyScroll)
                 } else {
                     Modifier
                 },
