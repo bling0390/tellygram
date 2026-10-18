@@ -66,8 +66,19 @@ class SettingsScreenTest {
 
     private val state = FakeSettingsState()
 
-    private fun show(versionName: String = "9.9.9-test") {
-        rule.setContent { SettingsScreen(state = state, versionName = versionName) }
+    private fun show(
+        versionName: String = "9.9.9-test",
+        checkForUpdate: suspend (String) -> UpdateCheck = { UpdateCheck.UpToDate },
+        openDownloadPage: ((String) -> Boolean)? = null,
+    ) {
+        rule.setContent {
+            SettingsScreen(
+                state = state,
+                versionName = versionName,
+                checkForUpdate = checkForUpdate,
+                openDownloadPage = openDownloadPage,
+            )
+        }
         rule.waitForIdle()
     }
 
@@ -103,15 +114,41 @@ class SettingsScreenTest {
     }
 
     @Test
-    fun `the updates row is focusable but does nothing yet`() {
+    fun `checking for updates reports the latest version`() {
         show()
         select("About")
 
         rule.onNodeWithTag("settings-check-updates").requestFocus()
         rule.waitForIdle()
-        rule.onNodeWithTag("settings-check-updates").assertIsFocused()
-        // Product decision 2026-09-23: confirming it is deliberately inert.
-        rule.onNodeWithTag("settings-check-updates").assertHasNoClickAction()
+        rule.onNodeWithTag("settings-check-updates").performKeyInput { pressKey(Key.DirectionCenter) }
+        rule.waitForIdle()
+
+        rule.onNodeWithText("You are on the latest version (9.9.9-test).").assertExists()
+    }
+
+    @Test
+    fun `a newer release shows its version and notes, and opens the download page`() {
+        var opened: String? = null
+        show(
+            checkForUpdate = { UpdateCheck.Available("1.0.129", "• Fix stuff") },
+            openDownloadPage = { url -> opened = url; true },
+        )
+        select("About")
+
+        rule.onNodeWithTag("settings-check-updates").requestFocus()
+        rule.waitForIdle()
+        rule.onNodeWithTag("settings-check-updates").performKeyInput { pressKey(Key.DirectionCenter) }
+        rule.waitForIdle()
+
+        rule.onNodeWithText("Version 1.0.129 is available").assertExists()
+        rule.onNodeWithText("• Fix stuff").assertExists()
+
+        rule.onNodeWithTag("settings-update-confirm").requestFocus()
+        rule.waitForIdle()
+        rule.onNodeWithTag("settings-update-confirm").performKeyInput { pressKey(Key.DirectionCenter) }
+        rule.waitForIdle()
+
+        assertEquals("https://tellygram.app/personal/", opened)
     }
 
     @Test

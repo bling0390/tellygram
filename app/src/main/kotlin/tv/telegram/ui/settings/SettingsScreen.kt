@@ -2,6 +2,10 @@
 
 package tv.telegram.ui.settings
 
+import android.content.ActivityNotFoundException
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
@@ -25,6 +29,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -41,6 +46,8 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.ui.platform.LocalContext
+import kotlinx.coroutines.launch
 import tv.telegram.BuildConfig
 import tv.telegram.R
 import tv.telegram.td.AuthState
@@ -96,9 +103,21 @@ internal fun SettingsScreen(
      */
     contentEntryFocus: FocusRequester? = null,
     modifier: Modifier = Modifier,
+    /**
+     * How the About pane's "Check for updates" asks GitHub. Injectable so the UI tests can
+     * answer without a network call (2026-10-18).
+     */
+    checkForUpdate: suspend (String) -> UpdateCheck = ::fetchLatestRelease,
+    /** Opens the download page; null uses the system browser. Returns false when there is none. */
+    openDownloadPage: ((String) -> Boolean)? = null,
 ) {
     var selected by remember { mutableStateOf(SettingsSection.Accounts) }
     var showLogOut by remember { mutableStateOf(false) }
+    // Update check: one request at a time, and one dialog for its outcome (2026-10-18).
+    var checking by remember { mutableStateOf(false) }
+    var updateDialog by remember { mutableStateOf<UpdateDialog?>(null) }
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
 
     // Left/Right between the section list and the pane: Right from the list always reaches
     // the pane's entry stop, and a pane row going Left returns to the CHOSEN section (the
@@ -198,6 +217,23 @@ internal fun SettingsScreen(
                         leftRequester = selectedSectionFocus,
                         entryRequester = paneEntryFocus,
                         firstRequester = paneFirstFocus,
+                        checking = checking,
+                        onClick = {
+                            if (!checking) {
+                                checking = true
+                                scope.launch {
+                                    val result = runCatching { checkForUpdate(versionName) }
+                                        .getOrElse { UpdateCheck.Failed(UpdateFailure.Network) }
+                                    checking = false
+                                    updateDialog = when (result) {
+                                        is UpdateCheck.UpToDate -> UpdateDialog.UpToDate
+                                        is UpdateCheck.Available ->
+                                            UpdateDialog.Available(result.version, result.notes)
+                                        is UpdateCheck.Failed -> UpdateDialog.Failed(result.kind)
+                                    }
+                                }
+                            }
+                        },
                     )
                 }
 
@@ -272,7 +308,83 @@ internal fun SettingsScreen(
                 tagPrefix = "settings-logout",
             )
         }
+
+        updateDialog?.let { dialog ->
+            when (dialog) {
+                is UpdateDialog.UpToDate -> ConfirmDialog(
+                    title = stringResource(R.string.settings_update_title),
+                    text = stringResource(R.string.settings_update_latest, versionName),
+                    onDismiss = { updateDialog = null },
+                    confirmLabel = stringResource(R.string.settings_update_ok),
+                    onConfirm = { updateDialog = null },
+                    tagPrefix = "settings-update",
+                )
+
+                is UpdateDialog.Failed -> ConfirmDialog(
+                    title = stringResource(R.string.settings_update_title),
+                    text = stringResource(dialog.kind.messageRes()),
+                    onDismiss = { updateDialog = null },
+                    confirmLabel = stringResource(R.string.settings_update_ok),
+                    onConfirm = { updateDialog = null },
+                    tagPrefix = "settings-update",
+                )
+
+                is UpdateDialog.Available -> {
+                    val noNotes = stringResource(R.string.settings_update_no_notes)
+                    ConfirmDialog(
+                        title = stringResource(R.string.settings_update_available, dialog.version),
+                        text = if (dialog.notes.isBlank()) noNotes else dialog.notes,
+                        // Release notes can run long; the panel scrolls them.
+                        scrollableBody = true,
+                        onDismiss = { updateDialog = null },
+                        confirmLabel = stringResource(R.string.settings_update_download),
+                        cancelLabel = stringResource(R.string.settings_update_later),
+                        onConfirm = {
+                            // A TV box often has no browser: fall back to showing the address
+                            // (it cannot be typed on a remote).
+                            val opened = openDownloadPage?.invoke(DownloadPageUrl)
+                                ?: openInBrowser(context, DownloadPageUrl)
+                            updateDialog = if (opened) null else UpdateDialog.NoBrowser(DownloadPageUrl)
+                        },
+                        tagPrefix = "settings-update",
+                    )
+                }
+
+                is UpdateDialog.NoBrowser -> ConfirmDialog(
+                    title = stringResource(R.string.settings_update_title),
+                    text = stringResource(R.string.settings_update_no_browser, dialog.url),
+                    onDismiss = { updateDialog = null },
+                    confirmLabel = stringResource(R.string.settings_update_ok),
+                    onConfirm = { updateDialog = null },
+                    tagPrefix = "settings-update",
+                )
+            }
+        }
     }
+}
+
+/** The update flow's dialog states: nothing at all while a check is in flight. */
+private sealed interface UpdateDialog {
+    data object UpToDate : UpdateDialog
+    data class Available(val version: String, val notes: String) : UpdateDialog
+    data class Failed(val kind: UpdateFailure) : UpdateDialog
+    data class NoBrowser(val url: String) : UpdateDialog
+}
+
+private fun UpdateFailure.messageRes(): Int = when (this) {
+    UpdateFailure.Network -> R.string.settings_update_failed_network
+    UpdateFailure.Http -> R.string.settings_update_failed_http
+    UpdateFailure.Parse -> R.string.settings_update_failed_parse
+}
+
+/** Opens the download page in whatever browser the box has; false when there is none. */
+private fun openInBrowser(context: Context, url: String): Boolean = try {
+    context.startActivity(
+        Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+    )
+    true
+} catch (e: ActivityNotFoundException) {
+    false
 }
 
 
@@ -388,19 +500,23 @@ private fun LicenseRow() =
     DisplayRow(stringResource(R.string.settings_about_row_license), stringResource(R.string.settings_about_license_value))
 
 /**
- * The frame's actionable row. Focusable, and deliberately inert: pressing OK does
- * nothing yet (product decision, 2026-09-23).
+ * The frame's actionable row: asks GitHub whether a newer release exists (2026-10-18). The label
+ * reports the request while it is in flight, so a slow network does not read as a dead button.
  */
 @Composable
 private fun CheckForUpdatesRow(
     leftRequester: FocusRequester? = null,
     entryRequester: FocusRequester? = null,
     firstRequester: FocusRequester? = null,
+    checking: Boolean = false,
+    onClick: () -> Unit = {},
 ) = ActionRow(
-    label = stringResource(R.string.settings_about_row_check_updates),
+    label = stringResource(
+        if (checking) R.string.settings_check_updates_checking
+        else R.string.settings_about_row_check_updates,
+    ),
     tag = "settings-check-updates",
-    // Deliberately inert (product decision, 2026-09-23).
-    onClick = { },
+    onClick = onClick,
     leftRequester = leftRequester,
     entryRequester = entryRequester,
     firstRequester = firstRequester,
