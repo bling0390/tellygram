@@ -2,10 +2,8 @@
 
 package tv.telegram.ui.settings
 
-import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -109,8 +107,8 @@ internal fun SettingsScreen(
      * answer without a network call (2026-10-18).
      */
     checkForUpdate: suspend (String) -> UpdateCheck = ::fetchLatestRelease,
-    /** Opens the download page; null uses the system browser. Returns false when there is none. */
-    openDownloadPage: ((String) -> Boolean)? = null,
+    /** Opens the download page; null hands it to the system. */
+    openDownloadPage: ((String) -> Unit)? = null,
 ) {
     var selected by remember { mutableStateOf(SettingsSection.Accounts) }
     var showLogOut by remember { mutableStateOf(false) }
@@ -341,24 +339,19 @@ internal fun SettingsScreen(
                         confirmLabel = stringResource(R.string.settings_update_download),
                         cancelLabel = stringResource(R.string.settings_update_later),
                         onConfirm = {
-                            // A TV box often has no browser: fall back to showing the address
-                            // (it cannot be typed on a remote).
-                            val opened = openDownloadPage?.invoke(DownloadPageUrl)
-                                ?: openInBrowser(context, DownloadPageUrl)
-                            updateDialog = if (opened) null else UpdateDialog.NoBrowser(DownloadPageUrl)
+                            // Hand it to the system and leave the panel up: a box with no
+                            // browser shows its own prompt, and only Back or Cancel closes
+                            // this dialog (2026-10-18).
+                            if (openDownloadPage != null) {
+                                openDownloadPage(DownloadPageUrl)
+                            } else {
+                                openInBrowser(context, DownloadPageUrl)
+                            }
                         },
                         tagPrefix = "settings-update",
                     )
                 }
 
-                is UpdateDialog.NoBrowser -> ConfirmDialog(
-                    title = stringResource(R.string.settings_update_title),
-                    text = stringResource(R.string.settings_update_no_browser, dialog.url),
-                    onDismiss = { updateDialog = null },
-                    confirmLabel = stringResource(R.string.settings_update_ok),
-                    onConfirm = { updateDialog = null },
-                    tagPrefix = "settings-update",
-                )
             }
         }
     }
@@ -369,7 +362,6 @@ private sealed interface UpdateDialog {
     data object UpToDate : UpdateDialog
     data class Available(val version: String, val notes: String) : UpdateDialog
     data class Failed(val kind: UpdateFailure) : UpdateDialog
-    data class NoBrowser(val url: String) : UpdateDialog
 }
 
 private fun UpdateFailure.messageRes(): Int = when (this) {
@@ -379,27 +371,17 @@ private fun UpdateFailure.messageRes(): Int = when (this) {
 }
 
 /**
- * Opens the download page in a real browser. A TV shell will happily claim a plain VIEW intent
- * and then show its own "you don't have an app to do that" toast, which never throws — so the
- * intent is resolved first with BROWSABLE (only browsers answer that) and launched only when
- * something actually handles it (2026-10-18).
+ * Hands the download page to the system. A TV without a browser answers with its own prompt
+ * ("you don't have an app to do that"), and a box without even that fails silently — either way
+ * this side has nothing further to show (2026-10-18).
  */
-private fun openInBrowser(context: Context, url: String): Boolean {
-    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
-        .addCategory(Intent.CATEGORY_BROWSABLE)
-        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-    val target = context.packageManager
-        .resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY)
-    if (target == null) {
-        android.util.Log.i("SettingsUpdate", "no browser for $url")
-        return false
-    }
-    return try {
-        android.util.Log.i("SettingsUpdate", "opening $url with ${target.activityInfo.packageName}")
-        context.startActivity(intent)
-        true
-    } catch (e: ActivityNotFoundException) {
-        false
+private fun openInBrowser(context: Context, url: String) {
+    runCatching {
+        context.startActivity(
+            Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+        )
+    }.onFailure {
+        android.util.Log.i("SettingsUpdate", "could not open $url: ${it.javaClass.simpleName}")
     }
 }
 

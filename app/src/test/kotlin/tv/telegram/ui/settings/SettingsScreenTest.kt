@@ -69,7 +69,7 @@ class SettingsScreenTest {
     private fun show(
         versionName: String = "9.9.9-test",
         checkForUpdate: suspend (String) -> UpdateCheck = { UpdateCheck.UpToDate },
-        openDownloadPage: ((String) -> Boolean)? = null,
+        openDownloadPage: ((String) -> Unit)? = null,
     ) {
         rule.setContent {
             SettingsScreen(
@@ -131,7 +131,7 @@ class SettingsScreenTest {
         var opened: String? = null
         show(
             checkForUpdate = { UpdateCheck.Available("1.0.129", "• Fix stuff") },
-            openDownloadPage = { url -> opened = url; true },
+            openDownloadPage = { url -> opened = url },
         )
         select("About")
 
@@ -149,6 +149,8 @@ class SettingsScreenTest {
         rule.waitForIdle()
 
         assertEquals("https://tellygram.app/personal/", opened)
+        // The panel stays up on confirm: only Back or Cancel closes it (2026-10-18).
+        rule.onNodeWithText("Version 1.0.129 is available").assertExists()
     }
 
     @Test

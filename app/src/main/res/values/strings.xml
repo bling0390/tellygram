@@ -105,7 +105,6 @@
     <string name="settings_update_failed_network">Could not reach GitHub. Check the network and try again.</string>
     <string name="settings_update_failed_http">GitHub answered with an error. Try again later.</string>
     <string name="settings_update_failed_parse">GitHub sent an unexpected response.</string>
-    <string name="settings_update_no_browser">No browser on this device. Open this address on a computer:\n%1$s</string>
     <string name="settings_about_license_value">MIT</string>
     <string name="settings_account_row_id">ID</string>
     <string name="settings_account_row_username">Username</string>
