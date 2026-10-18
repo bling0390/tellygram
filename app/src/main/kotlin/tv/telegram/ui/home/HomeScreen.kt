@@ -94,6 +94,7 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
@@ -101,6 +102,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import tv.telegram.ui.focus.BackPriority
+import tv.telegram.ui.focus.LocalBackController
 import tv.telegram.ui.focus.BackRegistration
 import tv.telegram.ui.components.Avatar
 import androidx.compose.material.icons.outlined.Done
@@ -508,6 +510,10 @@ internal fun HomeScreen(
     LaunchedEffect(region) {
         android.util.Log.i("HomeBack", "region -> $region")
     }
+    // Back is taken on the preview pass at the page root (see the modifier below): the system
+    // dispatcher is LIFO and the NavHost's own callback kept swallowing the key before our
+    // handler could run (2026-10-18).
+    val backController = LocalBackController.current
 
     Box(
         modifier = Modifier
@@ -516,7 +522,18 @@ internal fun HomeScreen(
             // NavHost keeps the outgoing destination composed while a tab switch settles, and
             // with a transparent root both pages drew into the same box — two content areas
             // superimposed. An opaque root lets the incoming page cover it instead.
-            .background(HomeSpec.Background),
+            .background(HomeSpec.Background)
+            // Consume Back before it reaches the system dispatcher and route it through the
+            // controller, so the top registration (grid / chips / chat list) runs as designed.
+            .onPreviewKeyEvent { event ->
+                if (event.key == Key.Back && event.type == KeyEventType.KeyDown) {
+                    val handled = backController.dispatch()
+                    android.util.Log.i("HomeBack", "preview Back -> dispatch handled=$handled")
+                    handled
+                } else {
+                    false
+                }
+            },
     ) {
         // The top bar is provided by the app shell (MainActivity) so it survives
         // navigation; this screen only owns the lower part of the design — the
