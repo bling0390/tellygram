@@ -69,6 +69,16 @@ internal fun PhotoPreviewScreen(
     if (index !in items.indices) return
     val item = items[index]
 
+    // Record the return target when the preview OPENS, not only when our Back
+    // registration runs (2026-10-21). A Back that the system or the NavHost pops for us
+    // never reaches that registration — the log showed no "photo preview back" at all and
+    // the card lost focus on return. With the hint pending from the start, every pop path
+    // leaves it behind, so the grid can hand focus back to the card.
+    LaunchedEffect(item.messageId) {
+        android.util.Log.i("HomeBack", "photo preview open: hint=${item.messageId}")
+        state.setPlayerReturnFocus(item.messageId)
+    }
+
     // Same contract as the player: tell the grid which card was open so focus can go
     // back to it. Out-of-range closes are not a return, so they do not record one.
     BackRegistration(BackPriority.PLAYER, enabled = true) {
