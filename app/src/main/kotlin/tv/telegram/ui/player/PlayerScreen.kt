@@ -64,6 +64,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.Key
@@ -111,6 +112,7 @@ import tv.telegram.ui.MainViewModel
 import tv.telegram.ui.components.RightDrawer
 import tv.telegram.ui.focus.BackPriority
 import tv.telegram.ui.focus.BackRegistration
+import tv.telegram.ui.home.HomeSpec
 import tv.telegram.ui.focus.dpadNavigationSounds
 import org.drinkless.td.libcore.telegram.TdApi
 import androidx.tv.material3.Icon
@@ -702,6 +704,9 @@ fun PlayerScreen(
                             useController = false // custom compose controller below
                             resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
                             player = exo
+                            // The letterbox around the video matches the app's background
+                            // (#1A1C1E), not pure black (product, 2026-10-21).
+                            setBackgroundColor(HomeSpec.Background.toArgb())
                         }
                     },
                     // Applied on every recomposition of this branch (and this

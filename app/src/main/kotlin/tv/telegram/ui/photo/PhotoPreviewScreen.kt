@@ -33,6 +33,7 @@ import tv.telegram.td.MediaItem
 import tv.telegram.td.MediaType
 import tv.telegram.ui.focus.BackPriority
 import tv.telegram.ui.focus.BackRegistration
+import tv.telegram.ui.home.HomeSpec
 import tv.telegram.ui.home.HomeState
 
 /** Indices of the photo items, which is what Left/Right step through here. */
@@ -103,7 +104,8 @@ internal fun PhotoPreviewScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF000000))
+            // #1A1C1E — the home's background, not pure black (product, 2026-10-21).
+            .background(HomeSpec.Background)
             .focusRequester(focus)
             .focusable()
             .onKeyEvent { event: KeyEvent ->

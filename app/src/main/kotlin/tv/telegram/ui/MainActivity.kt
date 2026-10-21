@@ -433,6 +433,13 @@ private fun AppNavHost(viewModel: MainViewModel, backController: BackController)
             composable(
                 route = Routes.PHOTO_AT,
                 arguments = listOf(navArgument("messageId") { type = NavType.LongType }),
+                // Full-screen photo viewer: cut, do not fade. The home's side is already
+                // None, so a fade here read as "home vanishes, preview fades in over the
+                // background" (2026-10-21).
+                enterTransition = { EnterTransition.None },
+                exitTransition = { ExitTransition.None },
+                popEnterTransition = { EnterTransition.None },
+                popExitTransition = { ExitTransition.None },
             ) { entry ->
                 val messageId = entry.arguments?.getLong("messageId") ?: 0L
                 val context by viewModel.viewerContext.collectAsStateWithLifecycle()
@@ -466,6 +473,10 @@ private fun AppNavHost(viewModel: MainViewModel, backController: BackController)
             composable(
                 route = Routes.PHOTO,
                 arguments = listOf(navArgument("index") { type = NavType.IntType }),
+                enterTransition = { EnterTransition.None },
+                exitTransition = { ExitTransition.None },
+                popEnterTransition = { EnterTransition.None },
+                popExitTransition = { ExitTransition.None },
             ) { entry ->
                 PhotoPreviewScreen(
                     state = viewModel,
