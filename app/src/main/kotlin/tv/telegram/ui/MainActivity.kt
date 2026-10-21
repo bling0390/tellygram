@@ -81,6 +81,7 @@ import tv.telegram.ui.components.Avatar
 import tv.telegram.ui.components.ConfirmDialog
 import tv.telegram.ui.components.TopNavBar
 import tv.telegram.ui.components.TopNavBarBottomGap
+import tv.telegram.ui.components.TopNavBarHeight
 import tv.telegram.ui.components.TopNavBarSideMargin
 import tv.telegram.ui.components.TopNavBarTopMargin
 import tv.telegram.ui.audio.AudioPlayerScreen
@@ -277,63 +278,6 @@ private fun AppNavHost(viewModel: MainViewModel, backController: BackController)
         // The shell keeps the top bar outside the NavHost, so it survives
         // navigation: pages swap below it while the bar keeps its focus and
         // state. It also owns the design's content box for those pages.
-        Column(modifier = Modifier.fillMaxSize()) {
-            if (isShellPage) {
-                Spacer(Modifier.height(TopNavBarTopMargin))
-                val me by viewModel.currentUser.collectAsStateWithLifecycle()
-                // Focus bridge between the shell's top bar and the home screen's chat
-                // list: Down from the bar lands on the selected chat row, and Back from
-                // that list returns to the bar.
-                // Telegram can deliver the profile photo a beat after login; one
-                // retry covers that without polling. Until it lands (or if the
-                // account has no photo) Avatar draws the initial instead.
-                LaunchedEffect(Unit) {
-                    if (me?.photoFileId == null) viewModel.refreshMe()
-                }
-                TopNavBar(
-                    onTabSelected = { tab ->
-                        // Chat and Setting are the two shell pages; search stays inert.
-                        val target = when (tab) {
-                            TopNavTab.Chat -> Routes.HOME_SCREEN
-                            TopNavTab.Setting -> Routes.HOME_SETTINGS
-                        }
-                        if (currentRoute != target) {
-                            navController.navigate(target) {
-                                popUpTo(Routes.HOME_SCREEN)
-                                launchSingleTop = true
-                            }
-                        }
-                    },
-                    onTabConfirmed = { tab ->
-                        // OK on a tab hands focus to that page's content (2026-10-15): the chat
-                        // list's entry for Chat — its Archived row, the list's first
-                        // focusable — and the first section row for Setting. Both are the
-                        // requesters the bar's Down already uses, so the two keys take one
-                        // path per page.
-                        runCatching {
-                            contentEntryFor(tab, homeContentFocus, settingsContentFocus).requestFocus()
-                        }
-                    },
-                    onSearchClick = { },
-                    modifier = Modifier.padding(horizontal = TopNavBarSideMargin),
-                    selectedTabFocus = homeTopBarFocus,
-                    contentFocus = if (currentRoute == Routes.HOME_SETTINGS) {
-                        settingsContentFocus
-                    } else {
-                        homeContentFocus
-                    },
-                    avatar = {
-                        Avatar(
-                            // Real photo when available, initial otherwise.
-                            photoFileId = me?.photoFileId,
-                            name = me?.displayName ?: "",
-                            id = me?.id ?: 0L,
-                            state = viewModel,
-                        )
-                    },
-                )
-                Spacer(Modifier.height(TopNavBarBottomGap))
-            }
 
             // Entering the shell hands focus to the bar's Chat entry, once (2026-10-15):
             // nothing else requests it, and the platform does not choose a first focusable
@@ -344,17 +288,11 @@ private fun AppNavHost(viewModel: MainViewModel, backController: BackController)
             NavHost(
             navController = navController,
             startDestination = startDestination,
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth()
-                .then(
-                    if (isShellPage) {
-                        Modifier.padding(horizontal = TopNavBarSideMargin)
-                    } else {
-                        Modifier
-                    },
-                )
-                .padding(start = if (inHome) railWidth else 0.dp),
+            // Constant size on every destination (2026-10-21): the shell's margins, the
+            // rail's width and the bar's height live inside the pages now. A route-dependent
+            // padding resized this box between pages, and NavHost's size transform animated
+            // that resize — the photo viewer collapsed into / grew out of the centre.
+            modifier = Modifier.fillMaxSize(),
         ) {
             composable(Routes.COLD_START) { ColdStartScreen(viewModel = viewModel) }
 
@@ -367,21 +305,31 @@ private fun AppNavHost(viewModel: MainViewModel, backController: BackController)
                 popEnterTransition = { EnterTransition.None },
                 popExitTransition = { ExitTransition.None },
             ) {
-                HomeScreen(
-                    state = viewModel,
-                    onOpenPlayer = { index -> navController.navigate(Routes.player(index)) },
-                    onOpenMediaItem = { item ->
-                        // A member picked in the album popup: same split as the grid's cards.
-                        navController.navigate(
-                            if (item.type == MediaType.Photo) Routes.photoAt(item.messageId)
-                            else Routes.playerAt(item.messageId)
-                        )
-                    },
-                    onOpenPhoto = { index -> navController.navigate(Routes.photo(index)) },
-                    onOpenAudio = { index -> navController.navigate(Routes.audioPlayer(index)) },
-                    contentEntryFocus = homeContentFocus,
-                    topBarFocus = homeTopBarFocus,
-                )
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .padding(
+                            start = TopNavBarSideMargin,
+                            end = TopNavBarSideMargin,
+                            top = TopNavBarTopMargin + TopNavBarHeight + TopNavBarBottomGap,
+                        ),
+                ) {
+                    HomeScreen(
+                        state = viewModel,
+                        onOpenPlayer = { index -> navController.navigate(Routes.player(index)) },
+                        onOpenMediaItem = { item ->
+                            // A member picked in the album popup: same split as the grid's cards.
+                            navController.navigate(
+                                if (item.type == MediaType.Photo) Routes.photoAt(item.messageId)
+                                else Routes.playerAt(item.messageId)
+                            )
+                        },
+                        onOpenPhoto = { index -> navController.navigate(Routes.photo(index)) },
+                        onOpenAudio = { index -> navController.navigate(Routes.audioPlayer(index)) },
+                        contentEntryFocus = homeContentFocus,
+                        topBarFocus = homeTopBarFocus,
+                    )
+                }
             }
 
             navigation(startDestination = Routes.HOME_CHATS, route = Routes.HOME) {
@@ -392,17 +340,19 @@ private fun AppNavHost(viewModel: MainViewModel, backController: BackController)
                 popExitTransition = { ExitTransition.None },
                     route = Routes.HOME_SEARCH,
                 ) {
-                    SearchScreen(
-                        viewModel = viewModel,
-                        railSearchFocus = searchRailFocus,
-                        onOpenChats = {
-                            navController.navigate(Routes.HOME_CHATS) {
-                                popUpTo(Routes.HOME) { saveState = true }
-                                launchSingleTop = true
-                                restoreState = true
-                            }
-                        },
-                    )
+                    Box(Modifier.fillMaxSize().padding(start = railWidth)) {
+                        SearchScreen(
+                            viewModel = viewModel,
+                            railSearchFocus = searchRailFocus,
+                            onOpenChats = {
+                                navController.navigate(Routes.HOME_CHATS) {
+                                    popUpTo(Routes.HOME) { saveState = true }
+                                    launchSingleTop = true
+                                    restoreState = true
+                                }
+                            },
+                        )
+                    }
                 }
                 composable(
                     route = Routes.HOME_CHATS,
@@ -411,12 +361,14 @@ private fun AppNavHost(viewModel: MainViewModel, backController: BackController)
                     popEnterTransition = { slideInHorizontally(tween(300)) { -it / 3 } },
                     popExitTransition = { slideOutHorizontally(tween(300)) { it } },
                 ) {
-                    ChatsScreen(
-                        viewModel = viewModel,
-                        railChatsFocus = chatsRailFocus,
-                        chatsListRightFocus = chatsListRightFocus,
-                        onOpenPlayer = { index -> navController.navigate(Routes.player(index)) },
-                    )
+                    Box(Modifier.fillMaxSize().padding(start = railWidth)) {
+                        ChatsScreen(
+                            viewModel = viewModel,
+                            railChatsFocus = chatsRailFocus,
+                            chatsListRightFocus = chatsListRightFocus,
+                            onOpenPlayer = { index -> navController.navigate(Routes.player(index)) },
+                        )
+                    }
                 }
                 composable(
                 enterTransition = { EnterTransition.None },
@@ -425,7 +377,17 @@ private fun AppNavHost(viewModel: MainViewModel, backController: BackController)
                 popExitTransition = { ExitTransition.None },
                     route = Routes.HOME_SETTINGS,
                 ) {
-                    SettingsScreen(state = viewModel, contentEntryFocus = settingsContentFocus)
+                    Box(
+                        Modifier
+                            .fillMaxSize()
+                            .padding(
+                                start = TopNavBarSideMargin,
+                                end = TopNavBarSideMargin,
+                                top = TopNavBarTopMargin + TopNavBarHeight + TopNavBarBottomGap,
+                            ),
+                    ) {
+                        SettingsScreen(state = viewModel, contentEntryFocus = settingsContentFocus)
+                    }
                 }
             }
 
@@ -580,6 +542,64 @@ private fun AppNavHost(viewModel: MainViewModel, backController: BackController)
                 )
             }
             }
+
+        // Shell chrome as an overlay: the bar keeps its state across navigation, and
+        // the pages below pad for it themselves, so the NavHost box never changes size.
+        if (isShellPage) {
+            Spacer(Modifier.height(TopNavBarTopMargin))
+            val me by viewModel.currentUser.collectAsStateWithLifecycle()
+            // Focus bridge between the shell's top bar and the home screen's chat
+            // list: Down from the bar lands on the selected chat row, and Back from
+            // that list returns to the bar.
+            // Telegram can deliver the profile photo a beat after login; one
+            // retry covers that without polling. Until it lands (or if the
+            // account has no photo) Avatar draws the initial instead.
+            LaunchedEffect(Unit) {
+                if (me?.photoFileId == null) viewModel.refreshMe()
+            }
+            TopNavBar(
+                onTabSelected = { tab ->
+                    // Chat and Setting are the two shell pages; search stays inert.
+                    val target = when (tab) {
+                        TopNavTab.Chat -> Routes.HOME_SCREEN
+                        TopNavTab.Setting -> Routes.HOME_SETTINGS
+                    }
+                    if (currentRoute != target) {
+                        navController.navigate(target) {
+                            popUpTo(Routes.HOME_SCREEN)
+                            launchSingleTop = true
+                        }
+                    }
+                },
+                onTabConfirmed = { tab ->
+                    // OK on a tab hands focus to that page's content (2026-10-15): the chat
+                    // list's entry for Chat — its Archived row, the list's first
+                    // focusable — and the first section row for Setting. Both are the
+                    // requesters the bar's Down already uses, so the two keys take one
+                    // path per page.
+                    runCatching {
+                        contentEntryFor(tab, homeContentFocus, settingsContentFocus).requestFocus()
+                    }
+                },
+                onSearchClick = { },
+                modifier = Modifier.padding(horizontal = TopNavBarSideMargin),
+                selectedTabFocus = homeTopBarFocus,
+                contentFocus = if (currentRoute == Routes.HOME_SETTINGS) {
+                    settingsContentFocus
+                } else {
+                    homeContentFocus
+                },
+                avatar = {
+                    Avatar(
+                        // Real photo when available, initial otherwise.
+                        photoFileId = me?.photoFileId,
+                        name = me?.displayName ?: "",
+                        id = me?.id ?: 0L,
+                        state = viewModel,
+                    )
+                },
+            )
+            Spacer(Modifier.height(TopNavBarBottomGap))
         }
 
         if (inHome) {
