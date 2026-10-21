@@ -419,6 +419,21 @@ class HomeScreenTest {
     }
 
     @Test
+    fun `a return hint puts focus back on the card`() {
+        show()
+        // Start on the chat list, the way a page that was re-composed after a viewer does.
+        rule.onNodeWithTag("home-chat-row-1").requestFocus()
+        rule.waitForIdle()
+
+        state.requestReturnFocus(4L)
+        rule.waitForIdle()
+
+        // media(4) is the fourth card; the hint must turn into focus on it, not just be eaten.
+        rule.onNodeWithTag("home-media-cell-3").assertIsFocused()
+        assertEquals(1, state.consumeReturnFocusCount)
+    }
+
+    @Test
     fun `an unknown return hint is left alone`() {
         show()
         state.requestReturnFocus(999L)
