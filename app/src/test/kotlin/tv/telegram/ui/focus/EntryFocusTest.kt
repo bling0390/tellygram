@@ -88,6 +88,34 @@ class EntryFocusTest {
     }
 
     @Test
+    fun `a viewer round trip does not take focus back`() {
+        // Back from a full-screen viewer flips the shell active again; that is not an entry,
+        // so the focus the viewer restored must survive (2026-10-21).
+        val entry = FocusRequester()
+        val other = FocusRequester()
+        val active = mutableStateOf(true)
+        rule.setContent {
+            Column {
+                Box(target("entry", entry))
+                Box(target("other", other))
+                EntryFocus(active = active.value, target = entry)
+            }
+        }
+        rule.waitForIdle()
+        rule.onNodeWithTag("entry", useUnmergedTree = true).assertIsFocused()
+
+        // Leave the shell (the viewer is on top), park focus elsewhere, then come back.
+        rule.runOnIdle { active.value = false }
+        rule.waitForIdle()
+        rule.onNodeWithTag("other", useUnmergedTree = true).requestFocus()
+        rule.waitForIdle()
+        rule.runOnIdle { active.value = true }
+        rule.waitForIdle()
+
+        rule.onNodeWithTag("other", useUnmergedTree = true).assertIsFocused()
+    }
+
+    @Test
     fun `an unattached target never throws`() {
         // The shell hands the bar's requester in; on a screen where the bar is not composed
         // the request has nothing to land on and must stay silent.

@@ -2,6 +2,10 @@ package tv.telegram.ui.focus
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.focus.FocusRequester
 
@@ -25,8 +29,14 @@ import androidx.compose.ui.focus.FocusRequester
  */
 @Composable
 fun EntryFocus(active: Boolean, target: FocusRequester?) {
+    // One shot per shell composition (2026-10-21): returning from a full-screen viewer flips
+    // `active` false → true again, and focusing the bar then stole the card focus the viewer
+    // had just restored. A fresh composition — sign out and back in — starts over, so a real
+    // entry still lands on the bar.
+    var entered by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(active) {
-        if (!active || target == null) return@LaunchedEffect
+        if (!active || target == null || entered) return@LaunchedEffect
+        entered = true
         withFrameNanos { }
         if (!runCatching { target.requestFocus() }.isSuccess) {
             withFrameNanos { }

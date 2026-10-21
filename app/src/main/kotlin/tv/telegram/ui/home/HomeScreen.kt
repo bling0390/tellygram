@@ -480,25 +480,16 @@ internal fun HomeScreen(
             return@LaunchedEffect
         }
         returnFocusIndex = index
-        // The shell's EntryFocus fires when the shell becomes the active page again (the pop
-        // sets isShellPage back to true) and focuses the top bar one frame later. Landing on
-        // the card once was therefore not enough — the bar took focus back and the card looked
-        // unfocused (2026-10-21). Hold the card across that window, then consume the hint.
-        var attempt = 0
-        var landedAt = -1
-        while (attempt < 12) {
+        repeat(8) { attempt ->
             withFrameNanos { }
-            if (runCatching { focus.returnGrid.requestFocus() }.isSuccess && landedAt < 0) {
-                landedAt = attempt
+            if (runCatching { focus.returnGrid.requestFocus() }.isSuccess) {
+                returnFocusIndex = -1
+                state.consumePlayerReturnFocus()
+                return@LaunchedEffect
             }
             // A card that is scrolled away — or a grid that has not laid out yet — needs the
             // scroll first; the following frames give the composition time to catch up.
             if (attempt == 0) runCatching { gridState.scrollToItem(index) }
-            attempt++
-            if (landedAt >= 0 && attempt - landedAt >= 3) break
-        }
-        if (landedAt >= 0) {
-            state.consumePlayerReturnFocus()
         }
         // Nothing ever took focus (e.g. the wall is showing its empty state): clear the index so
         // the cell re-attaches its normal entry requester, but leave the hint alone — it belongs
