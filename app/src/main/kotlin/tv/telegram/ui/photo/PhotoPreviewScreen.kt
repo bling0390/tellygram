@@ -72,6 +72,7 @@ internal fun PhotoPreviewScreen(
     // Same contract as the player: tell the grid which card was open so focus can go
     // back to it. Out-of-range closes are not a return, so they do not record one.
     BackRegistration(BackPriority.PLAYER, enabled = true) {
+        android.util.Log.i("HomeBack", "photo preview back: hint=${item.messageId}")
         state.setPlayerReturnFocus(item.messageId)
         onClose()
     }

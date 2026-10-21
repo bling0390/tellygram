@@ -471,18 +471,22 @@ internal fun HomeScreen(
         if (index < 0) {
             // The loaded wall holds no card for it yet: leave the hint alone so a later page can
             // still land on it — the contract HomeScreenTest pins.
+            android.util.Log.i("HomeBack", "return: hint=$id not in media(${media.size})")
             return@LaunchedEffect
         }
         if (albumTargetId != null) {
             // The album popup is open again and owns the return: it focuses the member that was
             // opened, so the grid card behind it must not take focus (2026-10-17).
+            android.util.Log.i("HomeBack", "return: album popup owns it (albumTarget=$albumTargetId)")
             state.consumePlayerReturnFocus()
             return@LaunchedEffect
         }
         returnFocusIndex = index
         repeat(8) { attempt ->
             withFrameNanos { }
-            if (runCatching { focus.returnGrid.requestFocus() }.isSuccess) {
+            val landed = runCatching { focus.returnGrid.requestFocus() }.isSuccess
+            android.util.Log.i("HomeBack", "return: attempt=$attempt index=$index landed=$landed")
+            if (landed) {
                 returnFocusIndex = -1
                 state.consumePlayerReturnFocus()
                 return@LaunchedEffect
@@ -491,6 +495,7 @@ internal fun HomeScreen(
             // scroll first; the following frames give the composition time to catch up.
             if (attempt == 0) runCatching { gridState.scrollToItem(index) }
         }
+        android.util.Log.w("HomeBack", "return: gave up on index=$index")
         // Nothing ever took focus (e.g. the wall is showing its empty state): clear the index so
         // the cell re-attaches its normal entry requester, but leave the hint alone — it belongs
         // to the next viewer's return, not to this attempt.
@@ -501,7 +506,10 @@ internal fun HomeScreen(
         val target = backTarget(region, gridIndex)
         android.util.Log.i("HomeBack", "dispatch region=$region gridIndex=$gridIndex -> $target")
         when (target) {
-            HomeBackTarget.SelectedChat -> runCatching { selectedChatFocus.requestFocus() }
+            HomeBackTarget.SelectedChat -> {
+                android.util.Log.i("HomeBack", "back -> selected chat")
+                runCatching { selectedChatFocus.requestFocus() }
+            }
             HomeBackTarget.FirstGridCell -> jumpToGrid(0)
             HomeBackTarget.TopBar -> focus.topBar?.let { runCatching { it.requestFocus() } }
             null -> Unit
@@ -1314,7 +1322,13 @@ private fun MediaCell(
                     else -> m
                 }
             }
-            .onFocusChanged { focused = it.isFocused; if (it.isFocused) onGridFocus(index) }
+            .onFocusChanged {
+                focused = it.isFocused
+                if (it.isFocused) {
+                    android.util.Log.i("HomeBack", "cell $index focused (return=$isReturn)")
+                    onGridFocus(index)
+                }
+            }
             .focusable()
 
             .onKeyEvent { event: androidx.compose.ui.input.key.KeyEvent ->
