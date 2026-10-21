@@ -30,7 +30,9 @@ internal fun albumMosaicRects(
     var bestTotal = 0f
     var bestError = Float.MAX_VALUE
 
-    for (mask in 1 until (1 shl (clamped.size - 1))) {
+    // Mask 0 is the "every member in one row" split; leaving it out made a two-member
+    // album fall back to a single rect (caught by the size sweep, 2026-10-21).
+    for (mask in 0 until (1 shl (clamped.size - 1))) {
         var rows = 1
         for (boundary in 0 until clamped.size - 1) {
             if ((mask shr boundary) and 1 == 1) rows++
