@@ -178,6 +178,15 @@ fun PlayerScreen(
 
     val current = mediaItems[index]
 
+    // Record the return target when the player opens, not only when our Back action runs
+    // (2026-10-21): a pop that the system or the NavHost handles never reaches closePlayer,
+    // and the grid then had no card to focus on return. Keyed on the item so walking to the
+    // next video updates it.
+    LaunchedEffect(current.messageId) {
+        android.util.Log.i("HomeBack", "player open: hint=${current.messageId}")
+        viewModel.setPlayerReturnFocus(current.messageId)
+    }
+
     // JetStream-style info header: the first caption line, or nothing at all.
     // The design's "year • genre" subtitle is gone — TG carries no genre, and
     // the "year • Video" stand-in only ever repeated the title.

@@ -177,6 +177,14 @@ fun AudioPlayerScreen(
     val playPauseFocus = remember { FocusRequester() }
     LaunchedEffect(current.fileId) { runCatching { playPauseFocus.requestFocus() } }
 
+    // Record the return target when the track opens, not only on our exit action
+    // (2026-10-21): a pop that the system or the NavHost handles never reaches `exit`, and the
+    // grid then had no card to focus on return.
+    LaunchedEffect(current.messageId) {
+        android.util.Log.i("HomeBack", "audio player open: hint=${current.messageId}")
+        viewModel.setPlayerReturnFocus(current.messageId)
+    }
+
     val exit = {
         exo.stop()
         viewModel.setPlayerReturnFocus(current.messageId)
