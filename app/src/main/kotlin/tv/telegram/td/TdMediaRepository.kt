@@ -281,7 +281,7 @@ class TdMediaRepository(
                     messageId = message.id,
                     type = MediaType.Photo,
                     fileId = largest.photo.id,
-                    thumbnailFileId = pickSmallestPhoto(photo.sizes)?.photo?.id,
+                    thumbnailFileId = pickThumbnail(photo.sizes)?.photo?.id,
                     minithumbnail = photo.minithumbnail?.data,
                     width = largest.width,
                     height = largest.height,
@@ -442,9 +442,15 @@ class TdMediaRepository(
     private fun pickLargest(sizes: Array<TdApi.PhotoSize>): TdApi.PhotoSize? =
         sizes.maxByOrNull { it.width * it.height }
 
-    private fun pickSmallestPhoto(sizes: Array<TdApi.PhotoSize>): TdApi.PhotoSize? =
-        sizes.filter { it.photo.id != 0 }
-            .minByOrNull { it.width * it.height }
+    /**
+     * The size stored as the item's thumbnail: the medium box (see [pickThumbnailIndex]), not
+     * the smallest — a 90px size upscaled to a 160dp TV card was visibly soft (2026-10-21).
+     */
+    private fun pickThumbnail(sizes: Array<TdApi.PhotoSize>): TdApi.PhotoSize? {
+        val usable = sizes.filter { it.photo.id != 0 }
+        val index = pickThumbnailIndex(usable.map { it.width to it.height }) ?: return null
+        return usable[index]
+    }
 
     companion object {
         private const val TAG = "TdMediaRepo"

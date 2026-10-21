@@ -131,7 +131,7 @@ internal fun BoxScope.MediaCardContent(item: MediaItem, state: HomeState) {
         // Text: the message body itself, as the design draws it (2026-10-21).
         is MediaCellKind.Text -> MediaTextCell(item)
         // Album: the members as an aspect-ratio collage (2026-10-21).
-        is MediaCellKind.Album -> MediaAlbumMosaic(item)
+        is MediaCellKind.Album -> MediaAlbumMosaic(item, state)
         // Photo / video: the thumbnail is the card; the file glyph stands in when there is
         // nothing to show.
         is MediaCellKind.Photo -> MediaThumbnail(item, state, isVideo = false)
@@ -152,6 +152,58 @@ private fun BoxScope.MediaGlyph(imageVector: ImageVector) {
             .align(Alignment.Center)
             .size(48.dp),
     )
+}
+
+/**
+ * One album tile: the embedded minithumbnail paints immediately as a placeholder, the
+ * downloaded thumbnail (TDLib's medium size — see pickThumbnail) covers it once it lands, and
+ * the type glyph is the last resort. The minithumbnail alone was visibly soft at TV sizes
+ * (2026-10-21).
+ */
+@Composable
+private fun BoxScope.AlbumTile(
+    member: MediaItem,
+    fileStates: Map<Int, FileDownloadState>,
+    state: HomeState,
+) {
+    val thumbFileId = member.thumbnailFileId ?: 0
+    val localPath = (fileStates[thumbFileId] as? FileDownloadState.Local)?.path
+        ?: member.thumbnailLocalPath
+        ?: member.localPath
+    LaunchedEffect(thumbFileId, localPath) {
+        // Below the cards' priority: a wall of albums should not starve the cell the user is on.
+        if (localPath == null && thumbFileId != 0) state.ensureMediaFile(thumbFileId, priority = 30)
+    }
+    member.minithumbnail?.let { mini ->
+        AsyncImage(
+            model = mini,
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.matchParentSize(),
+        )
+    }
+    if (localPath != null) {
+        val ctx = LocalContext.current
+        AsyncImage(
+            model = remember(localPath) {
+                ImageRequest.Builder(ctx).data(File(localPath)).crossfade(false).build()
+            },
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.matchParentSize(),
+        )
+    } else if (member.minithumbnail == null) {
+        Icon(
+            imageVector = if (member.type == MediaType.Video) {
+                Icons.Outlined.VideoFile
+            } else {
+                Icons.Outlined.Image
+            },
+            contentDescription = null,
+            tint = HomeSpec.OnSurface,
+            modifier = Modifier.align(Alignment.Center).size(16.dp),
+        )
+    }
 }
 
 /**
@@ -186,9 +238,10 @@ private fun BoxScope.MediaTextCell(item: MediaItem) {
  * (product, 2026-10-21).
  */
 @Composable
-private fun BoxScope.MediaAlbumMosaic(item: MediaItem) {
+private fun BoxScope.MediaAlbumMosaic(item: MediaItem, state: HomeState) {
     val members = item.albumMembers.ifEmpty { listOf(item) }
     val density = LocalDensity.current
+    val fileStates by state.fileStates.collectAsStateWithLifecycle()
     BoxWithConstraints(Modifier.matchParentSize()) {
         val widthPx = constraints.maxWidth.toFloat()
         val heightPx = constraints.maxHeight.toFloat()
@@ -210,7 +263,6 @@ private fun BoxScope.MediaAlbumMosaic(item: MediaItem) {
 
         rects.forEachIndexed { index, rect ->
             val member = members.getOrNull(index) ?: return@forEachIndexed
-            val thumbnail = member.minithumbnail
             Box(
                 modifier = Modifier
                     .offset(
@@ -224,25 +276,7 @@ private fun BoxScope.MediaAlbumMosaic(item: MediaItem) {
                     .clip(RoundedCornerShape(HomeSpec.Corner))
                     .background(HomeSpec.SurfaceContainer),
             ) {
-                if (thumbnail != null) {
-                    AsyncImage(
-                        model = thumbnail,
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.matchParentSize(),
-                    )
-                } else {
-                    Icon(
-                        imageVector = if (member.type == MediaType.Video) {
-                            Icons.Outlined.VideoFile
-                        } else {
-                            Icons.Outlined.Image
-                        },
-                        contentDescription = null,
-                        tint = HomeSpec.OnSurface,
-                        modifier = Modifier.align(Alignment.Center).size(16.dp),
-                    )
-                }
+                AlbumTile(member, fileStates, state)
             }
         }
     }
