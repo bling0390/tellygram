@@ -131,7 +131,9 @@ internal fun AlbumPopup(
                 verticalArrangement = Arrangement.spacedBy(24.dp),
             ) {
                 Column(
-                    modifier = Modifier.width(371.dp),
+                    // Full content width: a 371dp column left ~237dp of empty panel on the
+                    // right of the caption (2026-10-21). The caption wraps to the panel now.
+                    modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     Text(
