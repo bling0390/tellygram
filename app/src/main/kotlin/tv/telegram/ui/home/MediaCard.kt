@@ -172,7 +172,10 @@ private fun BoxScope.MediaTextCell(item: MediaItem) {
         overflow = TextOverflow.Ellipsis,
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 8.dp, vertical = 12.dp),
+            // 10dp top/bottom (not the frame's 12) so six 16dp lines fit the 96dp body:
+            // with 12 the font padding left only five full lines plus an ellipsis
+            // (product, 2026-10-21).
+            .padding(horizontal = 8.dp, vertical = 10.dp),
     )
 }
 
