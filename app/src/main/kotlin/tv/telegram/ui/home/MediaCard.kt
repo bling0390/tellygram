@@ -6,6 +6,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -52,6 +53,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.font.FontWeight
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import tv.telegram.td.ChatItem
 import tv.telegram.td.ChatType
@@ -71,7 +74,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.material.icons.outlined.AudioFile
-import androidx.compose.material.icons.outlined.Collections
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -123,12 +125,13 @@ import androidx.compose.ui.graphics.drawscope.Stroke
  */
 @Composable
 internal fun BoxScope.MediaCardContent(item: MediaItem, state: HomeState) {
-    when (val kind = item.cellKind()) {
-        // Placeholder-only kinds: the design draws one glyph, centred.
+    when (item.cellKind()) {
+        // Audio is the one glyph-only kind the design draws.
         is MediaCellKind.Audio -> MediaGlyph(Icons.Outlined.AudioFile)
-        is MediaCellKind.Text -> MediaGlyphFromRes(R.drawable.ic_media_text_snippet)
-        // Album: Collections glyph with the member count underneath.
-        is MediaCellKind.Album -> MediaAlbumCell(kind.count)
+        // Text: the message body itself, as the design draws it (2026-10-21).
+        is MediaCellKind.Text -> MediaTextCell(item)
+        // Album: the members as an aspect-ratio collage (2026-10-21).
+        is MediaCellKind.Album -> MediaAlbumMosaic(item)
         // Photo / video: the thumbnail is the card; the file glyph stands in when there is
         // nothing to show.
         is MediaCellKind.Photo -> MediaThumbnail(item, state, isVideo = false)
@@ -151,38 +154,94 @@ private fun BoxScope.MediaGlyph(imageVector: ImageVector) {
     )
 }
 
-/** The one glyph that genuinely differs from Material's set, so it ships as an asset. */
+/**
+ * Text card (design 3645:2269): the message body, 12/8 padding, 12/16 Medium, clipped at six
+ * lines. No sender, time or title (product, 2026-10-21).
+ */
 @Composable
-private fun BoxScope.MediaGlyphFromRes(@DrawableRes res: Int) {
-    Icon(
-        painter = painterResource(res),
-        contentDescription = null,
-        tint = HomeSpec.OnSurface,
+private fun BoxScope.MediaTextCell(item: MediaItem) {
+    Text(
+        text = item.caption.orEmpty(),
+        style = MaterialTheme.typography.labelMedium.copy(
+            fontSize = 12.sp,
+            lineHeight = 16.sp,
+            fontWeight = FontWeight.Medium,
+        ),
+        color = HomeSpec.OnSurface,
+        maxLines = 6,
+        overflow = TextOverflow.Ellipsis,
         modifier = Modifier
-            .align(Alignment.Center)
-            .size(48.dp),
+            .fillMaxSize()
+            .padding(horizontal = 8.dp, vertical = 12.dp),
     )
 }
 
-/** Album card: Collections glyph + "+N" (design: 48dp glyph, 8dp gap, 14/20 label). */
+/**
+ * Album card (design 3638:2249): the members as a collage that keeps each one's aspect ratio
+ * and fills the card exactly, with 2dp seams. Small images are TDLib's embedded
+ * minithumbnails — nothing to download and nothing big to decode. No glyph, no "+N"
+ * (product, 2026-10-21).
+ */
 @Composable
-private fun BoxScope.MediaAlbumCell(count: Int) {
-    Column(
-        modifier = Modifier.align(Alignment.Center),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Icon(
-            imageVector = Icons.Outlined.Collections,
-            contentDescription = null,
-            tint = HomeSpec.OnSurface,
-            modifier = Modifier.size(48.dp),
-        )
-        Text(
-            text = "+" + count.toString(),
-            style = MaterialTheme.typography.labelLarge,
-            color = HomeSpec.OnSurface,
-        )
+private fun BoxScope.MediaAlbumMosaic(item: MediaItem) {
+    val members = item.albumMembers.ifEmpty { listOf(item) }
+    val density = LocalDensity.current
+    BoxWithConstraints(Modifier.matchParentSize()) {
+        val widthPx = constraints.maxWidth.toFloat()
+        val heightPx = constraints.maxHeight.toFloat()
+        if (widthPx <= 0f || heightPx <= 0f) return@BoxWithConstraints
+
+        val aspects = remember(item.messageId, members.size) {
+            members.map { member ->
+                if (member.width > 0 && member.height > 0) {
+                    member.width.toFloat() / member.height
+                } else {
+                    1f
+                }
+            }
+        }
+        val gapPx = with(density) { 2.dp.toPx() }
+        val rects = remember(item.messageId, members.size, widthPx, heightPx) {
+            albumMosaicRects(aspects, widthPx, heightPx, gap = gapPx)
+        }
+
+        rects.forEachIndexed { index, rect ->
+            val member = members.getOrNull(index) ?: return@forEachIndexed
+            val thumbnail = member.minithumbnail
+            Box(
+                modifier = Modifier
+                    .offset(
+                        x = with(density) { rect.left.toDp() },
+                        y = with(density) { rect.top.toDp() },
+                    )
+                    .size(
+                        width = with(density) { rect.width.toDp() },
+                        height = with(density) { rect.height.toDp() },
+                    )
+                    .clip(RoundedCornerShape(HomeSpec.Corner))
+                    .background(HomeSpec.SurfaceContainer),
+            ) {
+                if (thumbnail != null) {
+                    AsyncImage(
+                        model = thumbnail,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.matchParentSize(),
+                    )
+                } else {
+                    Icon(
+                        imageVector = if (member.type == MediaType.Video) {
+                            Icons.Outlined.VideoFile
+                        } else {
+                            Icons.Outlined.Image
+                        },
+                        contentDescription = null,
+                        tint = HomeSpec.OnSurface,
+                        modifier = Modifier.align(Alignment.Center).size(16.dp),
+                    )
+                }
+            }
+        }
     }
 }
 
