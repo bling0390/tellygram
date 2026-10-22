@@ -2,20 +2,61 @@
 
 package tv.telegram.ui.photo
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.AspectRatio
+import androidx.compose.material.icons.outlined.BrokenImage
+import androidx.compose.material.icons.outlined.Check
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.ScreenRotation
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.KeyEventType
@@ -24,10 +65,17 @@ import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import java.io.File
+import kotlinx.coroutines.delay
 import tv.telegram.td.FileDownloadState
 import tv.telegram.td.MediaItem
 import tv.telegram.td.MediaType
@@ -36,13 +84,32 @@ import tv.telegram.ui.focus.BackRegistration
 import tv.telegram.ui.home.HomeSpec
 import tv.telegram.ui.home.HomeState
 
+/** Figma 3656:2929 aspect menu: crop the photo to this ratio (Cover). */
+private enum class PreviewAspect(val label: String, val ratio: Float) {
+    Square("1:1", 1f),
+    FourThree("4:3", 4f / 3f),
+    Wide("16:9", 16f / 9f),
+}
+
+/** Figma 3653:2222 rotation menu; display only, never touches the file. */
+private val RotationOptions = listOf("0°", "90°", "180°", "270°")
+
+/** Design: content column 836dp inside the full-width bar (960 canvas, 62 a side). */
+private val BarContentWidth = 836.dp
+
+/** How long the bar stays up after the last interaction. */
+private const val BarAutoHideMs = 4_000L
+
 /** Indices of the photo items, which is what Left/Right step through here. */
 internal fun photoIndices(items: List<MediaItem>): List<Int> =
     items.mapIndexedNotNull { i, m -> if (m.type == MediaType.Photo) i else null }
 
 /**
- * Full-screen photo preview: what confirming an image card opens. Left/Right move to
- * the neighbouring photo (never onto a video), Back returns to the grid.
+ * Full-screen photo preview (Figma 3656:2929 / 3656:3016 / 3658:3269 / 3658:3117 / 3653:2222).
+ *
+ * Left/Right walk the photos, Back exits. The bottom bar auto-hides; any key brings it back and
+ * hands focus to the current photo's slot in the strip. Aspect crops (Cover), rotation is display
+ * only and lasts for this visit, Info is a placeholder for now (2026-10-22 decisions).
  */
 @Composable
 internal fun PhotoPreviewScreen(
@@ -59,78 +126,551 @@ internal fun PhotoPreviewScreen(
     val ownItems by state.mediaItems.collectAsStateWithLifecycle()
     val items = overrideItems ?: ownItems
     val fileStates by state.fileStates.collectAsStateWithLifecycle()
-    val focus = remember { FocusRequester() }
+    val imageFocus = remember { FocusRequester() }
 
-    LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
+    // Display settings last for this visit only: entering or leaving the preview resets them.
+    var rotation by remember { mutableIntStateOf(0) }
+    var aspect by remember { mutableStateOf<PreviewAspect?>(null) }
+    var aspectMenu by remember { mutableStateOf(false) }
+    var rotationMenu by remember { mutableStateOf(false) }
+
+    var barVisible by remember { mutableStateOf(true) }
+    var lastInteraction by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    var retryTick by remember { mutableIntStateOf(0) }
+
     LaunchedEffect(index, items.size) {
         if (index !in items.indices) onClose()
     }
-    // Same contract as the player: tell the grid which card was open so focus can go
-    // back to it. Out-of-range closes are not a return, so they do not record one.
     if (index !in items.indices) return
     val item = items[index]
 
     // Record the return target when the preview OPENS, not only when our Back
-    // registration runs (2026-10-21). A Back that the system or the NavHost pops for us
-    // never reaches that registration — the log showed no "photo preview back" at all and
-    // the card lost focus on return. With the hint pending from the start, every pop path
-    // leaves it behind, so the grid can hand focus back to the card.
+    // registration runs (2026-10-21): a pop the system or the NavHost handles would leave no hint.
     LaunchedEffect(item.messageId) {
-        android.util.Log.i("HomeBack", "photo preview open: hint=${item.messageId}")
         state.setPlayerReturnFocus(item.messageId)
     }
 
-    // Same contract as the player: tell the grid which card was open so focus can go
-    // back to it. Out-of-range closes are not a return, so they do not record one.
     BackRegistration(BackPriority.PLAYER, enabled = true) {
-        android.util.Log.i("HomeBack", "photo preview back: hint=${item.messageId}")
-        state.setPlayerReturnFocus(item.messageId)
-        onClose()
+        when {
+            aspectMenu -> aspectMenu = false
+            rotationMenu -> rotationMenu = false
+            barVisible -> {
+                barVisible = false
+                runCatching { imageFocus.requestFocus() }
+            }
+            else -> {
+                state.setPlayerReturnFocus(item.messageId)
+                onClose()
+            }
+        }
     }
-    val localPath = (fileStates[item.fileId] as? FileDownloadState.Local)?.path
-        ?: item.localPath
-        ?: item.thumbnailLocalPath
 
-    LaunchedEffect(item.fileId) {
-        if (localPath == null) state.ensureMediaFile(item.fileId, priority = 16)
+    // Keep the TV awake while a photo is on screen (the player does the same).
+    val view = LocalView.current
+    DisposableEffect(view) {
+        val previous = view.keepScreenOn
+        view.keepScreenOn = true
+        onDispose { view.keepScreenOn = previous }
+    }
+
+    val fileState = fileStates[item.fileId]
+    // Full-size file only: the thumbnail is a placeholder, never the "photo" (2026-10-22).
+    val fullPath = (fileState as? FileDownloadState.Local)?.path ?: item.localPath
+    val thumbPath = item.thumbnailLocalPath
+    LaunchedEffect(item.fileId, retryTick) {
+        if (fullPath == null) state.ensureMediaFile(item.fileId, priority = 16)
+    }
+
+    // Auto-hide: any interaction pushes the deadline out.
+    LaunchedEffect(barVisible, lastInteraction) {
+        if (!barVisible) return@LaunchedEffect
+        delay(BarAutoHideMs)
+        barVisible = false
+        runCatching { imageFocus.requestFocus() }
+    }
+
+    val photos = remember(items) { photoIndices(items) }
+    val position = photos.indexOf(index)
+
+    fun reveal() {
+        barVisible = true
+        lastInteraction = System.currentTimeMillis()
     }
 
     fun step(delta: Int) {
-        val photos = photoIndices(items)
-        val next = photos.getOrNull(photos.indexOf(index) + delta) ?: return
+        val next = photos.getOrNull(position + delta) ?: return
         onNavigateTo(next)
     }
+
+    val isError = fileState is FileDownloadState.Failed
+    val aspectRatio = aspect?.ratio
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            // #1A1C1E — the home's background, not pure black (product, 2026-10-21).
             .background(HomeSpec.Background)
-            .focusRequester(focus)
+            .clipToBounds()
+            .focusRequester(imageFocus)
             .focusable()
             .onKeyEvent { event: KeyEvent ->
-                if (event.type != KeyEventType.KeyUp) {
-                    false
-                } else {
-                    when (event.key) {
-                        Key.DirectionLeft -> { step(-1); true }
-                        Key.DirectionRight -> { step(1); true }
-                        else -> false
+                if (event.type != KeyEventType.KeyUp) return@onKeyEvent false
+                when (event.key) {
+                    Key.DirectionLeft -> {
+                        if (!barVisible) { step(-1); reveal(); true } else false
                     }
+                    Key.DirectionRight -> {
+                        if (!barVisible) { step(1); reveal(); true } else false
+                    }
+                    Key.DirectionUp, Key.DirectionDown -> {
+                        if (!barVisible) { reveal(); true } else false
+                    }
+                    Key.DirectionCenter, Key.Enter -> {
+                        if (!barVisible) { reveal(); true } else false
+                    }
+                    else -> false
                 }
             },
         contentAlignment = Alignment.Center,
     ) {
-        if (localPath != null) {
-            val ctx = LocalContext.current
+        when {
+            isError -> {
+                // Figma 3658:3269 / 3658:3117.
+                ErrorPane(onRetry = { retryTick++; reveal() })
+            }
+            fullPath != null -> {
+                val ctx = LocalContext.current
+                AsyncImage(
+                    model = remember(fullPath) {
+                        ImageRequest.Builder(ctx).data(File(fullPath)).build()
+                    },
+                    contentDescription = item.caption,
+                    contentScale = if (aspectRatio != null) ContentScale.Crop else ContentScale.Fit,
+                    modifier = Modifier
+                        .then(
+                            if (aspectRatio != null) Modifier.aspectRatio(aspectRatio)
+                            else Modifier.fillMaxSize()
+                        )
+                        .graphicsLayer { rotationZ = rotation.toFloat() },
+                )
+            }
+            else -> {
+                // Placeholder first (the thumbnail file, else the embedded minithumbnail paints
+                // instantly), then the 48dp ring with a real percentage (2026-10-22).
+                val ctx = LocalContext.current
+                if (thumbPath != null) {
+                    AsyncImage(
+                        model = remember(thumbPath) {
+                            ImageRequest.Builder(ctx).data(File(thumbPath)).crossfade(false).build()
+                        },
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                } else {
+                    item.minithumbnail?.let { mini ->
+                        AsyncImage(
+                            model = mini,
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
+                }
+                Box(contentAlignment = Alignment.Center) {
+                    val expected = (fileState as? FileDownloadState.Downloading)?.expected ?: 0L
+                    val downloaded = (fileState as? FileDownloadState.Downloading)?.downloaded ?: 0L
+                    val fraction = if (expected > 0L) (downloaded.toFloat() / expected).coerceIn(0f, 1f) else null
+                    if (fraction != null) {
+                        CircularProgressIndicator(
+                            progress = { fraction },
+                            modifier = Modifier.size(48.dp),
+                            color = HomeSpec.OnSurface,
+                            trackColor = HomeSpec.SurfaceContainer,
+                        )
+                        Text(
+                            text = "${(fraction * 100).toInt()}%",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = HomeSpec.OnSurface,
+                        )
+                    } else {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(48.dp),
+                            color = HomeSpec.OnSurface,
+                        )
+                    }
+                }
+            }
+        }
+
+        // Bottom bar: gradient + shadow per Figma, content column 836dp fixed.
+        AnimatedVisibility(
+            visible = barVisible,
+            enter = fadeIn(tween(150)),
+            exit = fadeOut(tween(150)),
+            modifier = Modifier.align(Alignment.BottomCenter),
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .shadow(10.dp, RoundedCornerShape(4.dp), ambientColor = Color.Black, spotColor = Color.Black)
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(Color(0x14333333), Color(0x14000000)),
+                        ),
+                        RoundedCornerShape(4.dp),
+                    )
+                    .testTag("photo-bar")
+                    .padding(top = 8.dp, bottom = 48.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                Box(
+                    modifier = Modifier.width(BarContentWidth),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = "${position + 1} / ${photos.size}",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = HomeSpec.OnSurface,
+                        modifier = Modifier.testTag("photo-counter"),
+                    )
+                    if (!isError) {
+                        // Figma: aspect ratio (active when a crop is set), rotation, info.
+                        Row(
+                            modifier = Modifier.align(Alignment.CenterEnd),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            RoundIconButton(
+                                icon = Icons.Outlined.AspectRatio,
+                                active = aspect != null || aspectMenu,
+                                onClick = { aspectMenu = true },
+                                testTag = "photo-aspect",
+                            )
+                            RoundIconButton(
+                                icon = Icons.Outlined.ScreenRotation,
+                                active = rotationMenu,
+                                onClick = { rotationMenu = true },
+                                testTag = "photo-rotation",
+                            )
+                            RoundIconButton(
+                                icon = Icons.Outlined.Info,
+                                active = false,
+                                // Placeholder for now (2026-10-22 decision).
+                                onClick = { },
+                                testTag = "photo-info",
+                            )
+                        }
+                    }
+                }
+
+                ThumbStrip(
+                    photos = photos,
+                    current = index,
+                    items = items,
+                    state = state,
+                    visible = barVisible,
+                    onJump = onNavigateTo,
+                    onInteraction = { lastInteraction = System.currentTimeMillis() },
+                )
+            }
+        }
+
+        if (aspectMenu) {
+            PreviewMenu(
+                rows = PreviewAspect.entries.map { it.label },
+                selected = PreviewAspect.entries.indexOf(aspect),
+                onSelect = { i ->
+                    aspect = if (PreviewAspect.entries.getOrNull(i) == aspect) null else PreviewAspect.entries.getOrNull(i)
+                    aspectMenu = false
+                },
+                onDismiss = { aspectMenu = false },
+                offset = IntOffset(-152, -148),
+            )
+        }
+        if (rotationMenu) {
+            PreviewMenu(
+                rows = RotationOptions,
+                selected = RotationOptions.indexOfFirst { it == "${rotation}°" },
+                onSelect = { i ->
+                    rotation = (i.coerceIn(0, 3)) * 90
+                    rotationMenu = false
+                },
+                onDismiss = { rotationMenu = false },
+                offset = IntOffset(-152, -196),
+            )
+        }
+    }
+}
+
+/** Figma 3658:3269: broken-image glyph, "Try again" pill and nothing else over the photo. */
+@Composable
+private fun ErrorPane(onRetry: () -> Unit) {
+    var focused by remember { mutableStateOf(false) }
+    val focus = remember { FocusRequester() }
+    LaunchedEffect(Unit) {
+        withFrameNanos { }
+        runCatching { focus.requestFocus() }
+    }
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Icon(
+            imageVector = Icons.Outlined.BrokenImage,
+            contentDescription = null,
+            tint = HomeSpec.OnSurface,
+            modifier = Modifier.size(48.dp),
+        )
+        Box(Modifier.height(28.dp))
+        Box(
+            modifier = Modifier
+                .focusRequester(focus)
+                .clip(RoundedCornerShape(4.dp))
+                .background(if (focused) HomeSpec.White else HomeSpec.SurfaceContainer)
+                .onFocusChanged { focused = it.isFocused }
+                .focusable()
+                .onKeyEvent { ev ->
+                    if (ev.type == KeyEventType.KeyUp &&
+                        (ev.key == Key.DirectionCenter || ev.key == Key.Enter)
+                    ) {
+                        onRetry()
+                        true
+                    } else {
+                        false
+                    }
+                }
+                .testTag("photo-retry")
+                .padding(horizontal = 32.dp, vertical = 10.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = "Try again",
+                style = MaterialTheme.typography.titleSmall,
+                color = if (focused) HomeSpec.InverseOnSurface else HomeSpec.OnSurface,
+            )
+        }
+    }
+}
+
+/** 40dp circle, 20dp glyph; white when active or focused, surface-container otherwise. */
+@Composable
+private fun RoundIconButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    active: Boolean,
+    onClick: () -> Unit,
+    testTag: String,
+) {
+    var focused by remember { mutableStateOf(false) }
+    val highlighted = active || focused
+    Box(
+        modifier = Modifier
+            .size(40.dp)
+            .clip(CircleShape)
+            .background(if (highlighted) HomeSpec.White else Color(0xCC1E2023))
+            .onFocusChanged { focused = it.isFocused }
+            .focusable()
+            .onKeyEvent { ev ->
+                if (ev.type == KeyEventType.KeyUp &&
+                    (ev.key == Key.DirectionCenter || ev.key == Key.Enter)
+                ) {
+                    onClick()
+                    true
+                } else {
+                    false
+                }
+            }
+            .testTag(testTag),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = if (highlighted) HomeSpec.InverseOnSurface else HomeSpec.OnSurface,
+            modifier = Modifier.size(20.dp),
+        )
+    }
+}
+
+/** Figma: 112x84 thumbs, 10dp apart, the current one carrying a 3dp white stroke. */
+@Composable
+private fun ThumbStrip(
+    photos: List<Int>,
+    current: Int,
+    items: List<MediaItem>,
+    state: HomeState,
+    /** Only claim focus while the bar is up; a hidden bar must leave it on the photo. */
+    visible: Boolean,
+    onJump: (Int) -> Unit,
+    onInteraction: () -> Unit,
+) {
+    val listState = rememberLazyListState()
+    val position = photos.indexOf(current)
+    val currentFocus = remember { FocusRequester() }
+
+    LaunchedEffect(position) {
+        if (position >= 0) runCatching { listState.animateScrollToItem(position) }
+    }
+    LaunchedEffect(position, listState, visible) {
+        if (!visible || position < 0) return@LaunchedEffect
+        withFrameNanos { }
+        runCatching { currentFocus.requestFocus() }
+    }
+
+    LazyRow(
+        state = listState,
+        modifier = Modifier.width(BarContentWidth).testTag("photo-strip"),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        itemsIndexed(photos) { i, itemIndex ->
+            val member = items.getOrNull(itemIndex) ?: return@itemsIndexed
+            ThumbCell(
+                member = member,
+                isCurrent = i == position,
+                requester = if (i == position) currentFocus else null,
+                onInteraction = onInteraction,
+                onClick = { onJump(itemIndex) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun ThumbCell(
+    member: MediaItem,
+    isCurrent: Boolean,
+    requester: FocusRequester?,
+    onInteraction: () -> Unit,
+    onClick: () -> Unit,
+) {
+    var focused by remember { mutableStateOf(false) }
+    val ctx = LocalContext.current
+    val thumbFileId = member.thumbnailFileId ?: 0
+    val localPath = member.thumbnailLocalPath ?: member.localPath
+
+    Box(
+        modifier = Modifier
+            .size(width = 112.dp, height = 84.dp)
+            .clip(RoundedCornerShape(4.dp))
+            .background(HomeSpec.SurfaceContainer)
+            .then(if (isCurrent) Modifier.border(3.dp, HomeSpec.White, RoundedCornerShape(4.dp)) else Modifier)
+            .let { if (requester != null) it.focusRequester(requester) else it }
+            .onFocusChanged {
+                focused = it.isFocused
+                if (it.isFocused) onInteraction()
+            }
+            .focusable()
+            .onKeyEvent { ev ->
+                if (ev.type == KeyEventType.KeyUp &&
+                    (ev.key == Key.DirectionCenter || ev.key == Key.Enter)
+                ) {
+                    onClick()
+                    true
+                } else {
+                    false
+                }
+            }
+            .testTag("photo-thumb"),
+        contentAlignment = Alignment.Center,
+    ) {
+        member.minithumbnail?.let { mini ->
             AsyncImage(
-                model = remember(localPath) { ImageRequest.Builder(ctx).data(File(localPath)).build() },
-                contentDescription = item.caption,
-                contentScale = ContentScale.Fit,
+                model = mini,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize(),
             )
-        } else {
-            CircularProgressIndicator(color = Color.White)
+        }
+        if (localPath != null) {
+            AsyncImage(
+                model = remember(localPath) {
+                    ImageRequest.Builder(ctx).data(File(localPath)).crossfade(false).build()
+                },
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
+        if (focused && !isCurrent) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .border(2.dp, HomeSpec.White.copy(alpha = 0.6f), RoundedCornerShape(4.dp)),
+            )
+        }
+    }
+}
+
+/** Menu popup (216 wide, radius 16, background, elevation): rows select with OK. */
+@Composable
+private fun PreviewMenu(
+    rows: List<String>,
+    selected: Int,
+    onSelect: (Int) -> Unit,
+    onDismiss: () -> Unit,
+    offset: IntOffset,
+) {
+    val rowFocus = remember { FocusRequester() }
+    LaunchedEffect(Unit) {
+        withFrameNanos { }
+        runCatching { rowFocus.requestFocus() }
+    }
+    Popup(
+        alignment = Alignment.BottomEnd,
+        offset = offset,
+        onDismissRequest = onDismiss,
+        properties = PopupProperties(focusable = true),
+    ) {
+        Column(
+            modifier = Modifier
+                .width(216.dp)
+                .shadow(8.dp, RoundedCornerShape(16.dp), ambientColor = Color.Black, spotColor = Color.Black)
+                .background(HomeSpec.Background, RoundedCornerShape(16.dp))
+                .testTag("photo-menu")
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+        ) {
+            rows.forEachIndexed { i, label ->
+                val active = i == selected
+                var focused by remember { mutableStateOf(false) }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(
+                            when {
+                                active -> HomeSpec.White
+                                focused -> HomeSpec.SurfaceContainer
+                                else -> Color.Transparent
+                            },
+                        )
+                        .let { if (active || (selected < 0 && i == 0)) it.focusRequester(rowFocus) else it }
+                        .onFocusChanged { focused = it.isFocused }
+                        .focusable()
+                        .onKeyEvent { ev ->
+                            if (ev.type == KeyEventType.KeyUp &&
+                                (ev.key == Key.DirectionCenter || ev.key == Key.Enter)
+                            ) {
+                                onSelect(i)
+                                true
+                            } else {
+                                false
+                            }
+                        }
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text(
+                        text = label,
+                        style = MaterialTheme.typography.titleSmall,
+                        color = if (active) HomeSpec.InverseOnSurface else HomeSpec.White,
+                    )
+                    if (active) {
+                        Icon(
+                            imageVector = Icons.Outlined.Check,
+                            contentDescription = null,
+                            tint = HomeSpec.InverseOnSurface,
+                            modifier = Modifier.size(18.9.dp),
+                        )
+                    }
+                }
+            }
         }
     }
 }

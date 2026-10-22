@@ -18,6 +18,8 @@ import java.util.concurrent.ConcurrentHashMap
 sealed class FileDownloadState {
     data object Remote : FileDownloadState()
     data class Pending(val expectedSize: Int = 0) : FileDownloadState()
+    /** Bytes on disk so a plain download can show a real percentage (2026-10-22). */
+    data class Downloading(val downloaded: Long, val expected: Long) : FileDownloadState()
     data class Local(val path: String) : FileDownloadState()
     data class Failed(val reason: String) : FileDownloadState()
 }
@@ -142,6 +144,18 @@ class TdFileRepository(
                 previewDownloads.remove(fileId)
                 pr.deferred.complete(local.path)
             }
+        }
+
+        // Plain downloads (photo preview, thumbnails): expose the byte counts so the UI can
+        // show a real percentage instead of an indeterminate spinner (2026-10-22). Streaming
+        // keeps its own state below, with the activeStart clamp for re-pointed windows.
+        if (streamingStates[fileId] == null && local.isDownloadingActive && !local.isDownloadingCompleted) {
+            _states.value = _states.value + (
+                fileId to FileDownloadState.Downloading(
+                    downloaded = local.downloadedSize.toLong(),
+                    expected = file.expectedSize.toLong(),
+                )
+                )
         }
 
         // Progressive download progress for streaming playback.
