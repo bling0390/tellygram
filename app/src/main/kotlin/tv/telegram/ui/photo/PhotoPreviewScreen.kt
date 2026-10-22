@@ -255,10 +255,11 @@ internal fun PhotoPreviewScreen(
                 if (event.type != KeyEventType.KeyUp) return@onKeyEvent false
                 when (event.key) {
                     Key.DirectionLeft -> {
-                        if (!barVisible) { step(-1); reveal(); true } else false
+                        // Left/Right only walk the photos: the bar stays hidden (2026-10-22).
+                        if (!barVisible) { step(-1); true } else false
                     }
                     Key.DirectionRight -> {
-                        if (!barVisible) { step(1); reveal(); true } else false
+                        if (!barVisible) { step(1); true } else false
                     }
                     Key.DirectionUp, Key.DirectionDown -> {
                         if (!barVisible) { reveal(); true } else false
