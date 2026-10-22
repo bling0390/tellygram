@@ -141,6 +141,9 @@ internal fun PhotoPreviewScreen(
     val items = overrideItems ?: ownItems
     val fileStates by state.fileStates.collectAsStateWithLifecycle()
     val imageFocus = remember { FocusRequester() }
+    // The current strip slot: the bar hands focus here on open, and Down from the action
+    // buttons returns to it (2026-10-22).
+    val stripFocus = remember { FocusRequester() }
 
     // Display settings last for this visit only: entering or leaving the preview resets them.
     var rotation by remember { mutableIntStateOf(0) }
@@ -151,7 +154,8 @@ internal fun PhotoPreviewScreen(
     var aspectAnchor by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
     var rotationAnchor by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
 
-    var barVisible by remember { mutableStateOf(true) }
+    // Hidden on entry: the photo gets the screen, any key reveals the bar (2026-10-22).
+    var barVisible by remember { mutableStateOf(false) }
     var lastInteraction by remember { mutableLongStateOf(System.currentTimeMillis()) }
     // Once the user moves into the strip or a button the auto-hide timer stops, the way the
     // player's controller stays up while its button row has focus (2026-10-22).
@@ -386,6 +390,7 @@ internal fun PhotoPreviewScreen(
                                     lastInteraction = System.currentTimeMillis()
                                 },
                                 onBounds = { aspectAnchor = it },
+                                downFocus = stripFocus,
                                 testTag = "photo-aspect",
                             )
                             RoundIconButton(
@@ -396,6 +401,7 @@ internal fun PhotoPreviewScreen(
                                     lastInteraction = System.currentTimeMillis()
                                 },
                                 onBounds = { rotationAnchor = it },
+                                downFocus = stripFocus,
                                 testTag = "photo-rotation",
                             )
                             RoundIconButton(
@@ -406,6 +412,7 @@ internal fun PhotoPreviewScreen(
                                     interacted = true
                                     lastInteraction = System.currentTimeMillis()
                                 },
+                                downFocus = stripFocus,
                                 testTag = "photo-info",
                             )
                         }
@@ -419,9 +426,11 @@ internal fun PhotoPreviewScreen(
                     state = state,
                     fileStates = fileStates,
                     visible = barVisible,
+                    currentFocus = stripFocus,
                     onSelect = { current = it },
                     onInteraction = {
-                        interacted = true
+                        // The strip is the bar's default focus: it only restarts the timer.
+                        // Only the buttons (below) stop the auto-hide.
                         lastInteraction = System.currentTimeMillis()
                     },
                 )
@@ -512,6 +521,7 @@ private fun RoundIconButton(
     testTag: String,
     onFocus: () -> Unit = {},
     onBounds: (Rect) -> Unit = {},
+    downFocus: FocusRequester? = null,
 ) {
     var focused by remember { mutableStateOf(false) }
     Box(
@@ -521,6 +531,8 @@ private fun RoundIconButton(
             // No selected state: white only while focused (2026-10-22).
             .background(if (focused) HomeSpec.White else Color(0xCC1E2023))
             .onGloballyPositioned { onBounds(it.boundsInWindow()) }
+            // Down from the button row returns to the current strip slot (2026-10-22).
+            .focusProperties { if (downFocus != null) down = downFocus }
             .onFocusChanged {
                 focused = it.isFocused
                 if (it.isFocused) onFocus()
@@ -558,12 +570,12 @@ private fun ThumbStrip(
     fileStates: Map<Int, FileDownloadState>,
     /** Only claim focus while the bar is up; a hidden bar must leave it on the photo. */
     visible: Boolean,
+    currentFocus: FocusRequester,
     onSelect: (Int) -> Unit,
     onInteraction: () -> Unit,
 ) {
     val listState = rememberLazyListState()
     val position = photos.indexOf(current)
-    val currentFocus = remember { FocusRequester() }
 
     LaunchedEffect(position) {
         if (position >= 0) runCatching { listState.animateScrollToItem(position) }
@@ -655,7 +667,7 @@ private fun ThumbCell(
             AsyncImage(
                 model = mini,
                 contentDescription = null,
-                contentScale = ContentScale.Crop,
+                contentScale = ContentScale.Fit,
                 modifier = Modifier.fillMaxSize(),
             )
         }
@@ -665,7 +677,7 @@ private fun ThumbCell(
                     ImageRequest.Builder(ctx).data(File(localPath)).crossfade(false).build()
                 },
                 contentDescription = null,
-                contentScale = ContentScale.Crop,
+                contentScale = ContentScale.Fit,
                 modifier = Modifier.fillMaxSize(),
             )
         }
@@ -684,8 +696,13 @@ private fun PreviewMenu(
     anchor: Rect?,
 ) {
     val rowFocus = remember { FocusRequester() }
+    // Rows stay non-focusable for one frame: otherwise the popup window auto-focuses the first
+    // row before the request lands on the selected one (2026-10-22).
+    var armed by remember { mutableStateOf(false) }
     val gapPx = with(LocalDensity.current) { 16.dp.roundToPx() }
     LaunchedEffect(Unit) {
+        withFrameNanos { }
+        armed = true
         withFrameNanos { }
         // The requester sits on the selected row, so the menu opens on the current choice.
         runCatching { rowFocus.requestFocus() }
@@ -721,7 +738,7 @@ private fun PreviewMenu(
                         .background(bg)
                         .let { if (i == selected.coerceAtLeast(0)) it.focusRequester(rowFocus) else it }
                         .onFocusChanged { focused = it.isFocused }
-                        .focusable()
+                        .let { if (armed) it.focusable() else it }
                         .onKeyEvent { ev ->
                             if (ev.type == KeyEventType.KeyUp &&
                                 (ev.key == Key.DirectionCenter || ev.key == Key.Enter)
@@ -770,7 +787,8 @@ private class AboveButtonPosition(
         popupContentSize: IntSize,
     ): IntOffset {
         val a = anchor
-        val x = a?.let { (it.right - popupContentSize.width).toInt() }
+        // Centred on the button's vertical axis (2026-10-22).
+        val x = a?.let { (it.center.x - popupContentSize.width / 2f).toInt() }
             ?: (windowSize.width - popupContentSize.width)
         val y = a?.let { (it.top - popupContentSize.height - gapPx).toInt() }
             ?: (windowSize.height - popupContentSize.height)
