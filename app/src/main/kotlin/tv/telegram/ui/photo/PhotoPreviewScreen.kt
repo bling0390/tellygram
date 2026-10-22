@@ -67,6 +67,7 @@ import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.boundsInWindow
@@ -251,6 +252,16 @@ internal fun PhotoPreviewScreen(
             .clipToBounds()
             .focusRequester(imageFocus)
             .focusable()
+            // Back with the bar up hides it before anything else sees the press; the second
+            // Back (bar hidden) falls through to the controller and exits the preview.
+            .onPreviewKeyEvent { event: KeyEvent ->
+                if (event.key == Key.Back && barVisible) {
+                    hideBar()
+                    true
+                } else {
+                    false
+                }
+            }
             .onKeyEvent { event: KeyEvent ->
                 if (event.type != KeyEventType.KeyUp) return@onKeyEvent false
                 when (event.key) {
@@ -567,12 +578,14 @@ private fun RoundIconButton(
             }
             .focusable()
             .onKeyEvent { ev ->
-                if (ev.type != KeyEventType.KeyUp) {
-                    false
-                } else if (ev.key == Key.DirectionUp) {
+                // Up acts on KeyDown: the KeyUp of that same press is delivered to whichever
+                // control has focus by then (2026-10-22).
+                if (ev.type == KeyEventType.KeyDown && ev.key == Key.DirectionUp) {
                     onUp()
                     true
-                } else if (ev.key == Key.DirectionCenter || ev.key == Key.Enter) {
+                } else if (ev.type == KeyEventType.KeyUp &&
+                    (ev.key == Key.DirectionCenter || ev.key == Key.Enter)
+                ) {
                     onClick()
                     true
                 } else {
