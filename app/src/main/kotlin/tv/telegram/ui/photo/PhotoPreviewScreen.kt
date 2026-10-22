@@ -43,6 +43,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
@@ -87,6 +88,7 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import java.io.File
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import tv.telegram.td.FileDownloadState
 import tv.telegram.td.MediaItem
 import tv.telegram.td.MediaType
@@ -161,6 +163,18 @@ internal fun PhotoPreviewScreen(
     // player's controller stays up while its button row has focus (2026-10-22).
     var interacted by remember { mutableStateOf(false) }
     var retryTick by remember { mutableIntStateOf(0) }
+    val scope = rememberCoroutineScope()
+    // Hide the bar and hand focus back after the fade, like the player's controller
+    // (2026-10-22). Down from the strip and Up from the buttons call this too.
+    val hideBar: () -> Unit = {
+        barVisible = false
+        interacted = false
+        scope.launch {
+            delay(400L)
+            runCatching { imageFocus.requestFocus() }
+        }
+        Unit
+    }
 
     LaunchedEffect(current, items.size) {
         if (current !in items.indices) onClose()
@@ -178,10 +192,7 @@ internal fun PhotoPreviewScreen(
         when {
             aspectMenu -> aspectMenu = false
             rotationMenu -> rotationMenu = false
-            barVisible -> {
-                barVisible = false
-                runCatching { imageFocus.requestFocus() }
-            }
+            barVisible -> hideBar()
             else -> {
                 state.setPlayerReturnFocus(item.messageId)
                 onClose()
@@ -312,8 +323,9 @@ internal fun PhotoPreviewScreen(
                         CircularProgressIndicator(
                             progress = { fraction },
                             modifier = Modifier.size(48.dp),
-                            color = HomeSpec.OnSurface,
-                            trackColor = HomeSpec.SurfaceContainer,
+                            // Figma: the sweep is white at 8%, the track is white (2026-10-22).
+                            color = Color.White.copy(alpha = 0.08f),
+                            trackColor = Color.White,
                         )
                         Text(
                             text = "${(fraction * 100).toInt()}%",
@@ -323,7 +335,7 @@ internal fun PhotoPreviewScreen(
                     } else {
                         CircularProgressIndicator(
                             modifier = Modifier.size(48.dp),
-                            color = HomeSpec.OnSurface,
+                            color = Color.White.copy(alpha = 0.08f),
                         )
                     }
                 }
@@ -391,6 +403,8 @@ internal fun PhotoPreviewScreen(
                                 },
                                 onBounds = { aspectAnchor = it },
                                 downFocus = stripFocus,
+                                menuOpen = aspectMenu,
+                                onUp = hideBar,
                                 testTag = "photo-aspect",
                             )
                             RoundIconButton(
@@ -402,6 +416,8 @@ internal fun PhotoPreviewScreen(
                                 },
                                 onBounds = { rotationAnchor = it },
                                 downFocus = stripFocus,
+                                menuOpen = rotationMenu,
+                                onUp = hideBar,
                                 testTag = "photo-rotation",
                             )
                             RoundIconButton(
@@ -413,6 +429,8 @@ internal fun PhotoPreviewScreen(
                                     lastInteraction = System.currentTimeMillis()
                                 },
                                 downFocus = stripFocus,
+                                menuOpen = false,
+                                onUp = hideBar,
                                 testTag = "photo-info",
                             )
                         }
@@ -427,6 +445,7 @@ internal fun PhotoPreviewScreen(
                     fileStates = fileStates,
                     visible = barVisible,
                     currentFocus = stripFocus,
+                    onDismissBar = hideBar,
                     onSelect = { current = it },
                     onInteraction = {
                         // The strip is the bar's default focus: it only restarts the timer.
@@ -522,26 +541,37 @@ private fun RoundIconButton(
     onFocus: () -> Unit = {},
     onBounds: (Rect) -> Unit = {},
     downFocus: FocusRequester? = null,
+    /** While this button's menu is open the button shows its default look (2026-10-22). */
+    menuOpen: Boolean = false,
+    /** Up from the button row hides the bar (2026-10-22). */
+    onUp: () -> Unit = {},
 ) {
     var focused by remember { mutableStateOf(false) }
+    val highlighted = focused && !menuOpen
     Box(
         modifier = Modifier
             .size(40.dp)
             .clip(CircleShape)
-            // No selected state: white only while focused (2026-10-22).
-            .background(if (focused) HomeSpec.White else Color(0xCC1E2023))
+            // No selected state: white only while focused, and never while its menu is open.
+            .background(if (highlighted) HomeSpec.White else Color(0xCC1E2023))
             .onGloballyPositioned { onBounds(it.boundsInWindow()) }
-            // Down from the button row returns to the current strip slot (2026-10-22).
-            .focusProperties { if (downFocus != null) down = downFocus }
+            // Down returns to the current strip slot; Up leaves the bar (2026-10-22).
+            .focusProperties {
+                if (downFocus != null) down = downFocus
+                up = FocusRequester.Cancel
+            }
             .onFocusChanged {
                 focused = it.isFocused
                 if (it.isFocused) onFocus()
             }
             .focusable()
             .onKeyEvent { ev ->
-                if (ev.type == KeyEventType.KeyUp &&
-                    (ev.key == Key.DirectionCenter || ev.key == Key.Enter)
-                ) {
+                if (ev.type != KeyEventType.KeyUp) {
+                    false
+                } else if (ev.key == Key.DirectionUp) {
+                    onUp()
+                    true
+                } else if (ev.key == Key.DirectionCenter || ev.key == Key.Enter) {
                     onClick()
                     true
                 } else {
@@ -554,7 +584,7 @@ private fun RoundIconButton(
         Icon(
             imageVector = icon,
             contentDescription = null,
-            tint = if (focused) HomeSpec.InverseOnSurface else HomeSpec.OnSurface,
+            tint = if (highlighted) HomeSpec.InverseOnSurface else HomeSpec.OnSurface,
             modifier = Modifier.size(20.dp),
         )
     }
@@ -573,6 +603,8 @@ private fun ThumbStrip(
     currentFocus: FocusRequester,
     onSelect: (Int) -> Unit,
     onInteraction: () -> Unit,
+    /** Down from the strip hides the bar (2026-10-22). */
+    onDismissBar: () -> Unit,
 ) {
     val listState = rememberLazyListState()
     val position = photos.indexOf(current)
@@ -600,6 +632,7 @@ private fun ThumbStrip(
                 fileStates = fileStates,
                 state = state,
                 onInteraction = onInteraction,
+                onDismissBar = onDismissBar,
                 onClick = { onSelect(itemIndex) },
             )
         }
@@ -614,6 +647,7 @@ private fun ThumbCell(
     fileStates: Map<Int, FileDownloadState>,
     state: HomeState,
     onInteraction: () -> Unit,
+    onDismissBar: () -> Unit,
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
@@ -638,6 +672,7 @@ private fun ThumbCell(
                 RoundedCornerShape(4.dp),
             )
             .let { if (requester != null) it.focusRequester(requester) else it }
+            .focusProperties { down = FocusRequester.Cancel }
             .onFocusChanged {
                 focused = it.isFocused
                 if (it.isFocused) {
@@ -648,9 +683,12 @@ private fun ThumbCell(
             }
             .focusable()
             .onKeyEvent { ev ->
-                if (ev.type == KeyEventType.KeyUp &&
-                    (ev.key == Key.DirectionCenter || ev.key == Key.Enter)
-                ) {
+                if (ev.type != KeyEventType.KeyUp) {
+                    false
+                } else if (ev.key == Key.DirectionDown) {
+                    onDismissBar()
+                    true
+                } else if (ev.key == Key.DirectionCenter || ev.key == Key.Enter) {
                     onClick()
                     true
                 } else {
