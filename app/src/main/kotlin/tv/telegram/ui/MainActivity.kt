@@ -465,14 +465,6 @@ private fun AppNavHost(viewModel: MainViewModel, backController: BackController)
                             viewModel.clearViewerContext()
                             navController.popBackStack()
                         },
-                        onNavigateTo = { newIndex ->
-                            photos.getOrNull(newIndex)?.let { next ->
-                                navController.navigate(Routes.photoAt(next.messageId)) {
-                                    popUpTo(Routes.PHOTO_AT) { inclusive = true }
-                                    launchSingleTop = true
-                                }
-                            }
-                        },
                     )
                 }
             }
@@ -489,12 +481,6 @@ private fun AppNavHost(viewModel: MainViewModel, backController: BackController)
                     state = viewModel,
                     index = entry.arguments?.getInt("index") ?: 0,
                     onClose = { navController.popBackStack() },
-                    onNavigateTo = { newIndex ->
-                        navController.navigate(Routes.photo(newIndex)) {
-                            popUpTo(Routes.PHOTO) { inclusive = true }
-                            launchSingleTop = true
-                        }
-                    },
                 )
             }
 

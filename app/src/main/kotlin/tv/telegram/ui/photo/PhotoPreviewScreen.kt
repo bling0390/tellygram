@@ -49,7 +49,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
@@ -116,13 +119,16 @@ internal fun PhotoPreviewScreen(
     state: HomeState,
     index: Int,
     onClose: () -> Unit,
-    onNavigateTo: (Int) -> Unit,
     /**
      * Set when the preview was opened by message id (plan (a), 2026-09-30): the list to walk,
      * already filtered to photos. Null means the chat's loaded media.
      */
     overrideItems: List<MediaItem>? = null,
 ) {
+    // The photo being shown, kept locally (2026-10-22): stepping with the D-pad or focusing a
+    // strip thumb switches the picture without a route change, so the display settings survive
+    // the walk and a thumb renders the moment it takes focus.
+    var current by remember { mutableIntStateOf(index) }
     val ownItems by state.mediaItems.collectAsStateWithLifecycle()
     val items = overrideItems ?: ownItems
     val fileStates by state.fileStates.collectAsStateWithLifecycle()
@@ -136,18 +142,21 @@ internal fun PhotoPreviewScreen(
 
     var barVisible by remember { mutableStateOf(true) }
     var lastInteraction by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    // Once the user moves into the strip or a button the auto-hide timer stops, the way the
+    // player's controller stays up while its button row has focus (2026-10-22).
+    var interacted by remember { mutableStateOf(false) }
     var retryTick by remember { mutableIntStateOf(0) }
 
-    LaunchedEffect(index, items.size) {
-        if (index !in items.indices) onClose()
+    LaunchedEffect(current, items.size) {
+        if (current !in items.indices) onClose()
     }
-    if (index !in items.indices) return
-    val item = items[index]
+    if (current !in items.indices) return
+    val item = items[current]
 
-    // Record the return target when the preview OPENS, not only when our Back
-    // registration runs (2026-10-21): a pop the system or the NavHost handles would leave no hint.
-    LaunchedEffect(item.messageId) {
-        state.setPlayerReturnFocus(item.messageId)
+    // Record the return target as the shown photo changes (2026-10-22): Back then lands on the
+    // card that was actually being looked at.
+    LaunchedEffect(current, items.size) {
+        items.getOrNull(current)?.let { state.setPlayerReturnFocus(it.messageId) }
     }
 
     BackRegistration(BackPriority.PLAYER, enabled = true) {
@@ -181,25 +190,29 @@ internal fun PhotoPreviewScreen(
         if (fullPath == null) state.ensureMediaFile(item.fileId, priority = 16)
     }
 
-    // Auto-hide: any interaction pushes the deadline out.
-    LaunchedEffect(barVisible, lastInteraction) {
-        if (!barVisible) return@LaunchedEffect
+    // Auto-hide like the player's controller: the timer only runs while the user has not moved
+    // into the bar's controls, and never while a menu is open.
+    LaunchedEffect(barVisible, interacted, aspectMenu, rotationMenu, lastInteraction) {
+        if (!barVisible || interacted || aspectMenu || rotationMenu) return@LaunchedEffect
         delay(BarAutoHideMs)
         barVisible = false
+        // Let the fade-out finish before handing focus back, so vanishing thumbs cannot eat
+        // direction keys during the exit (the player waits 400ms too).
+        delay(400L)
         runCatching { imageFocus.requestFocus() }
     }
 
     val photos = remember(items) { photoIndices(items) }
-    val position = photos.indexOf(index)
+    val position = photos.indexOf(current)
 
     fun reveal() {
         barVisible = true
+        interacted = false
         lastInteraction = System.currentTimeMillis()
     }
 
     fun step(delta: Int) {
-        val next = photos.getOrNull(position + delta) ?: return
-        onNavigateTo(next)
+        current = photos.getOrNull(position + delta) ?: return
     }
 
     val isError = fileState is FileDownloadState.Failed
@@ -312,14 +325,27 @@ internal fun PhotoPreviewScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .shadow(10.dp, RoundedCornerShape(4.dp), ambientColor = Color.Black, spotColor = Color.Black)
+                    .testTag("photo-bar")
+                    // Design shadow (0 4 10 rgba(0,0,0,.25)) drawn explicitly above the bar:
+                    // Modifier.shadow takes no offset and was invisible against the photo
+                    // (2026-10-22).
+                    .drawBehind {
+                        val band = 10.dp.toPx()
+                        drawRect(
+                            brush = Brush.verticalGradient(
+                                0f to Color.Transparent,
+                                1f to Color.Black.copy(alpha = 0.25f),
+                            ),
+                            topLeft = Offset(0f, -band),
+                            size = Size(size.width, band),
+                        )
+                    }
                     .background(
                         Brush.verticalGradient(
                             listOf(Color(0x14333333), Color(0x14000000)),
                         ),
                         RoundedCornerShape(4.dp),
                     )
-                    .testTag("photo-bar")
                     .padding(top = 8.dp, bottom = 48.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(16.dp),
@@ -365,12 +391,16 @@ internal fun PhotoPreviewScreen(
 
                 ThumbStrip(
                     photos = photos,
-                    current = index,
+                    current = current,
                     items = items,
                     state = state,
+                    fileStates = fileStates,
                     visible = barVisible,
-                    onJump = onNavigateTo,
-                    onInteraction = { lastInteraction = System.currentTimeMillis() },
+                    onSelect = { current = it },
+                    onInteraction = {
+                        interacted = true
+                        lastInteraction = System.currentTimeMillis()
+                    },
                 )
             }
         }
@@ -495,9 +525,10 @@ private fun ThumbStrip(
     current: Int,
     items: List<MediaItem>,
     state: HomeState,
+    fileStates: Map<Int, FileDownloadState>,
     /** Only claim focus while the bar is up; a hidden bar must leave it on the photo. */
     visible: Boolean,
-    onJump: (Int) -> Unit,
+    onSelect: (Int) -> Unit,
     onInteraction: () -> Unit,
 ) {
     val listState = rememberLazyListState()
@@ -524,8 +555,10 @@ private fun ThumbStrip(
                 member = member,
                 isCurrent = i == position,
                 requester = if (i == position) currentFocus else null,
+                fileStates = fileStates,
+                state = state,
                 onInteraction = onInteraction,
-                onClick = { onJump(itemIndex) },
+                onClick = { onSelect(itemIndex) },
             )
         }
     }
@@ -536,24 +569,43 @@ private fun ThumbCell(
     member: MediaItem,
     isCurrent: Boolean,
     requester: FocusRequester?,
+    fileStates: Map<Int, FileDownloadState>,
+    state: HomeState,
     onInteraction: () -> Unit,
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
     val ctx = LocalContext.current
     val thumbFileId = member.thumbnailFileId ?: 0
-    val localPath = member.thumbnailLocalPath ?: member.localPath
+    // Medium thumbnail (pickThumbnail), requested like the album tiles: without this the strip
+    // only ever had the tiny embedded minithumbnail and looked soft (2026-10-22).
+    val localPath = (fileStates[thumbFileId] as? FileDownloadState.Local)?.path
+        ?: member.thumbnailLocalPath
+        ?: member.localPath
+    LaunchedEffect(thumbFileId, localPath) {
+        if (localPath == null && thumbFileId != 0) state.ensureMediaFile(thumbFileId, priority = 30)
+    }
 
     Box(
         modifier = Modifier
             .size(width = 112.dp, height = 84.dp)
             .clip(RoundedCornerShape(4.dp))
             .background(HomeSpec.SurfaceContainer)
-            .then(if (isCurrent) Modifier.border(3.dp, HomeSpec.White, RoundedCornerShape(4.dp)) else Modifier)
+            // 3dp always: white while focused, transparent otherwise — no layout shift, and
+            // focus is what the strip highlights now (2026-10-22).
+            .border(
+                3.dp,
+                if (focused) HomeSpec.White else Color.Transparent,
+                RoundedCornerShape(4.dp),
+            )
             .let { if (requester != null) it.focusRequester(requester) else it }
             .onFocusChanged {
                 focused = it.isFocused
-                if (it.isFocused) onInteraction()
+                if (it.isFocused) {
+                    onInteraction()
+                    // Focusing a thumb renders it at once; OK is not needed (2026-10-22).
+                    onClick()
+                }
             }
             .focusable()
             .onKeyEvent { ev ->
@@ -587,13 +639,7 @@ private fun ThumbCell(
                 modifier = Modifier.fillMaxSize(),
             )
         }
-        if (focused && !isCurrent) {
-            Box(
-                Modifier
-                    .fillMaxSize()
-                    .border(2.dp, HomeSpec.White.copy(alpha = 0.6f), RoundedCornerShape(4.dp)),
-            )
-        }
+        // Focus is shown by the 3dp white border above.
     }
 }
 
