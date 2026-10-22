@@ -15,7 +15,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayCircle
+import androidx.compose.material.icons.outlined.Chat
 import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.key
@@ -42,6 +44,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 
 /**
@@ -99,6 +102,7 @@ fun TopNavBar(
             Spacer(Modifier.width(20.dp))
             TopNavTabButton(
                 label = "Chat",
+                icon = Icons.Outlined.Chat,
                 containerTag = "topnav-tab-Chat",
                 cancelLeft = true,
                 onFocused = { onTabSelected(TopNavTab.Chat) },
@@ -110,6 +114,7 @@ fun TopNavBar(
             Spacer(Modifier.width(4.dp))
             TopNavTabButton(
                 label = "Setting",
+                icon = Icons.Outlined.Settings,
                 containerTag = "topnav-tab-Setting",
                 onFocused = { onTabSelected(TopNavTab.Setting) },
                 onConfirmed = { onTabConfirmed(TopNavTab.Setting) },
@@ -190,6 +195,8 @@ private fun TopNavDefaultAvatar() {
 @Composable
 private fun TopNavTabButton(
     label: String,
+    // Design 3594:2138: a 16dp glyph sits 4dp before the label.
+    icon: ImageVector,
     // One testTag per node: the container keeps this stable name, and the focus/blur
     // tag rides on the label below.
     containerTag: String,
@@ -239,12 +246,23 @@ private fun TopNavTabButton(
             .padding(horizontal = 16.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelLarge,
-            color = navLabelColor(focused),
-            modifier = Modifier.testTag(if (focused) "topnav-focus-$label" else "topnav-blur-$label"),
-        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = navLabelColor(focused),
+                modifier = Modifier.size(16.dp),
+            )
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelLarge,
+                color = navLabelColor(focused),
+                modifier = Modifier.testTag(if (focused) "topnav-focus-$label" else "topnav-blur-$label"),
+            )
+        }
     }
 }
 
