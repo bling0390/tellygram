@@ -323,9 +323,9 @@ internal fun PhotoPreviewScreen(
                         CircularProgressIndicator(
                             progress = { fraction },
                             modifier = Modifier.size(48.dp),
-                            // Figma: the sweep is white at 8%, the track is white (2026-10-22).
-                            color = Color.White.copy(alpha = 0.08f),
-                            trackColor = Color.White,
+                            // Figma: the track is white at 8%, the sweep is white (2026-10-22).
+                            color = Color.White,
+                            trackColor = Color.White.copy(alpha = 0.08f),
                         )
                         Text(
                             text = "${(fraction * 100).toInt()}%",
@@ -335,7 +335,7 @@ internal fun PhotoPreviewScreen(
                     } else {
                         CircularProgressIndicator(
                             modifier = Modifier.size(48.dp),
-                            color = Color.White.copy(alpha = 0.08f),
+                            color = Color.White,
                         )
                     }
                 }
@@ -385,7 +385,7 @@ internal fun PhotoPreviewScreen(
                     Text(
                         text = "${position + 1} / ${photos.size}",
                         style = MaterialTheme.typography.titleMedium,
-                        color = HomeSpec.OnSurface,
+                        color = HomeSpec.White,
                         modifier = Modifier.testTag("photo-counter"),
                     )
                     if (!isError) {
