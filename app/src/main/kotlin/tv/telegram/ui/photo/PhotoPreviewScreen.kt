@@ -52,6 +52,7 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
@@ -67,12 +68,19 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntRect
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
@@ -139,6 +147,9 @@ internal fun PhotoPreviewScreen(
     var aspect by remember { mutableStateOf<PreviewAspect?>(null) }
     var aspectMenu by remember { mutableStateOf(false) }
     var rotationMenu by remember { mutableStateOf(false) }
+    // The buttons' window bounds: each menu floats 16dp above its own button (2026-10-22).
+    var aspectAnchor by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
+    var rotationAnchor by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
 
     var barVisible by remember { mutableStateOf(true) }
     var lastInteraction by remember { mutableLongStateOf(System.currentTimeMillis()) }
@@ -352,7 +363,8 @@ internal fun PhotoPreviewScreen(
             ) {
                 Box(
                     modifier = Modifier.width(BarContentWidth),
-                    contentAlignment = Alignment.Center,
+                    // Figma: the counter sits on the row's baseline (align bottom).
+                    contentAlignment = Alignment.BottomCenter,
                 ) {
                     Text(
                         text = "${position + 1} / ${photos.size}",
@@ -368,21 +380,32 @@ internal fun PhotoPreviewScreen(
                         ) {
                             RoundIconButton(
                                 icon = Icons.Outlined.AspectRatio,
-                                active = aspect != null || aspectMenu,
                                 onClick = { aspectMenu = true },
+                                onFocus = {
+                                    interacted = true
+                                    lastInteraction = System.currentTimeMillis()
+                                },
+                                onBounds = { aspectAnchor = it },
                                 testTag = "photo-aspect",
                             )
                             RoundIconButton(
                                 icon = Icons.Outlined.ScreenRotation,
-                                active = rotationMenu,
                                 onClick = { rotationMenu = true },
+                                onFocus = {
+                                    interacted = true
+                                    lastInteraction = System.currentTimeMillis()
+                                },
+                                onBounds = { rotationAnchor = it },
                                 testTag = "photo-rotation",
                             )
                             RoundIconButton(
                                 icon = Icons.Outlined.Info,
-                                active = false,
                                 // Placeholder for now (2026-10-22 decision).
                                 onClick = { },
+                                onFocus = {
+                                    interacted = true
+                                    lastInteraction = System.currentTimeMillis()
+                                },
                                 testTag = "photo-info",
                             )
                         }
@@ -406,15 +429,17 @@ internal fun PhotoPreviewScreen(
         }
 
         if (aspectMenu) {
+            // Row 0 restores the original aspect; the rest are the design's crop ratios.
+            val options = PreviewAspect.entries
             PreviewMenu(
-                rows = PreviewAspect.entries.map { it.label },
-                selected = PreviewAspect.entries.indexOf(aspect),
+                rows = listOf("原始比例") + options.map { it.label },
+                selected = aspect?.let { options.indexOf(it) + 1 } ?: 0,
                 onSelect = { i ->
-                    aspect = if (PreviewAspect.entries.getOrNull(i) == aspect) null else PreviewAspect.entries.getOrNull(i)
+                    aspect = options.getOrNull(i - 1)
                     aspectMenu = false
                 },
                 onDismiss = { aspectMenu = false },
-                offset = IntOffset(-152, -148),
+                anchor = aspectAnchor,
             )
         }
         if (rotationMenu) {
@@ -426,7 +451,7 @@ internal fun PhotoPreviewScreen(
                     rotationMenu = false
                 },
                 onDismiss = { rotationMenu = false },
-                offset = IntOffset(-152, -196),
+                anchor = rotationAnchor,
             )
         }
     }
@@ -483,18 +508,23 @@ private fun ErrorPane(onRetry: () -> Unit) {
 @Composable
 private fun RoundIconButton(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
-    active: Boolean,
     onClick: () -> Unit,
     testTag: String,
+    onFocus: () -> Unit = {},
+    onBounds: (Rect) -> Unit = {},
 ) {
     var focused by remember { mutableStateOf(false) }
-    val highlighted = active || focused
     Box(
         modifier = Modifier
             .size(40.dp)
             .clip(CircleShape)
-            .background(if (highlighted) HomeSpec.White else Color(0xCC1E2023))
-            .onFocusChanged { focused = it.isFocused }
+            // No selected state: white only while focused (2026-10-22).
+            .background(if (focused) HomeSpec.White else Color(0xCC1E2023))
+            .onGloballyPositioned { onBounds(it.boundsInWindow()) }
+            .onFocusChanged {
+                focused = it.isFocused
+                if (it.isFocused) onFocus()
+            }
             .focusable()
             .onKeyEvent { ev ->
                 if (ev.type == KeyEventType.KeyUp &&
@@ -512,7 +542,7 @@ private fun RoundIconButton(
         Icon(
             imageVector = icon,
             contentDescription = null,
-            tint = if (highlighted) HomeSpec.InverseOnSurface else HomeSpec.OnSurface,
+            tint = if (focused) HomeSpec.InverseOnSurface else HomeSpec.OnSurface,
             modifier = Modifier.size(20.dp),
         )
     }
@@ -588,11 +618,8 @@ private fun ThumbCell(
 
     Box(
         modifier = Modifier
-            .size(width = 112.dp, height = 84.dp)
-            .clip(RoundedCornerShape(4.dp))
-            .background(HomeSpec.SurfaceContainer)
-            // 3dp always: white while focused, transparent otherwise — no layout shift, and
-            // focus is what the strip highlights now (2026-10-22).
+            // 118x90 slot with the 3dp stroke OUTSIDE the 112x84 picture (2026-10-22).
+            .size(width = 118.dp, height = 90.dp)
             .border(
                 3.dp,
                 if (focused) HomeSpec.White else Color.Transparent,
@@ -618,6 +645,9 @@ private fun ThumbCell(
                     false
                 }
             }
+            .padding(3.dp)
+            .clip(RoundedCornerShape(4.dp))
+            .background(HomeSpec.SurfaceContainer)
             .testTag("photo-thumb"),
         contentAlignment = Alignment.Center,
     ) {
@@ -650,16 +680,18 @@ private fun PreviewMenu(
     selected: Int,
     onSelect: (Int) -> Unit,
     onDismiss: () -> Unit,
-    offset: IntOffset,
+    /** The button it hangs off, in window coordinates: the menu floats 16dp above it. */
+    anchor: Rect?,
 ) {
     val rowFocus = remember { FocusRequester() }
+    val gapPx = with(LocalDensity.current) { 16.dp.roundToPx() }
     LaunchedEffect(Unit) {
         withFrameNanos { }
+        // The requester sits on the selected row, so the menu opens on the current choice.
         runCatching { rowFocus.requestFocus() }
     }
     Popup(
-        alignment = Alignment.BottomEnd,
-        offset = offset,
+        popupPositionProvider = remember(anchor, gapPx) { AboveButtonPosition(anchor, gapPx) },
         onDismissRequest = onDismiss,
         properties = PopupProperties(focusable = true),
     ) {
@@ -672,20 +704,22 @@ private fun PreviewMenu(
                 .padding(horizontal = 12.dp, vertical = 8.dp),
         ) {
             rows.forEachIndexed { i, label ->
-                val active = i == selected
+                val isSelected = i == selected
                 var focused by remember { mutableStateOf(false) }
+                // Focus owns the white background; selection shows as a white label plus the
+                // check (2026-10-22).
+                val bg = if (focused) HomeSpec.White else Color.Transparent
+                val fg = when {
+                    focused -> HomeSpec.InverseOnSurface
+                    isSelected -> HomeSpec.White
+                    else -> HomeSpec.OnSurface
+                }
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(8.dp))
-                        .background(
-                            when {
-                                active -> HomeSpec.White
-                                focused -> HomeSpec.SurfaceContainer
-                                else -> Color.Transparent
-                            },
-                        )
-                        .let { if (active || (selected < 0 && i == 0)) it.focusRequester(rowFocus) else it }
+                        .background(bg)
+                        .let { if (i == selected.coerceAtLeast(0)) it.focusRequester(rowFocus) else it }
                         .onFocusChanged { focused = it.isFocused }
                         .focusable()
                         .onKeyEvent { ev ->
@@ -705,18 +739,44 @@ private fun PreviewMenu(
                     Text(
                         text = label,
                         style = MaterialTheme.typography.titleSmall,
-                        color = if (active) HomeSpec.InverseOnSurface else HomeSpec.White,
+                        color = fg,
                     )
-                    if (active) {
+                    if (isSelected) {
                         Icon(
                             imageVector = Icons.Outlined.Check,
                             contentDescription = null,
-                            tint = HomeSpec.InverseOnSurface,
+                            tint = fg,
                             modifier = Modifier.size(18.9.dp),
                         )
                     }
                 }
             }
         }
+    }
+}
+
+/**
+ * Menu position: 16dp above its button, right edges aligned (Figma 3656:2929 / 3653:2222).
+ * Falls back to the bottom-right corner when the button bounds are not known yet.
+ */
+private class AboveButtonPosition(
+    private val anchor: Rect?,
+    private val gapPx: Int,
+) : PopupPositionProvider {
+    override fun calculatePosition(
+        anchorBounds: IntRect,
+        windowSize: IntSize,
+        layoutDirection: LayoutDirection,
+        popupContentSize: IntSize,
+    ): IntOffset {
+        val a = anchor
+        val x = a?.let { (it.right - popupContentSize.width).toInt() }
+            ?: (windowSize.width - popupContentSize.width)
+        val y = a?.let { (it.top - popupContentSize.height - gapPx).toInt() }
+            ?: (windowSize.height - popupContentSize.height)
+        return IntOffset(
+            x.coerceIn(0, (windowSize.width - popupContentSize.width).coerceAtLeast(0)),
+            y.coerceIn(0, (windowSize.height - popupContentSize.height).coerceAtLeast(0)),
+        )
     }
 }
