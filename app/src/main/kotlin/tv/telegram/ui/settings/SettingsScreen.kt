@@ -101,6 +101,11 @@ internal fun SettingsScreen(
      * leaves focus on the bar.
      */
     contentEntryFocus: FocusRequester? = null,
+    /**
+     * The Setting tab's requester: Up from the list's first row lands there instead of
+     * letting the default search find the Chat tab (2026-10-22).
+     */
+    topBarFocus: FocusRequester? = null,
     modifier: Modifier = Modifier,
     /**
      * How the About pane's "Check for updates" asks GitHub. Injectable so the UI tests can
@@ -172,11 +177,16 @@ internal fun SettingsScreen(
                     },
                     // Only the first entry is the bar's Down target.
                     requester = if (index == 0) contentEntryFocus else null,
+                    // Up from the first row lands on the Setting tab (not the Chat tab).
+                    upRequester = if (index == 0) topBarFocus else null,
                     // A pane row going Left comes back to the chosen section.
                     sectionFocus = if (section == selected) selectedSectionFocus else null,
                     rightRequester = paneEntryOrNull,
                     // The last item ends the list: Down must not escape below it.
                     cancelDown = section == SettingsSection.entries.last(),
+                    // Help composes no pane row and is the last entry: only Up may move.
+                    cancelLeft = section == SettingsSection.HelpAndSupport,
+                    cancelRight = section == SettingsSection.HelpAndSupport,
                 )
             }
         }
@@ -405,6 +415,11 @@ private fun SectionItem(
     sectionFocus: FocusRequester? = null,
     rightRequester: FocusRequester? = null,
     cancelDown: Boolean = false,
+    /** Up target for the first row: the Setting tab. */
+    upRequester: FocusRequester? = null,
+    /** The Help entry is the list's end: only Up may move out of it. */
+    cancelLeft: Boolean = false,
+    cancelRight: Boolean = false,
 ) {
     var focused by remember { mutableStateOf(false) }
     val colors = sectionItemColors(focused)
@@ -420,7 +435,10 @@ private fun SectionItem(
             .let { if (requester != null) it.focusRequester(requester) else it }
             .let { if (sectionFocus != null) it.focusRequester(sectionFocus) else it }
             .focusProperties {
+                if (upRequester != null) up = upRequester
                 if (rightRequester != null) right = rightRequester
+                if (cancelRight) right = FocusRequester.Cancel
+                if (cancelLeft) left = FocusRequester.Cancel
                 down = if (cancelDown) FocusRequester.Cancel else FocusRequester.Default
             }
             // Focus selects, exactly like the top bar: no separate chosen-only look.

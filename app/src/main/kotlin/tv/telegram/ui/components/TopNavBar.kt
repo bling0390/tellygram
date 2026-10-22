@@ -87,6 +87,11 @@ fun TopNavBar(
     // both sides: Down from the bar lands on the selected chat row, and Back from
     // the chat list returns to the bar's selected tab.
     selectedTabFocus: FocusRequester? = null,
+    /**
+     * The Setting tab's own requester: the settings page's first row routes Up here instead
+     * of letting the default search find the Chat tab (2026-10-22).
+     */
+    settingTabFocus: FocusRequester? = null,
     contentFocus: FocusRequester? = null,
 ) {
     Row(
@@ -119,6 +124,7 @@ fun TopNavBar(
                 onFocused = { onTabSelected(TopNavTab.Setting) },
                 onConfirmed = { onTabConfirmed(TopNavTab.Setting) },
                 downFocus = contentFocus,
+                requester = settingTabFocus,
             )
             Spacer(Modifier.width(4.dp))
 

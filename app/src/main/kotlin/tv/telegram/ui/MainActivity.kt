@@ -269,6 +269,8 @@ private fun AppNavHost(viewModel: MainViewModel, backController: BackController)
     // FocusRequester throws as soon as the focus search touches it.
     val settingsContentFocus = remember { androidx.compose.ui.focus.FocusRequester() }
     val homeTopBarFocus = remember { androidx.compose.ui.focus.FocusRequester() }
+    // The Setting tab's own requester: the settings list's first row routes Up here (2026-10-22).
+    val settingTabFocus = remember { androidx.compose.ui.focus.FocusRequester() }
 
     // D-pad presses play the platform's navigation sounds for the whole
     // activity window (rail, pages, in-tree overlays). Dialog / Popup windows
@@ -317,6 +319,7 @@ private fun AppNavHost(viewModel: MainViewModel, backController: BackController)
                     onSearchClick = { },
                     modifier = Modifier.padding(horizontal = TopNavBarSideMargin),
                     selectedTabFocus = homeTopBarFocus,
+                    settingTabFocus = settingTabFocus,
                     contentFocus = if (currentRoute == Routes.HOME_SETTINGS) {
                         settingsContentFocus
                     } else {
@@ -425,7 +428,11 @@ private fun AppNavHost(viewModel: MainViewModel, backController: BackController)
                 popExitTransition = { ExitTransition.None },
                     route = Routes.HOME_SETTINGS,
                 ) {
-                    SettingsScreen(state = viewModel, contentEntryFocus = settingsContentFocus)
+                    SettingsScreen(
+                        state = viewModel,
+                        contentEntryFocus = settingsContentFocus,
+                        topBarFocus = settingTabFocus,
+                    )
                 }
             }
 
