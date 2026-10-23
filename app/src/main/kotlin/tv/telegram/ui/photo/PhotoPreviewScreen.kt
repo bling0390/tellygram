@@ -381,12 +381,7 @@ internal fun PhotoPreviewScreen(
                     }
                     .background(
                         Brush.verticalGradient(
-                            // Figma tints the normal bar from #666 and the error bar from
-                            // #333, both at 8% (2026-10-23).
-                            listOf(
-                                if (isError) Color(0x14333333) else Color(0x14666666),
-                                Color(0x14000000),
-                            ),
+                            listOf(Color(0x14333333), Color(0x14000000)),
                         ),
                         RoundedCornerShape(4.dp),
                     )
@@ -402,9 +397,7 @@ internal fun PhotoPreviewScreen(
                     Text(
                         text = "${position + 1} / ${photos.size}",
                         style = MaterialTheme.typography.titleMedium,
-                        // Figma 3658:3269 puts the counter at on-surface; the photo frames
-                        // (3656:2929 etc.) use white (2026-10-23).
-                        color = if (isError) HomeSpec.OnSurface else HomeSpec.White,
+                        color = HomeSpec.White,
                         modifier = Modifier.testTag("photo-counter"),
                     )
                     if (!isError) {
@@ -718,8 +711,7 @@ private fun ThumbCell(
             }
             .padding(3.dp)
             .clip(RoundedCornerShape(4.dp))
-            // Figma: the current thumb sits on rgba(217,217,217,.1) (2026-10-23).
-            .background(if (isCurrent) Color(0x1AD9D9D9) else HomeSpec.SurfaceContainer)
+            .background(HomeSpec.SurfaceContainer)
             .testTag("photo-thumb"),
         contentAlignment = Alignment.Center,
     ) {
