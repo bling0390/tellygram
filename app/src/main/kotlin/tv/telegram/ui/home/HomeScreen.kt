@@ -238,6 +238,12 @@ internal fun HomeScreen(
     // row, and Back from the chat list returns to the bar's selected tab.
     contentEntryFocus: FocusRequester? = null,
     topBarFocus: FocusRequester? = null,
+    /**
+     * True while a viewer route (photo/player) is open. The album popup is a Dialog with its own
+     * window: leaving it composed through the navigation shows the preview under a panel that
+     * only disappears a frame or two later, which reads as a ghost (2026-10-23).
+     */
+    viewerOpen: Boolean = false,
 ) {
     val chats by state.chatList.collectAsStateWithLifecycle()
     val archivedChats by state.archiveChats.collectAsStateWithLifecycle()
@@ -290,7 +296,7 @@ internal fun HomeScreen(
         )
     }
 
-    albumTarget?.let { album ->
+    albumTarget?.takeIf { !viewerOpen }?.let { album ->
         AlbumPopup(
             members = album.albumMembers,
             state = state,
