@@ -60,14 +60,14 @@ android {
 
     // Release version: three parts, bumped by hand when a release goes out (the git
     // tag mirrors it). Local builds never touch it, so the repo does not churn.
-    val baseVersion = "1.1.0"
+    val baseVersion = "1.2.0"
 
     // The BUILD_NUMBER that followed the 1.1.0 release. Debug builds are named
     // 1.1.<BUILD_NUMBER - debugPatchBase>-debug so a release resets the visible patch
     // (1.1.1-debug, 1.1.2-debug, …) while versionCode keeps climbing — resetting both would
     // drop versionCode below the installed debug build, which Android refuses to install
     // (2026-10-21). Bump this to the current counter whenever a release goes out.
-    val debugPatchBase = 136
+    val debugPatchBase = 171
     val baseParts = baseVersion.split(".").mapNotNull { it.toIntOrNull() }
     val baseMajor = baseParts.getOrNull(0) ?: 1
     val baseMinor = baseParts.getOrNull(1) ?: 0
