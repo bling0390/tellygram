@@ -403,7 +403,6 @@ internal fun PhotoPreviewScreen(
                                 onBounds = { aspectAnchor = it },
                                 downFocus = stripFocus,
                                 menuOpen = aspectMenu,
-                                onUp = hideBar,
                                 testTag = "photo-aspect",
                             )
                             RoundIconButton(
@@ -416,7 +415,6 @@ internal fun PhotoPreviewScreen(
                                 onBounds = { rotationAnchor = it },
                                 downFocus = stripFocus,
                                 menuOpen = rotationMenu,
-                                onUp = hideBar,
                                 testTag = "photo-rotation",
                             )
                             RoundIconButton(
@@ -429,7 +427,6 @@ internal fun PhotoPreviewScreen(
                                 },
                                 downFocus = stripFocus,
                                 menuOpen = false,
-                                onUp = hideBar,
                                 testTag = "photo-info",
                             )
                         }
@@ -444,7 +441,6 @@ internal fun PhotoPreviewScreen(
                     fileStates = fileStates,
                     visible = barVisible,
                     currentFocus = stripFocus,
-                    onDismissBar = hideBar,
                     onSelect = { current = it },
                     onInteraction = {
                         // The strip is the bar's default focus: it only restarts the timer.
@@ -542,8 +538,6 @@ private fun RoundIconButton(
     downFocus: FocusRequester? = null,
     /** While this button's menu is open the button shows its default look (2026-10-22). */
     menuOpen: Boolean = false,
-    /** Up from the button row hides the bar (2026-10-22). */
-    onUp: () -> Unit = {},
 ) {
     var focused by remember { mutableStateOf(false) }
     val highlighted = focused && !menuOpen
@@ -565,12 +559,7 @@ private fun RoundIconButton(
             }
             .focusable()
             .onKeyEvent { ev ->
-                // Up acts on KeyDown: the KeyUp of that same press is delivered to whichever
-                // control has focus by then (2026-10-22).
-                if (ev.type == KeyEventType.KeyDown && ev.key == Key.DirectionUp) {
-                    onUp()
-                    true
-                } else if (ev.type == KeyEventType.KeyUp &&
+                if (ev.type == KeyEventType.KeyUp &&
                     (ev.key == Key.DirectionCenter || ev.key == Key.Enter)
                 ) {
                     onClick()
@@ -604,8 +593,6 @@ private fun ThumbStrip(
     currentFocus: FocusRequester,
     onSelect: (Int) -> Unit,
     onInteraction: () -> Unit,
-    /** Down from the strip hides the bar (2026-10-22). */
-    onDismissBar: () -> Unit,
 ) {
     val listState = rememberLazyListState()
     val position = photos.indexOf(current)
@@ -633,7 +620,6 @@ private fun ThumbStrip(
                 fileStates = fileStates,
                 state = state,
                 onInteraction = onInteraction,
-                onDismissBar = onDismissBar,
                 onClick = { onSelect(itemIndex) },
             )
         }
@@ -648,7 +634,6 @@ private fun ThumbCell(
     fileStates: Map<Int, FileDownloadState>,
     state: HomeState,
     onInteraction: () -> Unit,
-    onDismissBar: () -> Unit,
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
@@ -686,9 +671,6 @@ private fun ThumbCell(
             .onKeyEvent { ev ->
                 if (ev.type != KeyEventType.KeyUp) {
                     false
-                } else if (ev.key == Key.DirectionDown) {
-                    onDismissBar()
-                    true
                 } else if (ev.key == Key.DirectionCenter || ev.key == Key.Enter) {
                     onClick()
                     true
