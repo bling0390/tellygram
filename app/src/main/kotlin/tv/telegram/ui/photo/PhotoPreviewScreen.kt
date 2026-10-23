@@ -682,9 +682,7 @@ private fun ThumbCell(
             .size(width = 118.dp, height = 90.dp)
             .border(
                 3.dp,
-                // Figma keeps the white stroke on the current photo even while a button
-                // holds focus, so the marker is the selection, not the focus (2026-10-23).
-                if (focused || isCurrent) HomeSpec.White else Color.Transparent,
+                if (focused) HomeSpec.White else Color.Transparent,
                 RoundedCornerShape(4.dp),
             )
             .let { if (requester != null) it.focusRequester(requester) else it }
