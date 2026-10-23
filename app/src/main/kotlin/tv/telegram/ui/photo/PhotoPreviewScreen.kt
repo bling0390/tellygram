@@ -52,14 +52,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.Key
@@ -365,26 +363,15 @@ internal fun PhotoPreviewScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag("photo-bar")
-                    // Design shadow (0 4 10 rgba(0,0,0,.25)) drawn explicitly above the bar:
-                    // Modifier.shadow takes no offset and was invisible against the photo
-                    // (2026-10-22).
+                    // Figma 3653:2222: flat rgba(0,0,0,.2), a 1px white 2% hairline along the
+                    // top edge, no shadow (2026-10-23).
+                    .background(Color.Black.copy(alpha = 0.2f), RoundedCornerShape(4.dp))
                     .drawBehind {
-                        val band = 10.dp.toPx()
                         drawRect(
-                            brush = Brush.verticalGradient(
-                                0f to Color.Transparent,
-                                1f to Color.Black.copy(alpha = 0.25f),
-                            ),
-                            topLeft = Offset(0f, -band),
-                            size = Size(size.width, band),
+                            color = Color.White.copy(alpha = 0.02f),
+                            size = Size(size.width, 1.dp.toPx()),
                         )
                     }
-                    .background(
-                        Brush.verticalGradient(
-                            listOf(Color(0x14333333), Color(0x14000000)),
-                        ),
-                        RoundedCornerShape(4.dp),
-                    )
                     .padding(top = 8.dp, bottom = 48.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(16.dp),
