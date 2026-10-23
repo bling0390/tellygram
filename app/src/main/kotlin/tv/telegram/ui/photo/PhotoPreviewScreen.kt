@@ -612,8 +612,16 @@ private fun ThumbStrip(
     }
     LaunchedEffect(position, listState, visible) {
         if (!visible || position < 0) return@LaunchedEffect
-        withFrameNanos { }
-        runCatching { currentFocus.requestFocus() }
+        // Opened from the grid at a far index, the slot is not composed yet: the bar used to
+        // ask for focus once, miss, and leave it on the photo. Bring the slot in first (the
+        // animated scroll takes frames), then retry while it is being laid out (2026-10-23).
+        if (position !in listState.layoutInfo.visibleItemsInfo.map { it.index }) {
+            runCatching { listState.scrollToItem(position) }
+        }
+        repeat(3) {
+            withFrameNanos { }
+            if (runCatching { currentFocus.requestFocus() }.isSuccess) return@LaunchedEffect
+        }
     }
 
     LazyRow(
