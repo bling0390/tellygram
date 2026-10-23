@@ -370,13 +370,8 @@ private fun AppNavHost(viewModel: MainViewModel, backController: BackController)
                 popEnterTransition = { EnterTransition.None },
                 popExitTransition = { ExitTransition.None },
             ) {
-                // The album popup is a Dialog: while a viewer route is open it must leave
-                // composition, or its window stays drawn over the preview for a frame or two
-                // (2026-10-23).
-                val viewer by viewModel.viewerContext.collectAsStateWithLifecycle()
                 HomeScreen(
                     state = viewModel,
-                    viewerOpen = viewer != null,
                     onOpenPlayer = { index -> navController.navigate(Routes.player(index)) },
                     onOpenMediaItem = { item ->
                         // A member picked in the album popup: same split as the grid's cards.
