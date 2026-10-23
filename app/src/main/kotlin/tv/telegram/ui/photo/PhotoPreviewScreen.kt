@@ -9,6 +9,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,8 +24,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AspectRatio
 import androidx.compose.material.icons.outlined.BrokenImage
@@ -106,6 +109,15 @@ private enum class PreviewAspect(val label: String, val ratio: Float) {
 /** Figma 3653:2222 rotation menu; display only, never touches the file. */
 private val RotationOptions = listOf("0°", "90°", "180°", "270°")
 
+/** Figma 3669:2277: the caption sheet is the one light surface in the viewer. */
+private val CaptionPanel = Color(0xFFE3E2E6)
+private val CaptionTitle = Color(0xFF121316)
+private val CaptionBody = Color(0xFF43474E)
+private val CaptionRule = Color(0xFF8E9099).copy(alpha = 0.1f)
+
+/** One Up/Down press scrolls the caption body by this much. */
+private val CaptionScrollStep = 64.dp
+
 /** Design: content column 836dp inside the full-width bar (960 canvas, 62 a side). */
 private val BarContentWidth = 836.dp
 
@@ -153,6 +165,8 @@ internal fun PhotoPreviewScreen(
     var aspect by remember { mutableStateOf<PreviewAspect?>(null) }
     var aspectMenu by remember { mutableStateOf(false) }
     var rotationMenu by remember { mutableStateOf(false) }
+    /** Figma 3669:2277: the caption sheet, only reachable when the photo carries one. */
+    var captionOpen by remember { mutableStateOf(false) }
     // The buttons' window bounds: each menu floats 16dp above its own button (2026-10-22).
     var aspectAnchor by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
     var rotationAnchor by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
@@ -193,6 +207,7 @@ internal fun PhotoPreviewScreen(
         when {
             aspectMenu -> aspectMenu = false
             rotationMenu -> rotationMenu = false
+            captionOpen -> captionOpen = false
             barVisible -> hideBar()
             else -> {
                 state.setPlayerReturnFocus(item.messageId)
@@ -420,18 +435,21 @@ internal fun PhotoPreviewScreen(
                                 menuOpen = rotationMenu,
                                 testTag = "photo-rotation",
                             )
-                            RoundIconButton(
-                                icon = Icons.Outlined.Info,
-                                // Placeholder for now (2026-10-22 decision).
-                                onClick = { },
-                                onFocus = {
-                                    interacted = true
-                                    lastInteraction = System.currentTimeMillis()
-                                },
-                                downFocus = stripFocus,
-                                menuOpen = false,
-                                testTag = "photo-info",
-                            )
+                            // No caption, no button: an empty sheet would be worse than a
+                            // missing control (2026-10-23).
+                            if (!item.caption.isNullOrBlank()) {
+                                RoundIconButton(
+                                    icon = Icons.Outlined.Info,
+                                    onClick = { captionOpen = true },
+                                    onFocus = {
+                                        interacted = true
+                                        lastInteraction = System.currentTimeMillis()
+                                    },
+                                    downFocus = stripFocus,
+                                    menuOpen = captionOpen,
+                                    testTag = "photo-info",
+                                )
+                            }
                         }
                     }
                 }
@@ -481,6 +499,12 @@ internal fun PhotoPreviewScreen(
                 },
                 onDismiss = { rotationMenu = false },
                 anchor = rotationAnchor,
+            )
+        }
+        if (captionOpen) {
+            CaptionSheet(
+                text = item.caption.orEmpty(),
+                onDismiss = { captionOpen = false },
             )
         }
     }
@@ -846,4 +870,87 @@ private class AboveButtonPosition(
             y.coerceIn(0, (windowSize.height - popupContentSize.height).coerceAtLeast(0)),
         )
     }
+}
+
+/**
+ * Figma 3669:2277: a right-edge sheet, 384x512 at 14dp from the top, light panel with a dark
+ * title, a 10% rule and a scrolling body (2026-10-23).
+ */
+@Composable
+private fun CaptionSheet(text: String, onDismiss: () -> Unit) {
+    val focus = remember { FocusRequester() }
+    val scroll = rememberScrollState()
+    val scope = rememberCoroutineScope()
+    val step = with(LocalDensity.current) { CaptionScrollStep.roundToPx().toFloat() }
+    val topPx = with(LocalDensity.current) { 14.dp.roundToPx() }
+    // Same one-frame arming as PreviewMenu: the popup window would otherwise focus its first
+    // focusable child before the request lands (2026-10-23).
+    var armed by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        withFrameNanos { }
+        armed = true
+        withFrameNanos { }
+        runCatching { focus.requestFocus() }
+    }
+    Popup(
+        popupPositionProvider = remember(topPx) { RightEdgeSheetPosition(topPx) },
+        onDismissRequest = onDismiss,
+        properties = PopupProperties(focusable = true),
+    ) {
+        Column(
+            modifier = Modifier
+                .width(384.dp)
+                .height(512.dp)
+                // Figma rounds only the edge that faces the photo.
+                .background(
+                    CaptionPanel,
+                    RoundedCornerShape(topStart = 4.dp, bottomStart = 4.dp),
+                )
+                .let { if (armed) it.focusRequester(focus).focusable() else it }
+                .onKeyEvent { ev ->
+                    if (ev.type != KeyEventType.KeyUp) return@onKeyEvent false
+                    when (ev.key) {
+                        Key.DirectionUp -> {
+                            scope.launch { scroll.scrollBy(-step) }
+                            true
+                        }
+                        Key.DirectionDown -> {
+                            scope.launch { scroll.scrollBy(step) }
+                            true
+                        }
+                        else -> false
+                    }
+                }
+                .padding(horizontal = 20.dp, vertical = 24.dp)
+                .testTag("photo-caption"),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Text(
+                text = "Caption",
+                style = MaterialTheme.typography.headlineSmall,
+                color = CaptionTitle,
+            )
+            Box(Modifier.fillMaxWidth().height(1.dp).background(CaptionRule))
+            Box(Modifier.fillMaxWidth().height(399.dp).verticalScroll(scroll)) {
+                Text(
+                    text = text,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = CaptionBody,
+                )
+            }
+        }
+    }
+}
+
+/** Right edge, 14dp down: Figma 3669:2277 sits at x=576 on the 960 canvas. */
+private class RightEdgeSheetPosition(private val topPx: Int) : PopupPositionProvider {
+    override fun calculatePosition(
+        anchorBounds: IntRect,
+        windowSize: IntSize,
+        layoutDirection: LayoutDirection,
+        popupContentSize: IntSize,
+    ): IntOffset = IntOffset(
+        x = (windowSize.width - popupContentSize.width).coerceAtLeast(0),
+        y = topPx,
+    )
 }
