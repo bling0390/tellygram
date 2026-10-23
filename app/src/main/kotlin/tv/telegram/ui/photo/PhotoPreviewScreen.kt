@@ -320,8 +320,9 @@ internal fun PhotoPreviewScreen(
                 )
             }
             else -> {
-                // Placeholder first (the thumbnail file, else the embedded minithumbnail paints
-                // instantly), then the 48dp ring with a real percentage (2026-10-22).
+                // Placeholder first (the 320 thumbnail file only — the embedded minithumbnail
+                // was dropped from this pane on 2026-10-23), then the 48dp ring with a real
+                // percentage (2026-10-22).
                 val ctx = LocalContext.current
                 if (thumbPath != null) {
                     AsyncImage(
@@ -332,15 +333,6 @@ internal fun PhotoPreviewScreen(
                         contentScale = ContentScale.Fit,
                         modifier = Modifier.fillMaxSize(),
                     )
-                } else {
-                    item.minithumbnail?.let { mini ->
-                        AsyncImage(
-                            model = mini,
-                            contentDescription = null,
-                            contentScale = ContentScale.Fit,
-                            modifier = Modifier.fillMaxSize(),
-                        )
-                    }
                 }
                 Box(contentAlignment = Alignment.Center) {
                     val expected = (fileState as? FileDownloadState.Downloading)?.expected ?: 0L
