@@ -145,6 +145,8 @@ internal fun PhotoPreviewScreen(
     // The current strip slot: the bar hands focus here on open, and Down from the action
     // buttons returns to it (2026-10-22).
     val stripFocus = remember { FocusRequester() }
+    // Up from the strip lands here: the first round button of the action row (2026-10-23).
+    val actionsFocus = remember { FocusRequester() }
 
     // Display settings last for this visit only: entering or leaving the preview resets them.
     var rotation by remember { mutableIntStateOf(0) }
@@ -312,7 +314,7 @@ internal fun PhotoPreviewScreen(
                             ImageRequest.Builder(ctx).data(File(thumbPath)).crossfade(false).build()
                         },
                         contentDescription = null,
-                        contentScale = ContentScale.Crop,
+                        contentScale = ContentScale.Fit,
                         modifier = Modifier.fillMaxSize(),
                     )
                 } else {
@@ -320,7 +322,7 @@ internal fun PhotoPreviewScreen(
                         AsyncImage(
                             model = mini,
                             contentDescription = null,
-                            contentScale = ContentScale.Crop,
+                            contentScale = ContentScale.Fit,
                             modifier = Modifier.fillMaxSize(),
                         )
                     }
@@ -395,6 +397,7 @@ internal fun PhotoPreviewScreen(
                         ) {
                             RoundIconButton(
                                 icon = Icons.Outlined.AspectRatio,
+                                requester = actionsFocus,
                                 onClick = { aspectMenu = true },
                                 onFocus = {
                                     interacted = true
@@ -441,6 +444,9 @@ internal fun PhotoPreviewScreen(
                     fileStates = fileStates,
                     visible = barVisible,
                     currentFocus = stripFocus,
+                    // Up from the strip goes to the first round button; the error pane has no
+                    // action row, so there it stays put (2026-10-23).
+                    upFocus = if (isError) null else actionsFocus,
                     onSelect = { current = it },
                     onInteraction = {
                         // The strip is the bar's default focus: it only restarts the timer.
@@ -535,6 +541,8 @@ private fun RoundIconButton(
     testTag: String,
     onFocus: () -> Unit = {},
     onBounds: (Rect) -> Unit = {},
+    /** Optional external handle so the strip can hand focus up to the first button. */
+    requester: FocusRequester? = null,
     downFocus: FocusRequester? = null,
     /** While this button's menu is open the button shows its default look (2026-10-22). */
     menuOpen: Boolean = false,
@@ -545,6 +553,7 @@ private fun RoundIconButton(
         modifier = Modifier
             .size(40.dp)
             .clip(CircleShape)
+            .let { if (requester != null) it.focusRequester(requester) else it }
             // No selected state: white only while focused, and never while its menu is open.
             .background(if (highlighted) HomeSpec.White else Color(0xCC1E2023))
             .onGloballyPositioned { onBounds(it.boundsInWindow()) }
@@ -591,6 +600,7 @@ private fun ThumbStrip(
     /** Only claim focus while the bar is up; a hidden bar must leave it on the photo. */
     visible: Boolean,
     currentFocus: FocusRequester,
+    upFocus: FocusRequester?,
     onSelect: (Int) -> Unit,
     onInteraction: () -> Unit,
 ) {
@@ -617,6 +627,8 @@ private fun ThumbStrip(
                 member = member,
                 isCurrent = i == position,
                 requester = if (i == position) currentFocus else null,
+                upFocus = upFocus,
+                singleItem = photos.size == 1,
                 fileStates = fileStates,
                 state = state,
                 onInteraction = onInteraction,
@@ -631,6 +643,8 @@ private fun ThumbCell(
     member: MediaItem,
     isCurrent: Boolean,
     requester: FocusRequester?,
+    upFocus: FocusRequester?,
+    singleItem: Boolean,
     fileStates: Map<Int, FileDownloadState>,
     state: HomeState,
     onInteraction: () -> Unit,
@@ -658,7 +672,13 @@ private fun ThumbCell(
                 RoundedCornerShape(4.dp),
             )
             .let { if (requester != null) it.focusRequester(requester) else it }
-            .focusProperties { down = FocusRequester.Cancel }
+            .focusProperties {
+                down = FocusRequester.Cancel
+                // Up leaves the strip for the first round button (2026-10-23).
+                up = upFocus ?: FocusRequester.Cancel
+                // A one-photo strip has nowhere to go right (2026-10-23).
+                if (singleItem) right = FocusRequester.Cancel
+            }
             .onFocusChanged {
                 focused = it.isFocused
                 if (it.isFocused) {
