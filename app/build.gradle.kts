@@ -60,7 +60,7 @@ android {
 
     // Release version: three parts, bumped by hand when a release goes out (the git
     // tag mirrors it). Local builds never touch it, so the repo does not churn.
-    val baseVersion = "1.2.2"
+    val baseVersion = "1.2.1"
 
     // The BUILD_NUMBER that followed the 1.1.0 release. Debug builds are named
     // 1.1.<BUILD_NUMBER - debugPatchBase>-debug so a release resets the visible patch
