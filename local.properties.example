@@ -18,8 +18,8 @@ sdk.dir=/opt/android-sdk
 # You MUST use your own account — sharing is forbidden by Telegram ToS
 # and will get your session kicked.
 # ──────────────────────────────────────────────────────────────────────
-TG_API_ID=28653083
-TG_API_HASH=6e4b99e9f8c7473d8ea1274541279255
+TG_API_ID=xxxxxxxx
+TG_API_HASH=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 # ──────────────────────────────────────────────
 # Outbound proxy for TDLib (REQUIRED in regions where Telegram DCs
