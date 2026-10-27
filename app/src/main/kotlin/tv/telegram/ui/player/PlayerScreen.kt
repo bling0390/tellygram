@@ -276,14 +276,13 @@ fun PlayerScreen(
         playerReady = true
     }
     if (!playerReady) {
+        // Spinner intentionally removed (2026-10-27, on request): the shell is a plain
+        // backdrop for the ~250ms before the player is built.
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.background),
-            contentAlignment = Alignment.Center,
-        ) {
-            CircularProgressIndicator(color = Color.White)
-        }
+        )
         return
     }
 
@@ -680,9 +679,8 @@ fun PlayerScreen(
                 }
             }
         } else if (!mediaPrepared) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = Color.White)
-            }
+            // Same removal as the shell: no indicator until the PlayerView exists.
+            Box(Modifier.fillMaxSize())
         } else {
             // Read the mode in THIS scope, not inside AndroidView's update
             // lambda. The update block runs outside the recompose scope, so a
