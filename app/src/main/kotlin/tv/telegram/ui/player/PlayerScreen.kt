@@ -109,7 +109,6 @@ import tv.telegram.td.MediaType
 import tv.telegram.td.TdDataSource
 import tv.telegram.td.TdDataSourceFactory
 import tv.telegram.ui.MainViewModel
-import tv.telegram.ui.components.RightDrawer
 import tv.telegram.ui.focus.BackPriority
 import tv.telegram.ui.focus.BackRegistration
 import tv.telegram.ui.home.HomeSpec
@@ -134,6 +133,10 @@ import coil.request.ImageRequest
 import java.io.File
 import androidx.media3.common.C
 import androidx.media3.common.Tracks
+import androidx.compose.foundation.layout.ColumnScope
+import tv.telegram.ui.components.RightEdgeSheet
+import tv.telegram.ui.components.RightSheetInk
+import tv.telegram.ui.components.RightSheetRule
 
 private const val TAG = "PlayerScreen"
 
@@ -842,20 +845,15 @@ fun PlayerScreen(
             )
         }
 
-        // Media info drawer: right-side slide-in overlay, shown on demand.
-        // Shared RightDrawer component — same popup behavior used by the
-        // settings drawer.
-        RightDrawer(
+        // Figma 3678:2349: the player gets its own 384x512 sheet — the shared
+        // RightDrawer fills the height, which the design does not (2026-10-27).
+        RightEdgeSheet(
             visible = showInfo,
-            onClose = { showInfo = false },
+            onDismiss = { showInfo = false },
+            title = stringResource(R.string.player_info_title),
             restoreFocus = infoButtonFocus,
-            modifier = Modifier.align(Alignment.CenterEnd),
-            // Figma 3678:2349: 384 wide, the one light surface in the player.
-            width = 384.dp,
-            backgroundColor = Color(0xFFE3E2E6),
-            cornerRadius = 4.dp,
         ) {
-            MediaInfoDrawer(
+            MediaInfoBody(
                 item = current,
                 fileInfo = fileInfo,
                 // The message's own duration can be 0 — animations never carried
@@ -1737,8 +1735,9 @@ private fun formatMs(ms: Long): String {
     return if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%d:%02d".format(m, s)
 }
 
+/** Sheet content: the five metadata rows, a rule, then the caption (design order). */
 @Composable
-private fun MediaInfoDrawer(
+private fun ColumnScope.MediaInfoBody(
     item: MediaItem,
     fileInfo: TdApi.File?,
     playedDurationMs: Long,
@@ -1751,47 +1750,29 @@ private fun MediaInfoDrawer(
     // player measured — otherwise this row shows "—" for anything whose TG
     // duration is 0.
     val durationMs = if (item.duration > 0) item.duration * 1000L else playedDurationMs
-    // Figma 3678:2349: the one light surface in the player.
-    val ink = Color(0xFF43474E)
-    val titleInk = Color(0xFF121316)
-    val rule = Color(0xFF8E9099).copy(alpha = 0.1f)
-
-    Column(
+    InfoLine("时长:", if (durationMs > 0) formatMs(durationMs) else "—", RightSheetInk)
+    InfoLine(
+        "分辨率:",
+        if (item.width > 0 && item.height > 0) "${item.width} × ${item.height}" else "—",
+        RightSheetInk,
+    )
+    InfoLine("大小:", sizeBytes?.let { formatBytes(it) } ?: "—", RightSheetInk)
+    InfoLine("编码:", videoCodec ?: "—", RightSheetInk)
+    InfoLine("音频:", audioCodec ?: "—", RightSheetInk)
+    Box(Modifier.fillMaxWidth().height(1.dp).background(RightSheetRule))
+    // The caption is the only place the full text is readable; it takes the rest of
+    // the 399dp content area and scrolls.
+    Box(
         modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 20.dp, vertical = 24.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+            .fillMaxWidth()
+            .weight(1f)
+            .verticalScroll(rememberScrollState()),
     ) {
         Text(
-            text = stringResource(R.string.player_info_title),
-            style = MaterialTheme.typography.headlineSmall,
-            color = titleInk,
+            text = item.caption.orEmpty(),
+            style = MaterialTheme.typography.bodyMedium,
+            color = RightSheetInk,
         )
-        Box(Modifier.fillMaxWidth().height(1.dp).background(rule))
-        InfoLine("时长:", if (durationMs > 0) formatMs(durationMs) else "—", ink)
-        InfoLine(
-            "分辨率:",
-            if (item.width > 0 && item.height > 0) "${item.width} × ${item.height}" else "—",
-            ink,
-        )
-        InfoLine("大小:", sizeBytes?.let { formatBytes(it) } ?: "—", ink)
-        InfoLine("编码:", videoCodec ?: "—", ink)
-        InfoLine("音频:", audioCodec ?: "—", ink)
-        Box(Modifier.fillMaxWidth().height(1.dp).background(rule))
-        // The caption sits below the metadata (design order) and scrolls: it is
-        // the only place the full text is readable.
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f)
-                .verticalScroll(rememberScrollState()),
-        ) {
-            Text(
-                text = item.caption.orEmpty(),
-                style = MaterialTheme.typography.bodyMedium,
-                color = ink,
-            )
-        }
     }
 }
 
