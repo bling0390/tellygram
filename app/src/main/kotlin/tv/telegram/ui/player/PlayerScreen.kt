@@ -735,6 +735,10 @@ fun PlayerScreen(
                             // The letterbox around the video matches the app's background
                             // (#1A1C1E), not pure black (product, 2026-10-21).
                             setBackgroundColor(HomeSpec.Background.toArgb())
+                            // media3's shutter (the panel shown until the first frame) defaults
+                            // to BLACK and sits above this background, so buffering read as a
+                            // black screen behind the spinner. Match the app backdrop (2026-10-27).
+                            setShutterBackgroundColor(HomeSpec.Background.toArgb())
                         }
                     },
                     // Applied on every recomposition of this branch (and this
