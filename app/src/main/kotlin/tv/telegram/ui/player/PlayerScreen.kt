@@ -730,6 +730,9 @@ fun PlayerScreen(
                             R.layout.tellygram_player_view, null,
                         ) as PlayerView).apply {
                             useController = false // custom compose controller below
+                            // Belt and braces with app:show_buffering="never": our own
+                            // CircularProgressIndicator is the only loading indicator (2026-10-27).
+                            setShowBuffering(PlayerView.SHOW_BUFFERING_NEVER)
                             resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
                             player = exo
                             // The letterbox around the video matches the app's background
