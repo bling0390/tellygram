@@ -1,0 +1,93 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="760" viewBox="0 0 1400 760" font-family="WenQuanYi Zen Hei, DejaVu Sans, sans-serif">
+  <rect width="1400" height="760" fill="#ffffff"/>
+
+  <text x="40" y="54" font-size="30" font-weight="bold" fill="#1F2328">视频播放页（PlayerScreen）层级</text>
+  <text x="40" y="84" font-size="15" fill="#5B6169">Compose 组合树 + 绘制顺序 · 2026-10-27 · debug 1.2.2</text>
+
+  <!-- ============ left: composition tree ============ -->
+  <text x="40" y="122" font-size="18" font-weight="bold" fill="#5B6169">组合树（谁包含谁）</text>
+
+  <!-- root -->
+  <rect x="60" y="136" width="400" height="64" rx="8" fill="#EDF0F4" stroke="#C9CFD6"/>
+  <text x="80" y="163" font-size="18" font-weight="bold" fill="#1F2328">PlayerScreen</text>
+  <text x="80" y="186" font-size="14" fill="#5B6169">Box · fillMaxSize · 焦点根 · Back 捕获</text>
+
+  <!-- spine -->
+  <path d="M84 200 L84 660" fill="none" stroke="#B9C0C8" stroke-width="2"/>
+
+  <!-- node 1 -->
+  <path d="M84 246 L100 246" fill="none" stroke="#B9C0C8" stroke-width="2"/>
+  <rect x="100" y="214" width="560" height="64" rx="8" fill="#E7F0FB" stroke="#B9CFE8"/>
+  <text x="120" y="241" font-size="18" font-weight="bold" fill="#1F2328">PlayerView（AndroidView）</text>
+  <text x="120" y="264" font-size="14" fill="#3F5568">视频画面 · 原始比例 = FIT，1:1 / 4:3 / 16:9 = ZOOM 裁切</text>
+
+  <!-- node 2 -->
+  <path d="M84 328 L100 328" fill="none" stroke="#B9C0C8" stroke-width="2"/>
+  <rect x="100" y="296" width="560" height="64" rx="8" fill="#FFF6E5" stroke="#E8D4A8"/>
+  <text x="120" y="323" font-size="18" font-weight="bold" fill="#1F2328">转圈层</text>
+  <text x="120" y="346" font-size="14" fill="#6A5A38">首帧栅栏（盖在画面上，不替换画面）· 播放中缓冲小圈</text>
+
+  <!-- node 3 -->
+  <path d="M84 410 L100 410" fill="none" stroke="#B9C0C8" stroke-width="2"/>
+  <rect x="100" y="378" width="560" height="64" rx="8" fill="#FDECEC" stroke="#E8BDBD"/>
+  <text x="120" y="405" font-size="18" font-weight="bold" fill="#1F2328">错误浮层（条件态）</text>
+  <text x="120" y="428" font-size="14" fill="#7A3B3B">Playback error · 400dp 正文 · Try again 胶囊（自动抢焦）</text>
+
+  <!-- node 4 -->
+  <path d="M84 492 L100 492" fill="none" stroke="#B9C0C8" stroke-width="2"/>
+  <rect x="100" y="460" width="560" height="64" rx="8" fill="#E8F6EE" stroke="#B6DCC4"/>
+  <text x="120" y="487" font-size="18" font-weight="bold" fill="#1F2328">控制条（AnimatedVisibility）</text>
+  <text x="120" y="510" font-size="14" fill="#3C5E4A">实心 20% 条 · 深 234dp → Row(8 个圆钮) / Seeker / VideoStrip</text>
+
+  <!-- node 5 -->
+  <path d="M84 574 L100 574" fill="none" stroke="#B9C0C8" stroke-width="2"/>
+  <rect x="100" y="542" width="560" height="64" rx="8" fill="#EEEAFB" stroke="#CFC6EC"/>
+  <text x="120" y="569" font-size="18" font-weight="bold" fill="#1F2328">弹窗菜单（Popup · 独立窗口）</text>
+  <text x="120" y="592" font-size="14" fill="#4C4470">倍速 216×176 · 比例 216×176 · 挂在各自按钮上方</text>
+
+  <!-- node 6 -->
+  <path d="M84 656 L100 656" fill="none" stroke="#B9C0C8" stroke-width="2"/>
+  <rect x="100" y="624" width="560" height="64" rx="8" fill="#EEEAFB" stroke="#CFC6EC"/>
+  <text x="120" y="651" font-size="18" font-weight="bold" fill="#1F2328">信息面板（RightEdgeSheet · 独立窗口）</text>
+  <text x="120" y="674" font-size="14" fill="#4C4470">384×512 贴右 · 5 行元数据 · 说明正文滚动</text>
+
+  <!-- ============ right: draw order ============ -->
+  <text x="740" y="122" font-size="18" font-weight="bold" fill="#5B6169">绘制顺序（从下到上）</text>
+
+  <rect x="740" y="136" width="620" height="64" rx="8" fill="#EDF0F4" stroke="#C9CFD6"/>
+  <text x="760" y="163" font-size="18" font-weight="bold" fill="#1F2328">① 背景 Box</text>
+  <text x="760" y="186" font-size="14" fill="#5B6169">#1A1C1E 铺满整屏，letterbox 也用这个颜色</text>
+  <text x="1320" y="174" font-size="14" fill="#8A9099" text-anchor="end">Z1</text>
+
+  <rect x="740" y="210" width="620" height="64" rx="8" fill="#E7F0FB" stroke="#B9CFE8"/>
+  <text x="760" y="237" font-size="18" font-weight="bold" fill="#1F2328">② 视频画面</text>
+  <text x="760" y="260" font-size="14" fill="#3F5568">PlayerView（TextureView）· 裁切时外层加 aspectRatio + clipToBounds</text>
+  <text x="1320" y="248" font-size="14" fill="#8A9099" text-anchor="end">Z2</text>
+
+  <rect x="740" y="284" width="620" height="64" rx="8" fill="#FFF6E5" stroke="#E8D4A8"/>
+  <text x="760" y="311" font-size="18" font-weight="bold" fill="#1F2328">③ 转圈层</text>
+  <text x="760" y="334" font-size="14" fill="#6A5A38">首帧未渲染 / 缓冲中，居中 44–48dp</text>
+  <text x="1320" y="322" font-size="14" fill="#8A9099" text-anchor="end">Z3</text>
+
+  <rect x="740" y="358" width="620" height="64" rx="8" fill="#FDECEC" stroke="#E8BDBD"/>
+  <text x="760" y="385" font-size="18" font-weight="bold" fill="#1F2328">④ 错误浮层</text>
+  <text x="760" y="408" font-size="14" fill="#7A3B3B">整屏背景色覆盖视频；只在解码/下载失败时存在</text>
+  <text x="1320" y="396" font-size="14" fill="#8A9099" text-anchor="end">Z4</text>
+
+  <rect x="740" y="432" width="620" height="64" rx="8" fill="#E8F6EE" stroke="#B6DCC4"/>
+  <text x="760" y="459" font-size="18" font-weight="bold" fill="#1F2328">⑤ 控制条</text>
+  <text x="760" y="482" font-size="14" fill="#3C5E4A">贴底 · 只在显示时存在于组合中（进出场淡入淡出）</text>
+  <text x="1320" y="470" font-size="14" fill="#8A9099" text-anchor="end">Z5</text>
+
+  <rect x="740" y="506" width="620" height="64" rx="8" fill="#EEEAFB" stroke="#CFC6EC"/>
+  <text x="760" y="533" font-size="18" font-weight="bold" fill="#1F2328">⑥ 菜单弹窗</text>
+  <text x="760" y="556" font-size="14" fill="#4C4470">倍速 / 比例 · Popup 独立窗口，画在所有页面内容之上</text>
+  <text x="1320" y="544" font-size="14" fill="#8A9099" text-anchor="end">Z6</text>
+
+  <rect x="740" y="580" width="620" height="64" rx="8" fill="#EEEAFB" stroke="#CFC6EC"/>
+  <text x="760" y="607" font-size="18" font-weight="bold" fill="#1F2328">⑦ 信息面板</text>
+  <text x="760" y="630" font-size="14" fill="#4C4470">RightEdgeSheet · 384×512 · 独立窗口，不改变视频尺寸</text>
+  <text x="1320" y="618" font-size="14" fill="#8A9099" text-anchor="end">Z7</text>
+
+  <text x="40" y="726" font-size="14" fill="#8A9099">注：Popup 是独立 window，永远压在最上层；控制条不进 Popup，所以缩放/裁切不会影响它。层级不含导航（NavHost）与窗口背景。</text>
+</svg>
