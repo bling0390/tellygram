@@ -109,7 +109,9 @@ android {
                 variant.outputs.forEach { output ->
                     output.versionCode.set(baseMajor * 10000 + baseMinor * 100 + buildNumber)
                     // Display name restarts at 1 after a release; versionCode above does not.
-                    val patch = (buildNumber - debugPatchBase).coerceAtLeast(1)
+                    // Never reuse the release number: the first debug build after 1.2.1
+                    // is 1.2.2-debug, then 1.2.3, … (2026-10-27).
+                    val patch = (buildNumber - debugPatchBase).coerceAtLeast(basePatch + 1)
                     output.versionName.set("$baseMajor.$baseMinor.$patch-debug")
                 }
             }
