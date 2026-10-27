@@ -273,7 +273,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app), HomeState, Settin
     }
 
     /** Playback rates offered by the player's speed popover, slowest first. */
-    val playerSpeeds: List<Float> = listOf(1.0f, 1.25f, 1.5f, 2.0f)
+    val playerSpeeds: List<Float> = listOf(0.5f, 1.0f, 1.5f, 2.0f)
 
     fun setPlayerSpeed(speed: Float) {
         _playerPlaybackSpeed.value = speed

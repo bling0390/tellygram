@@ -119,6 +119,21 @@ import androidx.tv.material3.Icon
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import androidx.compose.material.icons.outlined.Done
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.layout.ContentScale
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
+import java.io.File
+import androidx.media3.common.C
+import androidx.media3.common.Tracks
 
 private const val TAG = "PlayerScreen"
 
@@ -189,13 +204,6 @@ fun PlayerScreen(
         viewModel.setPlayerReturnFocus(current.messageId)
     }
 
-    // JetStream-style info header: the first caption line, or nothing at all.
-    // The design's "year • genre" subtitle is gone — TG carries no genre, and
-    // the "year • Video" stand-in only ever repeated the title.
-    val playerTitle = remember(current.messageId, current.caption) {
-        current.caption?.lineSequence()?.firstOrNull { it.isNotBlank() }?.trim().orEmpty()
-    }
-
     // Exit hook: record the messageId being played so the chats screen can
     // hand focus back to this exact media card on return (instead of the
     // sidebar's "Archived Chats" row). Both player-exit paths (Back, and
@@ -210,6 +218,9 @@ fun PlayerScreen(
     val videoIndices = remember(mediaItems) { walkIndices(mediaItems, MediaType.Video) }
     val hasPrevVideo = hasPreviousIn(videoIndices, index)
     val hasNextVideo = hasNextIn(videoIndices, index)
+    // The strip walks the same list the prev/next buttons do.
+    val videos = remember(mediaItems, videoIndices) { videoIndices.mapNotNull { mediaItems.getOrNull(it) } }
+    val videoIndex = videoIndices.indexOf(index)
 
     fun neighborVideo(delta: Int): Int? = neighbourIn(videoIndices, index, delta)
 
@@ -397,6 +408,7 @@ fun PlayerScreen(
         firstFrameRendered = false
         isBuffering = false
         retryTick++
+        Unit
     }
 
     // Live play state: mirror playWhenReady (user intent) into a State so the
@@ -404,8 +416,12 @@ fun PlayerScreen(
     // isPlaying) means seeking doesn't flicker the button — isPlaying goes
     // false during BUFFERING after a seek, playWhenReady doesn't.
     var nowPlaying by remember(current.fileId) { mutableStateOf(exo.playWhenReady) }
-    LaunchedEffect(exo) {
-        exo.addListener(object : Player.Listener {
+    // Codec/bitrate for the info drawer: TDLib never carries them, the player does once
+    // tracks exist (2026-10-27).
+    var videoCodecInfo by remember(current.fileId) { mutableStateOf<String?>(null) }
+    var audioCodecInfo by remember(current.fileId) { mutableStateOf<String?>(null) }
+    DisposableEffect(exo) {
+        val listener = object : Player.Listener {
             override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
                 nowPlaying = playWhenReady
             }
@@ -433,7 +449,13 @@ fun PlayerScreen(
                     }
                 }
             }
-        })
+            override fun onTracksChanged(tracks: Tracks) {
+                videoCodecInfo = describeVideo(tracks)
+                audioCodecInfo = describeAudio(tracks)
+            }
+        }
+        exo.addListener(listener)
+        onDispose { exo.removeListener(listener) }
     }
 
     val focusRequester = remember { FocusRequester() }
@@ -468,10 +490,9 @@ fun PlayerScreen(
     // it on its side. Keyed on the file id so a recomposition of the same video
     // can never clear a fresh pick (2026-09-13).
     LaunchedEffect(current.fileId) { rotation = 0 }
-    // How the video fills the screen (FIT / FILL / ZOOM). A viewing preference
-    // rather than a per-file correction, so it is kept across videos while the
-    // player is open.
-    var resizeMode by remember { mutableIntStateOf(AspectRatioFrameLayout.RESIZE_MODE_FIT) }
+    // Figma 3622:2125: original ratio (FIT), or a crop to 1:1 / 4:3 / 16:9. A
+    // viewing preference, so it survives a video switch while the player is open.
+    var aspect by remember { mutableStateOf<VideoAspect?>(null) }
     var lastInteractionMs by remember { mutableStateOf(System.currentTimeMillis()) }
     var controllerShownBefore by remember { mutableStateOf(false) }
     // Auto-hide applies only while focus sits on the progress bar; focus on
@@ -625,30 +646,34 @@ fun PlayerScreen(
         } ?: downloadError?.let { stringResource(R.string.player_download_failed, it) }
 
         if (errorMsg != null) {
-            // Error overlay — replaces the silent black screen: shows what
-            // failed, OK retries (re-download / re-prepare), Back exits. Opaque
-            // black on purpose: this used to sit on the message thumbnail, and
-            // a still behind a failure read as a glitch (2026-09-13).
+            // Figma 3679:2204 / 3679:2362: title, wrapped message, Try again pill; the
+            // controller stays visible underneath and the retry button takes focus.
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color.Black),
-                contentAlignment = Alignment.Center,
+                    .background(MaterialTheme.colorScheme.background),
             ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .offset(y = (-52).dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
                     Text(
                         text = stringResource(R.string.player_error_title),
                         color = MaterialTheme.colorScheme.onSurface,
-                        style = MaterialTheme.typography.titleLarge,
+                        style = MaterialTheme.typography.headlineSmall,
                     )
-                    Spacer(Modifier.height(12.dp))
+                    Spacer(Modifier.height(8.dp))
                     Text(
                         text = errorMsg,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = MaterialTheme.colorScheme.onSurface,
                         style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.padding(horizontal = 40.dp),
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.width(400.dp),
                     )
                     Spacer(Modifier.height(24.dp))
+                    TryAgainButton(onRetry = retryPlayback)
                 }
             }
         } else if (!mediaPrepared) {
@@ -661,7 +686,7 @@ fun PlayerScreen(
             // read inside it never registers a dependency: the picker ticked
             // (its read lives in the controller's scope) while the video branch
             // never recomposed and the new mode was never pushed to the view.
-            val videoResizeMode = resizeMode
+            val videoAspect = aspect
             // Classic PlayerView (not the compose PlayerSurface): the compose
             // surface is a bare SurfaceView hookup — it neither applies the
             // video's rotation metadata nor preserves its aspect ratio, so
@@ -713,9 +738,19 @@ fun PlayerScreen(
                     // branch now depends on resizeMode — see videoResizeMode).
                     update = {
                         it.player = exo
-                        it.resizeMode = videoResizeMode
+                        // Cropping to a ratio means ZOOM inside a box already constrained to
+                        // that ratio; "original" letterboxes the whole frame.
+                        it.resizeMode = if (videoAspect == null) {
+                            AspectRatioFrameLayout.RESIZE_MODE_FIT
+                        } else {
+                            AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+                        }
                     },
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = if (videoAspect == null) {
+                        Modifier.fillMaxSize()
+                    } else {
+                        Modifier.aspectRatio(videoAspect.ratio).clipToBounds()
+                    },
                 )
             }
 
@@ -751,18 +786,20 @@ fun PlayerScreen(
             modifier = Modifier.align(Alignment.BottomCenter),
         ) {
             PlayerController(
-                title = playerTitle,
                 positionMs = { exo.currentPosition },
                 durationMs = { exo.duration.coerceAtLeast(0L) },
                 bufferedMs = { exo.bufferedPosition.coerceAtLeast(0L) },
                 isPlaying = { nowPlaying },
                 speed = speed,
                 speeds = viewModel.playerSpeeds,
-                rotation = rotation,
-                resizeMode = resizeMode,
+                aspect = aspect,
                 openPopover = openPopover,
                 progressFocusRequester = progressFocusRequester,
                 infoFocusRequester = infoButtonFocus,
+                videos = videos,
+                currentIndex = videoIndex,
+                fileStates = fileStates,
+                ensureThumb = { id -> viewModel.ensureMediaFile(id, priority = 30) },
                 onProgressFocusChange = { progressFocused = it },
                 onInteraction = bumpController,
                 onHideController = { showController = false },
@@ -786,17 +823,13 @@ fun PlayerScreen(
                     openPopover = popover
                 },
                 onDismissPopover = { openPopover = null },
-                // The popover closes itself after a pick (see
-                // PlayerPopoverMenuPopup), so these only own the state.
-                onSpeedChange = { newSpeed ->
-                    viewModel.setPlayerSpeed(newSpeed)
-                },
-                onRotationChange = { degrees ->
-                    rotation = degrees
+                onSpeedChange = { newSpeed -> viewModel.setPlayerSpeed(newSpeed) },
+                onAspectChange = { newAspect ->
+                    aspect = newAspect
                     bumpController()
                 },
-                onResizeModeChange = { mode ->
-                    resizeMode = mode
+                onInfo = {
+                    showInfo = !showInfo
                     bumpController()
                 },
                 onPrev = if (hasPrevVideo) {
@@ -805,10 +838,7 @@ fun PlayerScreen(
                 onNext = if (hasNextVideo) {
                     { neighborVideo(+1)?.let { onNavigateTo(it) }; bumpController() }
                 } else null,
-                onInfo = {
-                    showInfo = !showInfo
-                    bumpController()
-                },
+                onSelectVideo = { i -> videoIndices.getOrNull(i)?.let { onNavigateTo(it) } },
             )
         }
 
@@ -820,6 +850,10 @@ fun PlayerScreen(
             onClose = { showInfo = false },
             restoreFocus = infoButtonFocus,
             modifier = Modifier.align(Alignment.CenterEnd),
+            // Figma 3678:2349: 384 wide, the one light surface in the player.
+            width = 384.dp,
+            backgroundColor = Color(0xFFE3E2E6),
+            cornerRadius = 4.dp,
         ) {
             MediaInfoDrawer(
                 item = current,
@@ -828,6 +862,8 @@ fun PlayerScreen(
                 // one, and a video's occasionally arrives as 0 — so hand over
                 // what the player knows once the media is prepared.
                 playedDurationMs = exo.duration.takeIf { it > 0 } ?: 0L,
+                videoCodec = videoCodecInfo,
+                audioCodec = audioCodecInfo,
             )
         }
     }
@@ -835,18 +871,20 @@ fun PlayerScreen(
 
 @Composable
 private fun PlayerController(
-    title: String,
     positionMs: () -> Long,
     durationMs: () -> Long,
     bufferedMs: () -> Long,
     isPlaying: () -> Boolean,
     speed: Float,
     speeds: List<Float>,
-    rotation: Int,
-    resizeMode: Int,
+    aspect: VideoAspect?,
     openPopover: PlayerPopover?,
     progressFocusRequester: FocusRequester,
     infoFocusRequester: FocusRequester,
+    videos: List<MediaItem>,
+    currentIndex: Int,
+    fileStates: Map<Int, FileDownloadState>,
+    ensureThumb: (Int) -> Unit,
     onProgressFocusChange: (Boolean) -> Unit,
     onInteraction: () -> Unit,
     onHideController: () -> Unit,
@@ -856,11 +894,11 @@ private fun PlayerController(
     onOpenPopover: (PlayerPopover) -> Unit,
     onDismissPopover: () -> Unit,
     onSpeedChange: (Float) -> Unit,
-    onRotationChange: (Int) -> Unit,
-    onResizeModeChange: (Int) -> Unit,
+    onAspectChange: (VideoAspect?) -> Unit,
     onInfo: () -> Unit,
     onPrev: (() -> Unit)?,
     onNext: (() -> Unit)?,
+    onSelectVideo: (Int) -> Unit,
 ) {
     val playing by remember { derivedStateOf { isPlaying() } }
 
@@ -888,9 +926,10 @@ private fun PlayerController(
     val seekFwdFocus = remember { FocusRequester() }
     val nextFocus = remember { FocusRequester() }
     val speedFocus = remember { FocusRequester() }
-    val rotateFocus = remember { FocusRequester() }
-    val displayFocus = remember { FocusRequester() }
+    val aspectFocus = remember { FocusRequester() }
     val infoFocus = infoFocusRequester
+    // The strip below the seeker: Down from the seeker lands here, Up leaves it.
+    val stripFocus = remember { FocusRequester() }
 
     // Popover focus handover: the Popup window holds focus while a picker is up,
     // so hand the button that opened it back once it closes (the same explicit
@@ -903,8 +942,7 @@ private fun PlayerController(
         } else if (popoverShownBefore != null) {
             val target = when (popoverShownBefore) {
                 PlayerPopover.Speed -> speedFocus
-                PlayerPopover.Rotation -> rotateFocus
-                PlayerPopover.Display -> displayFocus
+                PlayerPopover.Aspect -> aspectFocus
                 null -> null
             }
             popoverShownBefore = null
@@ -922,8 +960,7 @@ private fun PlayerController(
             add(seekFwdFocus)
             if (onNext != null) add(nextFocus)
             add(speedFocus)
-            add(rotateFocus)
-            add(displayFocus)
+            add(aspectFocus)
             add(infoFocus)
         }
     }
@@ -947,64 +984,26 @@ private fun PlayerController(
         playFocus.requestFocus()
     }
 
-    // Localised display menu labels. The popover takes a plain (T) -> String,
-    // so the strings are resolved here rather than inside the menu.
-    val displayLabels = mapOf(
-        AspectRatioFrameLayout.RESIZE_MODE_FIT to stringResource(R.string.player_display_fit),
-        AspectRatioFrameLayout.RESIZE_MODE_FILL to stringResource(R.string.player_display_fill),
-        AspectRatioFrameLayout.RESIZE_MODE_ZOOM to stringResource(R.string.player_display_zoom),
-    )
-
-    // JetStream-style controller: a dark scrim gradient over the poster, a
-    // title block on the left, circular action buttons on the right, and a
-    // slim seeker (current time + bar + end time) underneath.
-    // JetStream (Figma 685:1449): the Scrim is a FULL-FRAME gradient —
-    // rgba(0,0,0,0.1) at the top deepening to 0.8 at the bottom — rather than
-    // a band behind the block, so the content sits on it exactly like the
-    // design. Content is inset 58dp ((960 - 844) / 2) each side and the block
-    // is anchored 48px above the frame's bottom edge.
+    // Figma 3678:2255: a flat 20% bar over the video, rounded 4, with a 1px
+    // white 2% hairline along its top edge — not the full-frame gradient the
+    // old controller painted (2026-10-27).
     Column(
         modifier = Modifier
-            .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    listOf(
-                        Color.Black.copy(alpha = 0.1f),
-                        Color.Black.copy(alpha = 0.8f),
-                    ),
-                ),
-            )
-            .padding(start = 58.dp, end = 58.dp, bottom = 48.dp),
-        verticalArrangement = Arrangement.Bottom,
-    ) {
-        // Figma: align-items flex-end, and the Label column is a fixed 484px
-        // inside the 844px content width.
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.Bottom,
-            horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .widthIn(max = 484.dp),
-            ) {
-                // Blank when the message has no caption: an empty block beats
-                // labelling every uncaptioned file "Video".
-                if (title.isNotBlank()) {
-                    Text(
-                        text = title,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        // Figma headline/medium = Inter 400 / 28sp / 36.
-                        style = MaterialTheme.typography.headlineMedium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
+            .fillMaxWidth()
+            .background(Color.Black.copy(alpha = 0.2f), RoundedCornerShape(4.dp))
+            .drawBehind {
+                drawRect(Color.White.copy(alpha = 0.02f), size = Size(size.width, 1.dp.toPx()))
             }
-            Spacer(Modifier.width(12.dp))
-            Row(
-                modifier = Modifier.onKeyEvent { ev ->
+            .padding(top = 8.dp, bottom = 48.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        // Actions only: the design's Label column is empty now, the caption
+        // lives in the info drawer (2026-10-27).
+        Row(
+            modifier = Modifier
+                .width(836.dp)
+                .onKeyEvent { ev ->
                     if (ev.type != KeyEventType.KeyDown) return@onKeyEvent false
                     when (ev.key) {
                         Key.DirectionLeft -> { select(-1); true }
@@ -1020,115 +1019,97 @@ private fun PlayerController(
                         else -> false
                     }
                 },
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                if (onPrev != null) {
-                    ControllerButton(
-                        icon = Icons.Default.SkipPrevious,
-                        contentDescription = stringResource(R.string.player_btn_prev),
-                        onClick = onPrev,
-                        modifier = Modifier.focusRequester(prevFocus),
-                    )
-                    Spacer(Modifier.width(12.dp))
-                }
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (onPrev != null) {
                 ControllerButton(
-                    icon = Icons.Default.Replay10,
-                    contentDescription = stringResource(R.string.player_btn_seek_back),
-                    onClick = onSeekBack,
-                    modifier = Modifier.focusRequester(seekBackFocus),
+                    icon = Icons.Default.SkipPrevious,
+                    contentDescription = stringResource(R.string.player_btn_prev),
+                    onClick = onPrev,
+                    modifier = Modifier.focusRequester(prevFocus),
                 )
                 Spacer(Modifier.width(12.dp))
-                ControllerButton(
-                    icon = if (playing) Icons.Default.Pause else Icons.Default.PlayArrow,
-                    contentDescription = stringResource(
-                        if (playing) R.string.player_btn_pause else R.string.player_btn_play,
-                    ),
-                    onClick = onPlayPause,
-                    modifier = Modifier.focusRequester(playFocus),
-                )
+            }
+            // Design order: replay 10 (left of play), play/pause, forward 10.
+            ControllerButton(
+                icon = Icons.Default.Replay10,
+                contentDescription = stringResource(R.string.player_btn_seek_back),
+                onClick = onSeekBack,
+                modifier = Modifier.focusRequester(seekBackFocus),
+            )
+            Spacer(Modifier.width(12.dp))
+            ControllerButton(
+                icon = if (playing) Icons.Default.Pause else Icons.Default.PlayArrow,
+                contentDescription = stringResource(
+                    if (playing) R.string.player_btn_pause else R.string.player_btn_play,
+                ),
+                onClick = onPlayPause,
+                modifier = Modifier.focusRequester(playFocus),
+            )
+            Spacer(Modifier.width(12.dp))
+            ControllerButton(
+                icon = Icons.Default.Forward10,
+                contentDescription = stringResource(R.string.player_btn_seek_fwd),
+                onClick = onSeekFwd,
+                modifier = Modifier.focusRequester(seekFwdFocus),
+            )
+            if (onNext != null) {
                 Spacer(Modifier.width(12.dp))
                 ControllerButton(
-                    icon = Icons.Default.Forward10,
-                    contentDescription = stringResource(R.string.player_btn_seek_fwd),
-                    onClick = onSeekFwd,
-                    modifier = Modifier.focusRequester(seekFwdFocus),
-                )
-                if (onNext != null) {
-                    Spacer(Modifier.width(12.dp))
-                    ControllerButton(
-                        icon = Icons.Default.SkipNext,
-                        contentDescription = stringResource(R.string.player_btn_next),
-                        onClick = onNext,
-                        modifier = Modifier.focusRequester(nextFocus),
-                    )
-                }
-                Spacer(Modifier.width(12.dp))
-                // Each popover anchors to its own button's Box, so it opens
-                // directly above that button no matter how the row is laid out.
-                Box {
-                    ControllerButton(
-                        icon = Icons.Default.Speed,
-                        contentDescription = stringResource(R.string.player_btn_speed),
-                        onClick = { onOpenPopover(PlayerPopover.Speed) },
-                        modifier = Modifier.focusRequester(speedFocus),
-                    )
-                    if (openPopover == PlayerPopover.Speed) {
-                        PlayerPopoverMenuPopup(
-                            items = speeds,
-                            current = speed,
-                            label = ::formatSpeed,
-                            onSelect = onSpeedChange,
-                            onDismiss = onDismissPopover,
-                        )
-                    }
-                }
-                Spacer(Modifier.width(12.dp))
-                Box {
-                    ControllerButton(
-                        icon = Icons.Default.ScreenRotation,
-                        contentDescription = stringResource(R.string.player_btn_rotate),
-                        onClick = { onOpenPopover(PlayerPopover.Rotation) },
-                        modifier = Modifier.focusRequester(rotateFocus),
-                    )
-                    if (openPopover == PlayerPopover.Rotation) {
-                        PlayerPopoverMenuPopup(
-                            items = PLAYER_ROTATIONS,
-                            current = rotation,
-                            label = ::formatDegrees,
-                            onSelect = onRotationChange,
-                            onDismiss = onDismissPopover,
-                        )
-                    }
-                }
-                Spacer(Modifier.width(12.dp))
-                Box {
-                    ControllerButton(
-                        icon = Icons.Default.AspectRatio,
-                        contentDescription = stringResource(R.string.player_btn_display),
-                        onClick = { onOpenPopover(PlayerPopover.Display) },
-                        modifier = Modifier.focusRequester(displayFocus),
-                    )
-                    if (openPopover == PlayerPopover.Display) {
-                        PlayerPopoverMenuPopup(
-                            items = PLAYER_RESIZE_MODES,
-                            current = resizeMode,
-                            label = { mode -> displayLabels.getValue(mode) },
-                            onSelect = onResizeModeChange,
-                            onDismiss = onDismissPopover,
-                        )
-                    }
-                }
-                Spacer(Modifier.width(12.dp))
-                ControllerButton(
-                    icon = Icons.Default.Info,
-                    contentDescription = stringResource(R.string.player_btn_info),
-                    onClick = onInfo,
-                    modifier = Modifier.focusRequester(infoFocus),
+                    icon = Icons.Default.SkipNext,
+                    contentDescription = stringResource(R.string.player_btn_next),
+                    onClick = onNext,
+                    modifier = Modifier.focusRequester(nextFocus),
                 )
             }
+            Spacer(Modifier.width(12.dp))
+            Box {
+                ControllerButton(
+                    icon = Icons.Default.Speed,
+                    contentDescription = stringResource(R.string.player_btn_speed),
+                    onClick = { onOpenPopover(PlayerPopover.Speed) },
+                    modifier = Modifier.focusRequester(speedFocus),
+                )
+                if (openPopover == PlayerPopover.Speed) {
+                    PlayerPopoverMenuPopup(
+                        items = speeds,
+                        current = speed,
+                        label = ::formatSpeed,
+                        onSelect = onSpeedChange,
+                        onDismiss = onDismissPopover,
+                    )
+                }
+            }
+            Spacer(Modifier.width(12.dp))
+            Box {
+                ControllerButton(
+                    icon = Icons.Default.AspectRatio,
+                    contentDescription = stringResource(R.string.player_btn_aspect),
+                    onClick = { onOpenPopover(PlayerPopover.Aspect) },
+                    modifier = Modifier.focusRequester(aspectFocus),
+                )
+                if (openPopover == PlayerPopover.Aspect) {
+                    val originalLabel = stringResource(R.string.player_aspect_original)
+                    PlayerPopoverMenuPopup(
+                        items = listOf(null) + VideoAspect.entries,
+                        current = aspect,
+                        label = { it?.label ?: originalLabel },
+                        onSelect = onAspectChange,
+                        onDismiss = onDismissPopover,
+                    )
+                }
+            }
+            Spacer(Modifier.width(12.dp))
+            ControllerButton(
+                icon = Icons.Default.Info,
+                contentDescription = stringResource(R.string.player_btn_info),
+                onClick = onInfo,
+                modifier = Modifier.focusRequester(infoFocus),
+            )
         }
-        Spacer(Modifier.height(16.dp))
         Seeker(
+            modifier = Modifier.width(836.dp),
             positionMs = nowPos,
             durationMs = nowDur,
             bufferedMs = nowBuffered,
@@ -1137,8 +1118,27 @@ private fun PlayerController(
             onSeekBack = onSeekBack,
             onSeekFwd = onSeekFwd,
             onMoveUp = { focusPlay() },
+            onMoveDown = {
+                onInteraction()
+                try { stripFocus.requestFocus() } catch (_: IllegalStateException) {}
+            },
             onHide = onHideController,
             onInteraction = onInteraction,
+        )
+        VideoStrip(
+            videos = videos,
+            currentIndex = currentIndex,
+            fileStates = fileStates,
+            ensureThumb = ensureThumb,
+            focusRequester = stripFocus,
+            onSelect = onSelectVideo,
+            onInteraction = onInteraction,
+            onMoveUp = {
+                onInteraction()
+                try { progressFocusRequester.requestFocus() } catch (_: IllegalStateException) {}
+            },
+            onHide = { onInteraction(); onHideController() },
+            modifier = Modifier.width(836.dp),
         )
     }
 }
@@ -1153,8 +1153,10 @@ private fun Seeker(
     onSeekBack: () -> Unit,
     onSeekFwd: () -> Unit,
     onMoveUp: () -> Unit,
+    onMoveDown: () -> Unit,
     onHide: () -> Unit,
     onInteraction: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val pct = if (durationMs > 0L) (positionMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
     // Buffered frontier (what ExoPlayer can play up to without stalling),
@@ -1162,36 +1164,28 @@ private fun Seeker(
     val bufferedPct = if (durationMs > 0L) (bufferedMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
     val interactionSource = remember { MutableInteractionSource() }
     val isFocused by interactionSource.collectIsFocusedAsState()
-    // Figma 685:1449: bar 3dp at rest, thickening to 5dp on focus as the TV
-    // focus affordance (the design itself defines no focus state).
-    val barHeight = if (isFocused) 5.dp else 3.dp
     // Report focus state for auto-hide logic.
     LaunchedEffect(isFocused) {
         onProgressFocusChange(isFocused)
     }
 
-    // JetStream seeker: current time on the left, end time on the right,
-    // slim bar + dot handle in between.
+    // Figma 3678:2402: 48dp time slots either side, a constant 5dp bar in
+    // between; the handle appears only while the bar itself has focus.
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
             text = formatMs(positionMs),
-            // Figma: #FFFFFF at 80% opacity.
             color = Color.White.copy(alpha = 0.8f),
-            style = MaterialTheme.typography.labelMedium,
-            // Fixed slot (Figma layout_ca3ac11c = 48dp wide), so a longer time
-            // string never pushes the bar sideways. Left-aligned per the design.
+            style = MaterialTheme.typography.labelSmall,
             modifier = Modifier.width(SeekTimeSlotWidth),
             textAlign = TextAlign.Start,
             maxLines = 1,
             softWrap = false,
         )
         Spacer(Modifier.width(8.dp))
-        // Fixed-size wrapper: bar grows inside without shifting the row, and a
-        // fixed width keeps the track from stretching as the labels change.
         Box(
             modifier = Modifier
                 .width(SeekBarWidth)
@@ -1201,7 +1195,7 @@ private fun Seeker(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(barHeight)
+                    .height(5.dp)
                     .focusRequester(focusRequester)
                     .focusable(interactionSource = interactionSource)
                     .onKeyEvent { ev ->
@@ -1210,7 +1204,7 @@ private fun Seeker(
                             Key.DirectionLeft -> { onInteraction(); onSeekBack(); true }
                             Key.DirectionRight -> { onInteraction(); onSeekFwd(); true }
                             Key.DirectionUp -> { onInteraction(); onMoveUp(); true }
-                            Key.DirectionDown -> { onInteraction(); onHide(); true }
+                            Key.DirectionDown -> { onInteraction(); onMoveDown(); true }
                             // OK on the seeker: no-op by design (consume it so
                             // it doesn't bubble to the page-level handler).
                             Key.DirectionCenter, Key.Enter -> { onInteraction(); true }
@@ -1218,42 +1212,31 @@ private fun Seeker(
                         }
                     },
             ) {
-                // Figma 685:1449: track 20% white, buffered 45% white, played
-                // solid white — all sharing the bar height and a 2dp radius.
+                // Figma: track 20% white, buffered 45% white, played solid white.
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(barHeight)
+                        .height(5.dp)
                         .background(Color.White.copy(alpha = 0.20f), RoundedCornerShape(2.dp)),
                 ) {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth(bufferedPct.coerceAtLeast(pct))
-                            .height(barHeight)
+                            .height(5.dp)
                             .background(Color.White.copy(alpha = 0.45f), RoundedCornerShape(2.dp)),
                     )
                     Box(
                         modifier = Modifier
                             .fillMaxWidth(pct)
-                            .height(barHeight)
+                            .height(5.dp)
                             .background(Color.White, RoundedCornerShape(2.dp)),
                     )
                 }
             }
-            // Playhead handle: drawn only while the bar itself has focus — it is
-            // a focus affordance, not a permanent marker (the controller's own
-            // visibility already gates it, since the seeker only composes inside
-            // PlayerController). Sits inside the played portion, flush with its
-            // right end.
+            // Playhead handle: focus affordance only, flush with the played end.
             if (isFocused) {
                 Box(
                     modifier = Modifier
-                        // The parent centres its children, so a pct-wide box would
-                        // be centred too: the handle then tracked from the MIDDLE
-                        // of the bar (0%) to its right end (100%) instead of
-                        // following the playhead. Pin it to the start.
-                        // widthIn keeps it at least as wide as the handle so the
-                        // dot never hangs off the bar's left edge at pct ~ 0.
                         .align(Alignment.CenterStart)
                         .widthIn(min = SeekHandleSize)
                         .fillMaxWidth(pct)
@@ -1272,18 +1255,135 @@ private fun Seeker(
         Spacer(Modifier.width(8.dp))
         Text(
             text = formatMs(durationMs),
-            // Figma: #FFFFFF at 80% opacity.
             color = Color.White.copy(alpha = 0.8f),
-            // Figma: right slot is body/small (Inter Regular 400), not
-            // label/medium — keep the design's weight difference.
-            style = MaterialTheme.typography.bodySmall,
-            // Same fixed 48dp slot as the position label, text right-aligned
-            // inside it per the design.
+            style = MaterialTheme.typography.labelSmall,
             modifier = Modifier.width(SeekTimeSlotWidth),
             textAlign = TextAlign.End,
             maxLines = 1,
             softWrap = false,
         )
+    }
+}
+
+/**
+ * Figma 3678:2301: the video strip under the seeker. Focus moves the highlight only; OK switches
+ * the video (which auto-plays and resumes from its saved position). Up returns to the seeker,
+ * Down hides the controller (2026-10-27).
+ */
+@Composable
+private fun VideoStrip(
+    videos: List<MediaItem>,
+    currentIndex: Int,
+    fileStates: Map<Int, FileDownloadState>,
+    ensureThumb: (Int) -> Unit,
+    focusRequester: FocusRequester,
+    onSelect: (Int) -> Unit,
+    onInteraction: () -> Unit,
+    onMoveUp: () -> Unit,
+    onHide: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    if (videos.isEmpty()) return
+    val listState = rememberLazyListState()
+    var selected by remember(currentIndex) {
+        mutableIntStateOf(currentIndex.coerceIn(0, videos.lastIndex))
+    }
+    LaunchedEffect(currentIndex) {
+        if (currentIndex in videos.indices) runCatching { listState.scrollToItem(currentIndex) }
+    }
+    LaunchedEffect(selected) {
+        if (selected in videos.indices) runCatching { listState.animateScrollToItem(selected) }
+    }
+    LazyRow(
+        state = listState,
+        modifier = modifier
+            .height(90.dp)
+            .focusRequester(focusRequester)
+            .focusable()
+            .onKeyEvent { ev ->
+                if (ev.type != KeyEventType.KeyDown) return@onKeyEvent false
+                when (ev.key) {
+                    Key.DirectionLeft -> {
+                        onInteraction()
+                        selected = (selected - 1).coerceAtLeast(0)
+                        true
+                    }
+                    Key.DirectionRight -> {
+                        onInteraction()
+                        selected = (selected + 1).coerceAtMost(videos.lastIndex)
+                        true
+                    }
+                    Key.DirectionCenter, Key.Enter -> {
+                        onInteraction()
+                        if (selected != currentIndex) onSelect(selected)
+                        true
+                    }
+                    Key.DirectionUp -> { onInteraction(); onMoveUp(); true }
+                    Key.DirectionDown -> { onInteraction(); onHide(); true }
+                    else -> false
+                }
+            },
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        itemsIndexed(videos) { i, item ->
+            VideoStripCell(
+                item = item,
+                highlighted = i == selected,
+                fileStates = fileStates,
+                ensureThumb = ensureThumb,
+            )
+        }
+    }
+}
+
+@Composable
+private fun VideoStripCell(
+    item: MediaItem,
+    highlighted: Boolean,
+    fileStates: Map<Int, FileDownloadState>,
+    ensureThumb: (Int) -> Unit,
+) {
+    val ctx = LocalContext.current
+    val thumbId = item.thumbnailFileId ?: 0
+    // Same chain as the photo strip: medium thumbnail first, embedded minithumbnail under it.
+    val path = (fileStates[thumbId] as? FileDownloadState.Local)?.path
+        ?: item.thumbnailLocalPath
+        ?: item.localPath
+    LaunchedEffect(thumbId, path) {
+        if (path == null && thumbId != 0) ensureThumb(thumbId)
+    }
+    Box(
+        modifier = Modifier
+            // 118x90 slot with the 3dp stroke outside the 112x84 picture.
+            .size(width = 118.dp, height = 90.dp)
+            .border(
+                3.dp,
+                if (highlighted) Color.White else Color.Transparent,
+                RoundedCornerShape(4.dp),
+            )
+            .padding(3.dp)
+            .clip(RoundedCornerShape(4.dp))
+            .background(HomeSpec.SurfaceContainer),
+        contentAlignment = Alignment.Center,
+    ) {
+        item.minithumbnail?.let { mini ->
+            AsyncImage(
+                model = mini,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
+        if (path != null) {
+            AsyncImage(
+                model = remember(path) {
+                    ImageRequest.Builder(ctx).data(File(path)).crossfade(false).build()
+                },
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
     }
 }
 
@@ -1350,17 +1450,17 @@ private val PlayerPopoverListPaddingV = 8.dp
 private val PlayerPopoverListPaddingH = 12.dp
 
 // Which picker the controller has open, if any.
-private enum class PlayerPopover { Speed, Rotation, Display }
+private enum class PlayerPopover { Speed, Aspect }
 
-// Surface rotation angles the rotate button offers, upright first.
-private val PLAYER_ROTATIONS = listOf(0, 90, 180, 270)
-
-// How the video fills the frame, in menu order: letterbox, stretch, crop.
-private val PLAYER_RESIZE_MODES = listOf(
-    AspectRatioFrameLayout.RESIZE_MODE_FIT,
-    AspectRatioFrameLayout.RESIZE_MODE_FILL,
-    AspectRatioFrameLayout.RESIZE_MODE_ZOOM,
-)
+/**
+ * Figma 3622:2125 aspect menu. Null is the video's own ratio (FIT); the rest crop the picture
+ * to that ratio, the same rule the photo viewer uses (2026-10-27).
+ */
+private enum class VideoAspect(val label: String, val ratio: Float) {
+    Square("1:1", 1f),
+    FourThree("4:3", 4f / 3f),
+    Wide("16:9", 16f / 9f),
+}
 
 // "1.0x" / "1.25x" — the same shape the removed inline speed label used.
 private fun formatSpeed(speed: Float): String = "${speed}x"
@@ -1549,6 +1649,85 @@ private fun PlayerPopoverItem(
     }
 }
 
+@Composable
+private fun TryAgainButton(onRetry: () -> Unit) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val focused by interactionSource.collectIsFocusedAsState()
+    val focus = remember { FocusRequester() }
+    LaunchedEffect(Unit) {
+        withFrameNanos { }
+        runCatching { focus.requestFocus() }
+    }
+    Box(
+        modifier = Modifier
+            .focusRequester(focus)
+            .clip(RoundedCornerShape(4.dp))
+            .background(if (focused) Color.White else HomeSpec.SurfaceContainer)
+            .focusable(interactionSource = interactionSource)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onRetry,
+            )
+            .onKeyEvent { ev ->
+                if (ev.type == KeyEventType.KeyUp &&
+                    (ev.key == Key.DirectionCenter || ev.key == Key.Enter)
+                ) {
+                    onRetry()
+                    true
+                } else {
+                    false
+                }
+            }
+            .padding(horizontal = 32.dp, vertical = 10.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = stringResource(R.string.player_error_retry),
+            style = MaterialTheme.typography.titleSmall,
+            color = if (focused) HomeSpec.InverseOnSurface else MaterialTheme.colorScheme.onSurface,
+        )
+    }
+}
+
+/** "H.264 · 4.5 Mbps" straight off the prepared track; null until prepare finishes. */
+private fun describeVideo(tracks: Tracks): String? {
+    val group = tracks.groups.firstOrNull { it.type == C.TRACK_TYPE_VIDEO } ?: return null
+    val index = (0 until group.length).firstOrNull { group.isTrackSupported(it) } ?: 0
+    val format = group.getTrackFormat(index)
+    val name = when (format.sampleMimeType) {
+        "video/avc" -> "H.264"
+        "video/hevc" -> "HEVC"
+        "video/x-vnd.on2.vp9" -> "VP9"
+        "video/av01" -> "AV1"
+        "video/mp4v-es" -> "MPEG-4"
+        else -> format.sampleMimeType?.substringAfter('/')?.uppercase() ?: "—"
+    }
+    val bitrate = format.bitrate.takeIf { it > 0 }
+        ?.let { " · %.1f Mbps".format(it / 1_000_000f) }
+        .orEmpty()
+    return name + bitrate
+}
+
+/** "AAC · 2ch"; the row that explains "picture but no sound". */
+private fun describeAudio(tracks: Tracks): String? {
+    val group = tracks.groups.firstOrNull { it.type == C.TRACK_TYPE_AUDIO } ?: return null
+    val index = (0 until group.length).firstOrNull { group.isTrackSupported(it) } ?: 0
+    val format = group.getTrackFormat(index)
+    val name = when (format.sampleMimeType) {
+        "audio/mp4a-latm" -> "AAC"
+        "audio/ac3" -> "AC-3"
+        "audio/eac3" -> "E-AC-3"
+        "audio/vnd.dts" -> "DTS"
+        "audio/opus" -> "Opus"
+        "audio/vorbis" -> "Vorbis"
+        "audio/mpeg" -> "MP3"
+        else -> format.sampleMimeType?.substringAfter('/')?.uppercase() ?: "—"
+    }
+    val channels = format.channelCount.takeIf { it > 0 }?.let { " · ${it}ch" }.orEmpty()
+    return name + channels
+}
+
 private fun formatMs(ms: Long): String {
     if (ms <= 0L) return "0:00"
     val total = ms / 1000
@@ -1563,6 +1742,8 @@ private fun MediaInfoDrawer(
     item: MediaItem,
     fileInfo: TdApi.File?,
     playedDurationMs: Long,
+    videoCodec: String?,
+    audioCodec: String?,
 ) {
     val sizeBytes = fileInfo?.size?.toLong()?.takeIf { it > 0 }
         ?: fileInfo?.expectedSize?.toLong()?.takeIf { it > 0 }
@@ -1570,83 +1751,64 @@ private fun MediaInfoDrawer(
     // player measured — otherwise this row shows "—" for anything whose TG
     // duration is 0.
     val durationMs = if (item.duration > 0) item.duration * 1000L else playedDurationMs
-    val dateText = if (item.date > 0) {
-        java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault())
-            .format(java.util.Date(item.date * 1000L))
-    } else {
-        "—"
-    }
+    // Figma 3678:2349: the one light surface in the player.
+    val ink = Color(0xFF43474E)
+    val titleInk = Color(0xFF121316)
+    val rule = Color(0xFF8E9099).copy(alpha = 0.1f)
 
-    Box(
+    Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 24.dp, vertical = 28.dp),
+            .padding(horizontal = 20.dp, vertical = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Column(modifier = Modifier.fillMaxSize()) {
+        Text(
+            text = stringResource(R.string.player_info_title),
+            style = MaterialTheme.typography.headlineSmall,
+            color = titleInk,
+        )
+        Box(Modifier.fillMaxWidth().height(1.dp).background(rule))
+        InfoLine("时长:", if (durationMs > 0) formatMs(durationMs) else "—", ink)
+        InfoLine(
+            "分辨率:",
+            if (item.width > 0 && item.height > 0) "${item.width} × ${item.height}" else "—",
+            ink,
+        )
+        InfoLine("大小:", sizeBytes?.let { formatBytes(it) } ?: "—", ink)
+        InfoLine("编码:", videoCodec ?: "—", ink)
+        InfoLine("音频:", audioCodec ?: "—", ink)
+        Box(Modifier.fillMaxWidth().height(1.dp).background(rule))
+        // The caption sits below the metadata (design order) and scrolls: it is
+        // the only place the full text is readable.
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+                .verticalScroll(rememberScrollState()),
+        ) {
             Text(
-                text = stringResource(R.string.player_info_title),
-                color = MaterialTheme.colorScheme.onSurface,
-                style = MaterialTheme.typography.titleLarge,
+                text = item.caption.orEmpty(),
+                style = MaterialTheme.typography.bodyMedium,
+                color = ink,
             )
-            Spacer(Modifier.height(20.dp))
-
-            InfoRow(
-                icon = Icons.Default.Schedule,
-                label = stringResource(R.string.player_info_duration),
-                value = if (durationMs > 0) formatMs(durationMs) else "—",
-            )
-            InfoRow(
-                icon = Icons.Default.AspectRatio,
-                label = stringResource(R.string.player_info_resolution),
-                value = if (item.width > 0 && item.height > 0) "${item.width} × ${item.height}" else "—",
-            )
-            InfoRow(
-                icon = Icons.Default.SdStorage,
-                label = stringResource(R.string.player_info_size),
-                value = if (sizeBytes != null) formatBytes(sizeBytes) else "—",
-            )
-            InfoRow(
-                icon = Icons.Default.CalendarToday,
-                label = stringResource(R.string.player_info_date),
-                value = dateText,
-            )
-
-            if (!item.caption.isNullOrBlank()) {
-                Spacer(Modifier.height(16.dp))
-                Text(
-                    text = item.caption!!,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f),
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-            }
         }
     }
 }
 
 @Composable
-private fun InfoRow(icon: ImageVector, label: String, value: String) {
+private fun InfoLine(label: String, value: String, ink: Color) {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
+        modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(18.dp),
-        )
-        Spacer(Modifier.width(12.dp))
         Text(
             text = label,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            style = MaterialTheme.typography.bodyMedium,
-            modifier = Modifier.width(110.dp),
+            color = ink,
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.width(60.dp),
         )
-        Text(
-            text = value,
-            color = MaterialTheme.colorScheme.onSurface,
-            style = MaterialTheme.typography.bodyMedium,
-        )
+        Spacer(Modifier.width(8.dp))
+        Text(text = value, color = ink, style = MaterialTheme.typography.labelLarge)
     }
 }
 
