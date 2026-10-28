@@ -60,6 +60,9 @@ class TdDataSource(
         fileId = uri.host?.toIntOrNull() ?: throw IOException("bad td uri: $uri")
         Log.d(TAG, "open: file=$fileId pos=${dataSpec.position} len=${dataSpec.length}")
         fileRepo.startStreaming(fileId, priority = 1)
+        // The probe deletes and restarts the file while looking for the MP4 index: finish it
+        // before taking a handle, or reads race the reset (2026-10-28).
+        fileRepo.awaitTailProbe(fileId)
 
         // A seek never re-points the download: the file stays a contiguous
         // prefix from 0, and reading an undownloaded region waits for it (see

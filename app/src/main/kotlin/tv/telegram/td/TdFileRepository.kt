@@ -16,6 +16,8 @@ import android.os.StatFs
 import java.io.File
 import java.io.RandomAccessFile
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 sealed class FileDownloadState {
     data object Remote : FileDownloadState()
@@ -196,15 +198,6 @@ class TdFileRepository(
                 failed = failed,
             )
             wakeStreamWaiters(fileId)
-            // Tail probe: once we know the size, fetch the last chunk and see whether the MP4
-            // index sits there. One attempt per download generation (2026-10-28).
-            val size = file.expectedSize.toLong()
-            if (TAIL_PREFETCH_ENABLED && !local.isDownloadingCompleted &&
-                size >= TAIL_PROBE_MIN_BYTES &&
-                streamingStates[fileId]?.tailEnd == 0L && tailProbed.add(fileId)
-            ) {
-                scope.launch { probeTail(fileId, size) }
-            }
         }
     }
 
@@ -379,6 +372,9 @@ class TdFileRepository(
     // One probe per file per download generation. Cleared whenever the local copy is
     // dropped, so a re-download probes again.
     private val tailProbed = mutableSetOf<Int>()
+    // One gate per file being probed: the data source waits on it before opening the file, so
+    // the tail probe's delete-and-restart happens while nobody holds a handle (2026-10-28).
+    private val probeLatches = ConcurrentHashMap<Int, CountDownLatch>()
 
     fun startStreaming(fileId: Int, priority: Int = 1) {
         if (streamingStates.containsKey(fileId)) return
@@ -407,6 +403,18 @@ class TdFileRepository(
         // seek) are NOT a prefix, and serving them as one is what fed the
         // extractor holes (2026-09-13).
         resetStreamWindow(fileId, 0, priority)
+        if (TAIL_PREFETCH_ENABLED && probeLatches[fileId] == null && tailProbed.add(fileId)) {
+            val latch = CountDownLatch(1)
+            probeLatches[fileId] = latch
+            scope.launch {
+                try {
+                    probeTailWhenSized(fileId)
+                } finally {
+                    latch.countDown()
+                    probeLatches.remove(fileId)
+                }
+            }
+        }
         Log.d(TAG, "startStreaming(fileId=$fileId, priority=$priority): contiguous from 0")
     }
 
@@ -560,6 +568,27 @@ class TdFileRepository(
      * Any failure simply resumes the sequential download: the tail is an optimisation, never a
      * requirement.
      */
+    /** Blocks until the tail probe finishes for [fileId], or the timeout expires. */
+    fun awaitTailProbe(fileId: Int, timeoutMs: Long = 12_000L) {
+        try {
+            probeLatches[fileId]?.await(timeoutMs, TimeUnit.MILLISECONDS)
+        } catch (_: InterruptedException) {
+            Thread.currentThread().interrupt()
+        }
+    }
+
+    /** Waits for the size to be known (updateFile), then probes once. */
+    private suspend fun probeTailWhenSized(fileId: Int) {
+        val deadline = System.currentTimeMillis() + TAIL_PROBE_TIMEOUT_MS / 2
+        var size = streamingStates[fileId]?.expectedSize ?: 0L
+        while (size < TAIL_PROBE_MIN_BYTES && System.currentTimeMillis() < deadline) {
+            delay(50L)
+            size = streamingStates[fileId]?.expectedSize ?: 0L
+        }
+        if (size < TAIL_PROBE_MIN_BYTES) return
+        probeTail(fileId, size)
+    }
+
     private suspend fun probeTail(fileId: Int, fileSize: Long) {
         val path = awaitStreamPath(fileId, timeoutMs = TAIL_PROBE_TIMEOUT_MS) ?: return
         val probeLen = minOf(fileSize, TAIL_PROBE_BYTES).toInt()
