@@ -764,10 +764,10 @@ class TdFileRepository(
         // start evicting inactive files, then reset the active stream window.
         private const val LOW_DISK_WATERMARK_BYTES = 800L * 1024 * 1024
 
-        // Off until the tail prefetch is verified on hardware: with it on, non-faststart
-        // MP4s stream, but the sparse-file prefix accounting needs a device check first
-        // (2026-10-28).
-        private const val TAIL_PREFETCH_ENABLED = true
+        // OFF (2026-10-28): three device attempts (sparse file, side file, gated side file)
+        // each broke playback outright, so the probe does not run in shipped builds. Re-enable
+        // only with a device in hand and a log capture that is not all NUL bytes.
+        private const val TAIL_PREFETCH_ENABLED = false
 
         // Tail probe: how much of the end of the file to fetch to look for the MP4 index.
         private const val TAIL_PROBE_BYTES = 4L * 1024 * 1024
