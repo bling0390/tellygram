@@ -243,7 +243,11 @@ fun PlayerScreen(
     // plain file:// path: TdDataSource.awaitStreamPath waits on updateFile
     // events, but a completed download never fires one, so streaming an
     // already-downloaded file would time out and fail to play.
-    val canStream = current.type == MediaType.Video && current.supportsStreaming && currentPath == null
+    // Flipped when the stream cannot be parsed: play a complete local copy instead of the
+    // progressive td:// source (covers moov-at-end MP4s and re-opens from a non-zero offset).
+    var forceLocalPlayback by remember(current.fileId) { mutableStateOf(false) }
+    val canStream = current.type == MediaType.Video && current.supportsStreaming &&
+        currentPath == null && !forceLocalPlayback
     // retryTick: bumped by the error overlay's retry action so both effects
     // below re-run (re-trigger download / re-prepare playback).
     var retryTick by remember(current.fileId) { mutableIntStateOf(0) }
@@ -438,8 +442,28 @@ fun PlayerScreen(
                     .any { it is UnrecognizedInputFormatException }
                 if (unrecognised && unrecognizedRetries < 1) {
                     unrecognizedRetries++
-                    Log.w(TAG, "stream not recognised for ${current.fileId}; restarting from byte 0")
-                    viewModel.fileRepo.resetStreamWindow(current.fileId, 0)
+                    // How many bytes are actually on disk decides the recovery: with data
+                    // present the stream is fine but the extractor got a non-zero start (or
+                    // the MP4 keeps its moov at the end) — play a complete local copy. With
+                    // nothing on disk the download state is stale — start it over (2026-10-28).
+                    val path = viewModel.fileRepo.streamState(current.fileId)?.path
+                        ?: (fileStates[current.fileId] as? FileDownloadState.Local)?.path
+                    val onDisk = path?.let { File(it).length() } ?: 0L
+                    if (onDisk > 0L) {
+                        Log.w(
+                            TAG,
+                            "stream not recognised for ${current.fileId} with $onDisk bytes on disk; " +
+                                "switching to a full download",
+                        )
+                        forceLocalPlayback = true
+                    } else {
+                        Log.w(
+                            TAG,
+                            "stream not recognised for ${current.fileId} with no bytes; " +
+                                "restarting from 0",
+                        )
+                        viewModel.fileRepo.resetStreamWindow(current.fileId, 0)
+                    }
                     mediaPrepared = false
                     firstFrameRendered = false
                     isBuffering = false
