@@ -142,6 +142,29 @@ class TdDataSource(
                 st = fileRepo.streamState(fileId) ?: st
             }
 
+            // Known-good tail window: a non-faststart MP4 keeps its 'moov' at the end, and
+            // the probe wrote those bytes at their true offsets before the prefix arrived.
+            // Serve them straight away; everything below the tail still obeys the prefix rule
+            // (2026-10-28).
+            val tailEnd = st.tailEnd
+            if (tailEnd > st.tailStart && pos >= st.tailStart && pos < tailEnd) {
+                val available = runCatching { handle.length() }.getOrDefault(0L)
+                val canRead = minOf(length.toLong(), tailEnd - pos, available - pos)
+                if (canRead > 0) {
+                    val n = handle.read(buffer, offset, canRead.toInt())
+                    if (n > 0) {
+                        if (bytesRemaining != C.LENGTH_UNSET.toLong()) bytesRemaining -= n
+                        return n
+                    }
+                }
+                if (System.currentTimeMillis() >= deadline) {
+                    Log.w(TAG, "read: tail not ready for file $fileId at pos $pos")
+                    throw IOException("tail not ready for file $fileId at $pos")
+                }
+                sleepBriefly()
+                continue
+            }
+
             // How much of the file is really on disk. The download only ever
             // appends to a prefix from 0, so the file's own length is the whole
             // truth — no TDLib counter, no window bookkeeping.
@@ -232,7 +255,15 @@ class TdDataSource(
             val touched = try { File(path).lastModified() } catch (_: SecurityException) { 0L }
             if (touched < state.resetAtMs) return 0L
         }
-        return try { handle.length() } catch (_: IOException) { 0L }
+        val raw = try { handle.length() } catch (_: IOException) { 0L }
+        // A tail window makes the file sparse: its length jumps to include the tail while the
+        // sequential download is still near 0. Cap the prefix at the tail start and use TDLib's
+        // own contiguous-prefix counter, so the gap is never served as data (2026-10-28).
+        return if (state.tailEnd > 0L) {
+            minOf(state.prefixEnd, state.tailStart, raw)
+        } else {
+            raw
+        }
     }
 
     override fun getUri(): Uri = openedUri ?: Uri.EMPTY

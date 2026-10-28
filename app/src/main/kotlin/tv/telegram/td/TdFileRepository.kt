@@ -3,6 +3,7 @@ package tv.telegram.td
 import android.util.Log
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -13,6 +14,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import org.drinkless.td.libcore.telegram.TdApi
 import android.os.StatFs
 import java.io.File
+import java.io.RandomAccessFile
 import java.util.concurrent.ConcurrentHashMap
 
 sealed class FileDownloadState {
@@ -67,6 +69,15 @@ data class StreamingState(
     // deleted), so readers must not trust anything written before this
     // moment: the file is only data once TDLib has touched it again.
     val resetAtMs: Long = 0,
+    // Bytes that TDLib reports as a contiguous prefix. Only meaningful when a tail window
+    // exists: the file's own length then includes the tail, so length no longer describes
+    // how far the sequential download got (2026-10-28).
+    val prefixEnd: Long = 0,
+    // Known-good tail window [tailStart, tailEnd), written at its true offsets so the MP4
+    // 'moov' (or Matroska cues) at the end of the file is readable before the prefix
+    // arrives. 0/0 means no tail window.
+    val tailStart: Long = 0,
+    val tailEnd: Long = 0,
 )
 
 class TdFileRepository(
@@ -181,6 +192,7 @@ class TdFileRepository(
                 )
             }
             streamingStates[fileId] = cur.copy(
+                prefixEnd = local.downloadedPrefixSize.toLong().coerceAtLeast(0L),
                 path = local.path.takeIf { it.isNotEmpty() } ?: cur.path,
                 downloadedSize = clamped,
                 expectedSize = file.expectedSize.toLong().takeIf { it > 0 } ?: cur.expectedSize,
@@ -188,6 +200,14 @@ class TdFileRepository(
                 failed = failed,
             )
             wakeStreamWaiters(fileId)
+            // Tail probe: once we know the size, fetch the last chunk and see whether the MP4
+            // index sits there. One attempt per download generation (2026-10-28).
+            val size = file.expectedSize.toLong()
+            if (!local.isDownloadingCompleted && size >= TAIL_PROBE_MIN_BYTES &&
+                streamingStates[fileId]?.tailEnd == 0L && tailProbed.add(fileId)
+            ) {
+                scope.launch { probeTail(fileId, size) }
+            }
         }
     }
 
@@ -282,6 +302,7 @@ class TdFileRepository(
      * video finishes playing and by the cache quota eviction.
      */
     fun deleteLocalFile(fileId: Int) {
+        tailProbed.remove(fileId)
         streamingStates.remove(fileId)
         wakeStreamWaiters(fileId)
         pendingDownloads.remove(fileId)?.cancel()
@@ -343,6 +364,10 @@ class TdFileRepository(
      * state complete immediately — a completed file never fires updateFile,
      * so without this awaitStreamPath would hang and playback would fail.
      */
+    // One probe per file per download generation. Cleared whenever the local copy is
+    // dropped, so a re-download probes again.
+    private val tailProbed = mutableSetOf<Int>()
+
     fun startStreaming(fileId: Int, priority: Int = 1) {
         if (streamingStates.containsKey(fileId)) return
         val existing = _states.value[fileId]
@@ -394,6 +419,7 @@ class TdFileRepository(
      * file is already local or nothing is downloading.
      */
     fun cancelDownload(fileId: Int) {
+        tailProbed.remove(fileId)
         streamingStates.remove(fileId)
         wakeStreamWaiters(fileId)
         // Unblock a waiting ensureLocal() coroutine immediately (its
@@ -506,12 +532,110 @@ class TdFileRepository(
     }
 
     /**
+     * Fetches the last [TAIL_PROBE_BYTES] of [fileId] once, looks for the MP4 'moov' box and,
+     * when it is there, records it as a known-good tail window. Playback can then start from
+     * the prefix while the sequential download continues; a non-faststart MP4 becomes playable
+     * without downloading the whole file (2026-10-28).
+     *
+     * Any failure simply resumes the sequential download: the tail is an optimisation, never a
+     * requirement.
+     */
+    private suspend fun probeTail(fileId: Int, fileSize: Long) {
+        val path = awaitStreamPath(fileId, timeoutMs = TAIL_PROBE_TIMEOUT_MS) ?: return
+        val probeLen = minOf(fileSize, TAIL_PROBE_BYTES).toInt()
+        val probeStart = fileSize - probeLen
+        Log.d(TAG, "probeTail($fileId): reading [$probeStart, $fileSize) for moov")
+        client.send(TdApi.DownloadFile(fileId, 1, probeStart.toIntOffset(), probeLen, false))
+        // TDLib writes a range sequentially upward, so the file's length reaching the range end
+        // means the range is on disk (the sparse gap below it is not data).
+        if (!waitForFileLength(path, fileSize, TAIL_PROBE_TIMEOUT_MS)) {
+            Log.w(TAG, "probeTail($fileId): tail did not arrive in time")
+            resumeSequential(fileId)
+            return
+        }
+        val buffer = ByteArray(probeLen)
+        val read = runCatching {
+            RandomAccessFile(path, "r").use { raf ->
+                raf.seek(probeStart)
+                raf.readFully(buffer)
+            }
+        }.isSuccess
+        if (!read) {
+            resumeSequential(fileId)
+            return
+        }
+        val moov = findMoov(probeStart, buffer, fileSize)
+        if (moov == null) {
+            Log.d(TAG, "probeTail($fileId): no moov in the last ${probeLen}B")
+            resumeSequential(fileId)
+            return
+        }
+        streamingStates[fileId]?.let { st ->
+            streamingStates[fileId] = st.copy(tailStart = moov.first, tailEnd = fileSize)
+        }
+        Log.i(TAG, "probeTail($fileId): moov at ${moov.first} (${moov.second}B) — tail window recorded")
+        wakeStreamWaiters(fileId)
+        resumeSequential(fileId)
+    }
+
+    /** Back to the whole-file sequential download after a probe. */
+    private fun resumeSequential(fileId: Int) {
+        client.send(TdApi.DownloadFile(fileId, 1, 0, 0, false))
+    }
+
+    private suspend fun waitForFileLength(path: String, target: Long, timeoutMs: Long): Boolean {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() < deadline) {
+            val len = runCatching { File(path).length() }.getOrDefault(0L)
+            if (len >= target) return true
+            delay(50L)
+        }
+        return false
+    }
+
+    /**
+     * Scans [buf] (which covers [bufOffset, bufOffset + buf.size)) for a 'moov' box whose
+     * declared size lands inside the file. Returns (offset, size) or null.
+     */
+    private fun findMoov(bufOffset: Long, buf: ByteArray, fileSize: Long): Pair<Long, Long>? {
+        var i = 0
+        val limit = buf.size - 8
+        while (i <= limit) {
+            if (buf[i + 4] == 'm'.code.toByte() && buf[i + 5] == 'o'.code.toByte() &&
+                buf[i + 6] == 'o'.code.toByte() && buf[i + 7] == 'v'.code.toByte()
+            ) {
+                var size = readU32(buf, i)
+                if (size == 1L && i + 16 <= buf.size) size = readU64(buf, i + 8)
+                val start = bufOffset + i
+                if (size >= 8L && size <= MAX_MOOV_BYTES && start + size <= fileSize) {
+                    return start to size
+                }
+            }
+            i++
+        }
+        return null
+    }
+
+    private fun readU32(buf: ByteArray, at: Int): Long =
+        ((buf[at].toLong() and 0xFF) shl 24) or
+            ((buf[at + 1].toLong() and 0xFF) shl 16) or
+            ((buf[at + 2].toLong() and 0xFF) shl 8) or
+            (buf[at + 3].toLong() and 0xFF)
+
+    private fun readU64(buf: ByteArray, at: Int): Long {
+        var v = 0L
+        for (k in 0 until 8) v = (v shl 8) or (buf[at + k].toLong() and 0xFF)
+        return v
+    }
+
+    /**
      * Delete the local copy of [fileId] and restart windowed download at
      * [pos]. Used by the disk water-mark: collapses on-disk usage back to a
      * single window. TdDataSource detects the epoch bump and re-opens the
      * (recreated) file.
      */
     fun resetStreamWindow(fileId: Int, pos: Long = 0, priority: Int = 1) {
+        tailProbed.remove(fileId)
         val cur = streamingStates[fileId]
         client.send(TdApi.CancelDownloadFile(fileId, false))
         client.send(TdApi.DeleteFile(fileId))
@@ -565,6 +689,13 @@ class TdFileRepository(
         // If the TDLib files volume has less than this much free space,
         // start evicting inactive files, then reset the active stream window.
         private const val LOW_DISK_WATERMARK_BYTES = 800L * 1024 * 1024
+
+        // Tail probe: how much of the end of the file to fetch to look for the MP4 index.
+        private const val TAIL_PROBE_BYTES = 4L * 1024 * 1024
+        private const val TAIL_PROBE_MIN_BYTES = 128L * 1024
+        private const val TAIL_PROBE_TIMEOUT_MS = 20_000L
+        // Sanity cap for a 'moov' box (real ones are KB to a few MB).
+        private const val MAX_MOOV_BYTES = 64L * 1024 * 1024
 
         // `failed` in StreamingState goes true transiently during a seek
         // re-target (old download cancelled, new one not yet active).
