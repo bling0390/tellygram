@@ -156,7 +156,13 @@ class TdDataSource(
             // it — jumping the download forward is what left holes the extractor
             // choked on.
             if (pos >= end) {
-                if (st.completed) return C.RESULT_END_OF_INPUT
+                if (st.completed) {
+                    // "Completed" with an empty file is a stale flag, not the end of the
+                    // media: fail retryably so ExoPlayer retries instead of concluding that
+                    // nothing can read this stream.
+                    if (end <= 0L) throw IOException("empty stream for file $fileId (stale completion)")
+                    return C.RESULT_END_OF_INPUT
+                }
                 if (System.currentTimeMillis() >= deadline) {
                     Log.w(
                         TAG,
@@ -212,7 +218,13 @@ class TdDataSource(
      * killed playback (2026-09-13).
      */
     private fun prefixEnd(state: StreamingState, handle: RandomAccessFile): Long {
-        if (state.completed) return state.expectedSize.coerceAtLeast(0L)
+        if (state.completed) {
+            // A completed state with no size (a Local entry we never measured) must not
+            // short-circuit to 0: that reads as end-of-input at byte 0 and kills the
+            // extractor. Fall back to the file's real length (2026-10-28).
+            return state.expectedSize.takeIf { it > 0L }
+                ?: runCatching { handle.length() }.getOrDefault(0L)
+        }
         // Nothing written since the file was restarted: whatever is on disk
         // belongs to a previous attempt, so nothing may be served yet.
         val path = state.path

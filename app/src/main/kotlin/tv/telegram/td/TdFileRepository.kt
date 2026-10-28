@@ -347,14 +347,23 @@ class TdFileRepository(
         if (streamingStates.containsKey(fileId)) return
         val existing = _states.value[fileId]
         if (existing is FileDownloadState.Local) {
-            streamingStates[fileId] = StreamingState(
-                fileId = fileId,
-                path = existing.path,
-                expectedSize = 0,
-                completed = true,
-            )
-            Log.d(TAG, "startStreaming(fileId=$fileId): already local, marked complete")
-            return
+            // Measure the file before declaring the stream complete. A Local entry can
+            // outlive its bytes (our own deleteLocalFile on player exit, an evicted cache
+            // file), and expecting "completed, size 0" made TdDataSource report end-of-input
+            // at byte 0 — which ExoPlayer surfaces as UnrecognizedInputFormatException
+            // (2026-10-28).
+            val onDisk = runCatching { File(existing.path).length() }.getOrDefault(0L)
+            if (onDisk > 0L) {
+                streamingStates[fileId] = StreamingState(
+                    fileId = fileId,
+                    path = existing.path,
+                    expectedSize = onDisk,
+                    completed = true,
+                )
+                Log.d(TAG, "startStreaming(fileId=$fileId): already local ($onDisk bytes), marked complete")
+                return
+            }
+            Log.w(TAG, "startStreaming(fileId=$fileId): state says local but 0 bytes on disk — restarting")
         }
         // Fresh contiguous download from 0. The delete matters: bytes left by
         // an earlier attempt (a windowed download from an older build, or a

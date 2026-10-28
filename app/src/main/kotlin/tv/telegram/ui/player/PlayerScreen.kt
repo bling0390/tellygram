@@ -98,6 +98,7 @@ import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.exoplayer.source.UnrecognizedInputFormatException
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.delay
@@ -403,6 +404,10 @@ fun PlayerScreen(
     // True when the failure is the device refusing the format rather than a
     // playback bug — those get a plain-language line above the technical dump.
     var playerErrorUnsupportedCodec by remember(current.fileId) { mutableStateOf(false) }
+    // One automatic recovery for a stream ExoPlayer cannot recognise — the usual cause is a
+    // stale "completed" download whose file has no bytes left. Restarting the download from 0
+    // is cheaper than showing the error overlay (2026-10-28).
+    var unrecognizedRetries by remember(current.fileId) { mutableIntStateOf(0) }
     val retryPlayback = {
         playerError = null
         playerErrorUnsupportedCodec = false
@@ -429,6 +434,18 @@ fun PlayerScreen(
             }
             override fun onPlayerError(error: PlaybackException) {
                 Log.e(TAG, "playback error for file ${current.fileId}", error)
+                val unrecognised = generateSequence(error.cause) { it.cause }
+                    .any { it is UnrecognizedInputFormatException }
+                if (unrecognised && unrecognizedRetries < 1) {
+                    unrecognizedRetries++
+                    Log.w(TAG, "stream not recognised for ${current.fileId}; restarting from byte 0")
+                    viewModel.fileRepo.resetStreamWindow(current.fileId, 0)
+                    mediaPrepared = false
+                    firstFrameRendered = false
+                    isBuffering = false
+                    retryTick++
+                    return
+                }
                 playerError = error.errorCodeName + ": " + (error.message ?: "")
                 // A decoder that refused the format is a device capability
                 // limit, not a bug worth showing as a MediaCodec dump.
