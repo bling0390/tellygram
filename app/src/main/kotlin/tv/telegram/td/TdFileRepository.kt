@@ -69,13 +69,10 @@ data class StreamingState(
     // deleted), so readers must not trust anything written before this
     // moment: the file is only data once TDLib has touched it again.
     val resetAtMs: Long = 0,
-    // Bytes that TDLib reports as a contiguous prefix. Only meaningful when a tail window
-    // exists: the file's own length then includes the tail, so length no longer describes
-    // how far the sequential download got (2026-10-28).
-    val prefixEnd: Long = 0,
-    // Known-good tail window [tailStart, tailEnd), written at its true offsets so the MP4
-    // 'moov' (or Matroska cues) at the end of the file is readable before the prefix
-    // arrives. 0/0 means no tail window.
+    // Tail window [tailStart, tailEnd) kept in a SIDE file, never in the streaming file: the
+    // streaming file must stay a pure prefix from byte 0, or its length can no longer tell
+    // us how far the download got (2026-10-28, after a sparse-file version stalled playback).
+    val tailPath: String? = null,
     val tailStart: Long = 0,
     val tailEnd: Long = 0,
 )
@@ -192,7 +189,6 @@ class TdFileRepository(
                 )
             }
             streamingStates[fileId] = cur.copy(
-                prefixEnd = local.downloadedPrefixSize.toLong().coerceAtLeast(0L),
                 path = local.path.takeIf { it.isNotEmpty() } ?: cur.path,
                 downloadedSize = clamped,
                 expectedSize = file.expectedSize.toLong().takeIf { it > 0 } ?: cur.expectedSize,
@@ -316,6 +312,9 @@ class TdFileRepository(
      */
     fun deleteLocalFile(fileId: Int) {
         tailProbed.remove(fileId)
+        runCatching {
+            streamingStates[fileId]?.tailPath?.let { File(it).delete() }
+        }
         streamingStates.remove(fileId)
         wakeStreamWaiters(fileId)
         pendingDownloads.remove(fileId)?.cancel()
@@ -567,21 +566,19 @@ class TdFileRepository(
         val probeStart = fileSize - probeLen
         Log.d(TAG, "probeTail($fileId): reading [$probeStart, $fileSize) for moov")
         client.send(TdApi.DownloadFile(fileId, 1, probeStart.toIntOffset(), probeLen, false))
-        // TDLib writes a range sequentially upward, so the file's length reaching the range end
-        // means the range is on disk (the sparse gap below it is not data).
         if (!waitForFileLength(path, fileSize, TAIL_PROBE_TIMEOUT_MS)) {
             Log.w(TAG, "probeTail($fileId): tail did not arrive in time")
             resumeSequential(fileId)
             return
         }
         val buffer = ByteArray(probeLen)
-        val read = runCatching {
+        val copied = runCatching {
             RandomAccessFile(path, "r").use { raf ->
                 raf.seek(probeStart)
                 raf.readFully(buffer)
             }
         }.isSuccess
-        if (!read) {
+        if (!copied) {
             resumeSequential(fileId)
             return
         }
@@ -591,12 +588,39 @@ class TdFileRepository(
             resumeSequential(fileId)
             return
         }
-        streamingStates[fileId]?.let { st ->
-            streamingStates[fileId] = st.copy(tailStart = moov.first, tailEnd = fileSize)
+
+        // Keep the tail in our own file so the streaming file can go back to being a plain
+        // contiguous prefix from 0 (the invariant everything else relies on).
+        val dir = filesDirectory?.let { File(it, "tails") }
+        if (dir == null || !runCatching { dir.mkdirs() }.isSuccess) {
+            resumeSequential(fileId)
+            return
         }
-        Log.i(TAG, "probeTail($fileId): moov at ${moov.first} (${moov.second}B) — tail window recorded")
+        val tailFile = File(dir, "$fileId.tail")
+        val written = runCatching { tailFile.writeBytes(buffer) }.isSuccess
+        if (!written) {
+            resumeSequential(fileId)
+            return
+        }
+
+        val cur = streamingStates[fileId] ?: return
+        streamingStates[fileId] = cur.copy(
+            tailPath = tailFile.absolutePath,
+            tailStart = moov.first,
+            tailEnd = fileSize,
+            epoch = cur.epoch + 1,
+            resetAtMs = System.currentTimeMillis(),
+        )
+        // Drop the sparse temp file and start the prefix over from byte 0.
+        client.send(TdApi.CancelDownloadFile(fileId, false))
+        client.send(TdApi.DeleteFile(fileId))
+        client.send(TdApi.DownloadFile(fileId, 1, 0, 0, false))
         wakeStreamWaiters(fileId)
-        resumeSequential(fileId)
+        Log.i(
+            TAG,
+            "probeTail($fileId): moov at ${moov.first} (${moov.second}B) — tail kept aside, " +
+                "prefix restarts at 0",
+        )
     }
 
     /** Back to the whole-file sequential download after a probe. */
@@ -714,7 +738,7 @@ class TdFileRepository(
         // Off until the tail prefetch is verified on hardware: with it on, non-faststart
         // MP4s stream, but the sparse-file prefix accounting needs a device check first
         // (2026-10-28).
-        private const val TAIL_PREFETCH_ENABLED = false
+        private const val TAIL_PREFETCH_ENABLED = true
 
         // Tail probe: how much of the end of the file to fetch to look for the MP4 index.
         private const val TAIL_PROBE_BYTES = 4L * 1024 * 1024

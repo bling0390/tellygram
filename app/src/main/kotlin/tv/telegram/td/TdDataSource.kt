@@ -44,6 +44,9 @@ class TdDataSource(
     // bumps — the old handle points at a deleted file, so read() must close
     // it and re-open the recreated file.
     private var openedEpoch: Int = 0
+    // Side-file handle for the prefetched tail (the streaming file stays a pure prefix).
+    private var tailFile: RandomAccessFile? = null
+    private var tailPathOpened: String? = null
     // Throttle for the disk water-mark check: statfs is a syscall, and read()
     // is called with ~32KB buffers, so only re-check every few seconds.
     private var lastHeadroomCheckMs: Long = 0
@@ -142,24 +145,35 @@ class TdDataSource(
                 st = fileRepo.streamState(fileId) ?: st
             }
 
-            // Known-good tail window: a non-faststart MP4 keeps its 'moov' at the end, and
-            // the probe wrote those bytes at their true offsets before the prefix arrived.
-            // Serve them straight away; everything below the tail still obeys the prefix rule
-            // (2026-10-28).
+            // Known-good tail window: a non-faststart MP4 keeps its 'moov' at the end. The
+            // probe saved those bytes in a SIDE file, so serve them from there and leave the
+            // streaming file's "pure prefix" invariant untouched (2026-10-28).
             val tailEnd = st.tailEnd
-            if (tailEnd > st.tailStart && pos >= st.tailStart && pos < tailEnd) {
-                val available = runCatching { handle.length() }.getOrDefault(0L)
-                val canRead = minOf(length.toLong(), tailEnd - pos, available - pos)
+            val tailPath = st.tailPath
+            if (tailPath != null && tailEnd > st.tailStart &&
+                pos >= st.tailStart && pos < tailEnd
+            ) {
+                if (tailPathOpened != tailPath) {
+                    runCatching { tailFile?.close() }
+                    tailFile = runCatching { RandomAccessFile(tailPath, "r") }.getOrNull()
+                    tailPathOpened = tailPath
+                }
+                val tf = tailFile
+                if (tf == null) {
+                    throw IOException("tail file missing for file $fileId")
+                }
+                val canRead = minOf(length.toLong(), tailEnd - pos)
                 if (canRead > 0) {
-                    val n = handle.read(buffer, offset, canRead.toInt())
+                    tf.seek(pos - st.tailStart)
+                    val n = tf.read(buffer, offset, canRead.toInt())
                     if (n > 0) {
                         if (bytesRemaining != C.LENGTH_UNSET.toLong()) bytesRemaining -= n
                         return n
                     }
                 }
                 if (System.currentTimeMillis() >= deadline) {
-                    Log.w(TAG, "read: tail not ready for file $fileId at pos $pos")
-                    throw IOException("tail not ready for file $fileId at $pos")
+                    Log.w(TAG, "read: tail not readable for file $fileId at pos $pos")
+                    throw IOException("tail not readable for file $fileId at $pos")
                 }
                 sleepBriefly()
                 continue
@@ -255,15 +269,9 @@ class TdDataSource(
             val touched = try { File(path).lastModified() } catch (_: SecurityException) { 0L }
             if (touched < state.resetAtMs) return 0L
         }
-        val raw = try { handle.length() } catch (_: IOException) { 0L }
-        // A tail window makes the file sparse: its length jumps to include the tail while the
-        // sequential download is still near 0. Cap the prefix at the tail start and use TDLib's
-        // own contiguous-prefix counter, so the gap is never served as data (2026-10-28).
-        return if (state.tailEnd > 0L) {
-            minOf(state.prefixEnd, state.tailStart, raw)
-        } else {
-            raw
-        }
+        // The tail lives in a side file, so the streaming file is a pure prefix again and its
+        // own length is the whole truth (2026-10-28).
+        return try { handle.length() } catch (_: IOException) { 0L }
     }
 
     override fun getUri(): Uri = openedUri ?: Uri.EMPTY
@@ -271,6 +279,9 @@ class TdDataSource(
     override fun close() {
         file?.close()
         file = null
+        runCatching { tailFile?.close() }
+        tailFile = null
+        tailPathOpened = null
         openedUri = null
     }
 
