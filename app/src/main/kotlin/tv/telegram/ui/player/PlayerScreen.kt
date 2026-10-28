@@ -246,8 +246,11 @@ fun PlayerScreen(
     // Flipped when the stream cannot be parsed: play a complete local copy instead of the
     // progressive td:// source (covers moov-at-end MP4s and re-opens from a non-zero offset).
     var forceLocalPlayback by remember(current.fileId) { mutableStateOf(false) }
-    val canStream = current.type == MediaType.Video && current.supportsStreaming &&
-        currentPath == null && !forceLocalPlayback
+    // Every video streams now, whether Telegram marked it streamable or not: the tail probe
+    // fetches an end-of-file 'moov', so a non-faststart MP4 no longer has to be downloaded in
+    // full before it can start. Files that still fail to parse fall back to a complete local
+    // copy on the first source error (2026-10-28).
+    val canStream = current.type == MediaType.Video && currentPath == null && !forceLocalPlayback
     // retryTick: bumped by the error overlay's retry action so both effects
     // below re-run (re-trigger download / re-prepare playback).
     var retryTick by remember(current.fileId) { mutableIntStateOf(0) }

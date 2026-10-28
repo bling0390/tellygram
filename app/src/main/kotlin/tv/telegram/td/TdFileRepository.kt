@@ -230,6 +230,18 @@ class TdFileRepository(
                 return local.path
             }
 
+            // A whole-file download must never fill the TV's storage: with every video now
+            // streaming first, this path is the fallback, and it is the only one that can grow
+            // without bound (the streaming window is capped) (2026-10-28).
+            val expectedBytes = fileObj.expectedSize.toLong().takeIf { it > 0 }
+                ?: fileObj.size.toLong()
+            if (!hasRoomFor(expectedBytes)) {
+                Log.w(TAG, "ensureLocal($fileId): $expectedBytes bytes do not fit in local storage")
+                _states.value = _states.value +
+                    (fileId to FileDownloadState.Failed("not enough free space"))
+                return null
+            }
+
             val deferred = CompletableDeferred<String>()
             pendingDownloads[fileId] = deferred
             client.send(TdApi.DownloadFile(fileId, priority, 0, 0, false))
@@ -411,6 +423,14 @@ class TdFileRepository(
     // ≤256MB, but seek offsets / downloaded sizes are Longs and could exceed
     // Int.MAX_VALUE for >2GB files — clamp instead of wrapping negative.
     private fun Long.toIntOffset(): Int = coerceIn(0L, Int.MAX_VALUE.toLong()).toInt()
+
+    /** True when [bytes] fits in 60% of the free space on the files volume. */
+    private fun hasRoomFor(bytes: Long): Boolean {
+        if (bytes <= 0L) return true
+        val dir = filesDirectory ?: return true
+        val free = runCatching { StatFs(dir).availableBytes }.getOrDefault(Long.MAX_VALUE)
+        return bytes <= (free * 0.6).toLong()
+    }
 
     /**
      * Cancel an in-flight download for [fileId] (progressive streaming or
