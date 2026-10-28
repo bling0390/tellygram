@@ -203,7 +203,8 @@ class TdFileRepository(
             // Tail probe: once we know the size, fetch the last chunk and see whether the MP4
             // index sits there. One attempt per download generation (2026-10-28).
             val size = file.expectedSize.toLong()
-            if (!local.isDownloadingCompleted && size >= TAIL_PROBE_MIN_BYTES &&
+            if (TAIL_PREFETCH_ENABLED && !local.isDownloadingCompleted &&
+                size >= TAIL_PROBE_MIN_BYTES &&
                 streamingStates[fileId]?.tailEnd == 0L && tailProbed.add(fileId)
             ) {
                 scope.launch { probeTail(fileId, size) }
@@ -709,6 +710,11 @@ class TdFileRepository(
         // If the TDLib files volume has less than this much free space,
         // start evicting inactive files, then reset the active stream window.
         private const val LOW_DISK_WATERMARK_BYTES = 800L * 1024 * 1024
+
+        // Off until the tail prefetch is verified on hardware: with it on, non-faststart
+        // MP4s stream, but the sparse-file prefix accounting needs a device check first
+        // (2026-10-28).
+        private const val TAIL_PREFETCH_ENABLED = false
 
         // Tail probe: how much of the end of the file to fetch to look for the MP4 index.
         private const val TAIL_PROBE_BYTES = 4L * 1024 * 1024
