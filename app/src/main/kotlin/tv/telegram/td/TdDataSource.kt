@@ -11,23 +11,6 @@ import java.io.FileNotFoundException
 import java.io.IOException
 import java.io.RandomAccessFile
 
-/**
- * ExoPlayer DataSource that serves a Telegram file progressively.
- *
- * URI scheme: `td://<fileId>`. The local file is always ONE CONTIGUOUS PREFIX
- * FROM BYTE 0: the download only ever starts at 0 and appends. Nothing else is
- * trusted, because TDLib's byte counters describe "bytes on disk" rather than
- * a contiguous prefix, and an offset (windowed) download leaves a hole below it
- * that the extractor reads as data and chokes on — it was fed bytes nobody had
- * written.
- *
- * The consequence is deliberate: seeking into a region that has not downloaded
- * yet means WAITING for the download to reach it, and gives up with a retryable
- * IOException if that takes too long (ExoPlayer retries those itself). Slow
- * beats corrupt.
- *
- * Non-`td://` URIs are delegated to [fallback] (file:// for previews etc).
- */
 class TdDataSource(
     private val fileRepo: TdFileRepository,
     private val fallback: DataSource,
@@ -37,17 +20,9 @@ class TdDataSource(
     private var fileId: Int = -1
     private var openedUri: Uri? = null
     private var bytesRemaining: Long = 0
-    // Epoch of the StreamingState the current RandomAccessFile was opened
-    // against. When the repo resets the stream window (emergency disk
-    // watermark: DeleteFile + re-download from a new offset), the epoch
-    // bumps — the old handle points at a deleted file, so read() must close
-    // it and re-open the recreated file.
     private var openedEpoch: Int = 0
-    // Side-file handle for the prefetched tail (the streaming file stays a pure prefix).
     private var tailFile: RandomAccessFile? = null
     private var tailPathOpened: String? = null
-    // Throttle for the disk water-mark check: statfs is a syscall, and read()
-    // is called with ~32KB buffers, so only re-check every few seconds.
     private var lastHeadroomCheckMs: Long = 0
 
     override fun open(dataSpec: DataSpec): Long {
@@ -59,12 +34,8 @@ class TdDataSource(
         fileId = uri.host?.toIntOrNull() ?: throw IOException("bad td uri: $uri")
         Log.d(TAG, "open: file=$fileId pos=${dataSpec.position} len=${dataSpec.length}")
         fileRepo.startStreaming(fileId, priority = 1)
-        // The probe deletes and restarts the file while looking for the MP4 index: finish it
         fileRepo.awaitTailProbe(fileId)
 
-        // A seek never re-points the download: the file stays a contiguous
-        // prefix from 0, and reading an undownloaded region waits for it (see
-        // the class comment). Every open therefore just attaches to the prefix.
         val f = openStreamFile(fileId, dataSpec.position)
             ?: throw IOException("no local path for file $fileId (download failed?)")
         file = f
@@ -74,13 +45,6 @@ class TdDataSource(
         return if (expected > 0) expected - dataSpec.position else C.LENGTH_UNSET.toLong()
     }
 
-    /**
-     * Opens the streamed file, tolerating the window-reset race.
-     *
-     * A reset deletes the file, but TDLib's next UpdateFile can still carry the
-     * old temp path, so the first RandomAccessFile hits ENOENT: drop that path
-     * and wait for the recreated file instead of failing playback.
-     */
     private fun openStreamFile(fileId: Int, position: Long): RandomAccessFile? {
         val deadline = System.currentTimeMillis() + PATH_OPEN_WAIT_MS
         while (true) {
@@ -98,13 +62,6 @@ class TdDataSource(
     }
 
     override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
-        // End-of-input is only legal at the true end of a COMPLETE file. The MP4
-        // extractor turns an unexpected EOF in the middle of a sample into
-        // "download stalled" IOException, then ExoPlayer retried and died with
-        // an EOFException out of Mp4Extractor.readSample). Every "not there
-        // yet" path below therefore waits for the download frontier, and
-        // throws a *retryable* IOException once the wait budget is spent —
-        // ExoPlayer retries those on its own.
         if (file == null) return C.RESULT_END_OF_INPUT
         var handle = file!!
         val deadline = System.currentTimeMillis() + READ_WAIT_BUDGET_MS
@@ -112,11 +69,6 @@ class TdDataSource(
         while (true) {
             val pos = handle.filePointer
 
-            // Throttled disk water-mark check (we know the exact byte position
-            // here — PlayerScreen only has milliseconds). If the TDLib files
-            // volume is critically low the repo evicts inactive files and may
-            // reset the stream window, bumping the epoch; the re-check below
-            // picks up the new StreamingState and re-opens the recreated file.
             val nowMs = System.currentTimeMillis()
             if (nowMs - lastHeadroomCheckMs >= HEADROOM_CHECK_INTERVAL_MS) {
                 lastHeadroomCheckMs = nowMs
@@ -126,13 +78,6 @@ class TdDataSource(
             var st = fileRepo.streamState(fileId)
                 ?: throw IOException("streaming state lost for file $fileId")
 
-            // Emergency disk-watermark reset: the repo deleted the local file and
-            // restarted a fresh windowed download at the playhead (epoch bump).
-            // The old handle points at the deleted inode — close it and re-open
-            // the recreated file, then continue reading at the same position.
-            // `handle` (not just the field) has to move with it: reading through
-            // the closed handle was a second way to turn a transient reset into
-            // a fake end-of-stream.
             if (st.epoch != openedEpoch) {
                 val newPath = fileRepo.awaitStreamPath(fileId)
                     ?: throw IOException("stream reset (epoch ${st.epoch}) but no local path for file $fileId")
@@ -143,8 +88,6 @@ class TdDataSource(
                 st = fileRepo.streamState(fileId) ?: st
             }
 
-            // Known-good tail window: a non-faststart MP4 keeps its 'moov' at the end. The
-            // probe saved those bytes in a SIDE file, so serve them from there and leave the
             val tailEnd = st.tailEnd
             val tailPath = st.tailPath
             if (tailPath != null && tailEnd > st.tailStart &&
@@ -176,24 +119,14 @@ class TdDataSource(
                 continue
             }
 
-            // How much of the file is really on disk. The download only ever
-            // appends to a prefix from 0, so the file's own length is the whole
-            // truth — no TDLib counter, no window bookkeeping.
             val end = prefixEnd(st, handle)
 
-            // The one legitimate end of stream.
             if (st.completed && st.expectedSize > 0 && pos >= st.expectedSize) {
                 return C.RESULT_END_OF_INPUT
             }
 
-            // Past the prefix: the download has not reached here yet. Wait for
-            // it — jumping the download forward is what left holes the extractor
-            // choked on.
             if (pos >= end) {
                 if (st.completed) {
-                    // "Completed" with an empty file is a stale flag, not the end of the
-                    // media: fail retryably so ExoPlayer retries instead of concluding that
-                    // nothing can read this stream.
                     if (end <= 0L) throw IOException("empty stream for file $fileId (stale completion)")
                     return C.RESULT_END_OF_INPUT
                 }
@@ -218,8 +151,6 @@ class TdDataSource(
                 }
             }
 
-            // Short/nothing read even though the prefix claims bytes: wait for
-            // the file to catch up. Only a completed file may end here.
             if (st.completed) return C.RESULT_END_OF_INPUT
             if (System.currentTimeMillis() >= deadline) {
                 Log.w(
@@ -233,7 +164,6 @@ class TdDataSource(
         }
     }
 
-    /** Sleeps one poll interval, restoring the interrupt flag if asked to stop. */
     private fun sleepBriefly() {
         try {
             Thread.sleep(READ_POLL_MS)
@@ -242,29 +172,16 @@ class TdDataSource(
         }
     }
 
-    /**
-     * How many bytes of the file are really on disk.
-     *
-     * The download always starts at 0 and appends, so this is a contiguous
-     * prefix: every byte below it is data. This is the only frontier the reader
-     * trusts — TDLib's downloadedSize counts bytes on disk rather than a
-     * contiguous prefix, and offset downloads left holes that read as zeros and
-     */
     private fun prefixEnd(state: StreamingState, handle: RandomAccessFile): Long {
         if (state.completed) {
-            // A completed state with no size (a Local entry we never measured) must not
-            // short-circuit to 0: that reads as end-of-input at byte 0 and kills the
             return state.expectedSize.takeIf { it > 0L }
                 ?: runCatching { handle.length() }.getOrDefault(0L)
         }
-        // Nothing written since the file was restarted: whatever is on disk
-        // belongs to a previous attempt, so nothing may be served yet.
         val path = state.path
         if (state.resetAtMs > 0 && path != null) {
             val touched = try { File(path).lastModified() } catch (_: SecurityException) { 0L }
             if (touched < state.resetAtMs) return 0L
         }
-        // The tail lives in a side file, so the streaming file is a pure prefix again and its
         return try { handle.length() } catch (_: IOException) { 0L }
     }
 
@@ -280,37 +197,24 @@ class TdDataSource(
     }
 
     override fun addTransferListener(transferListener: TransferListener) {
-        // Progress is tracked via updateFile / StreamingState, not transfer
-        // listeners, so this is a no-op.
     }
 
     companion object {
         private const val TAG = "TdDataSource"
         const val SCHEME_TD = "td"
 
-        // Re-check free space every 3s while streaming (statfs cost amortized).
         private const val HEADROOM_CHECK_INTERVAL_MS = 3_000L
 
-        // How long a single read() may wait for the download frontier before it
-        // gives up with a retryable IOException (was the awaitStreamBytes
-        // default of 30s, kept so stall behaviour is unchanged).
         private const val READ_WAIT_BUDGET_MS = 30_000L
 
-        // Poll interval while waiting for the window to reach a position — the
-        // file is checked directly, so this is only the sleep between checks.
         private const val READ_POLL_MS = 100L
 
-        // How long open() may wait for the recreated file after a restart.
         private const val PATH_OPEN_WAIT_MS = 15_000L
 
         fun uriFor(fileId: Int): Uri = Uri.parse("$SCHEME_TD://$fileId")
     }
 }
 
-/**
- * DataSource.Factory for [TdDataSource]. Creates one TdDataSource per call
- * (ExoPlayer may open several); non-td URIs fall through to [fallback].
- */
 class TdDataSourceFactory(
     private val fileRepo: TdFileRepository,
     private val fallback: DataSource.Factory,

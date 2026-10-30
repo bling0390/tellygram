@@ -10,8 +10,6 @@ enum class ThemeMode { Dark, Light, System }
 enum class Language { English, SimplifiedChinese, TraditionalChinese }
 
 object SettingsRepository {
-    // Deliberately NOT renamed with the Tellygram rebrand: this string keys the
-    // prefs file, so changing it wipes user settings (theme, language) on upgrade.
     private const val PREFS_NAME = "tvgram_settings"
     private const val KEY_THEME = "theme_mode"
     private const val KEY_LANGUAGE = "language"
@@ -44,9 +42,6 @@ object SettingsRepository {
 }
 
 fun Language.toBcp47(): String = when (this) {
-    // These MUST match the resource folders (values-zh-rCN / values-zh-rTW). The script
-    // subtags "zh-Hans"/"zh-Hant" resolve to nothing here and silently fall back to
-    // values/, which is why choosing Chinese used to leave the UI in English.
     Language.English -> "en"
     Language.SimplifiedChinese -> "zh-CN"
     Language.TraditionalChinese -> "zh-TW"

@@ -9,24 +9,6 @@ import androidx.compose.ui.focus.FocusRequester
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeoutOrNull
 
-/**
- * Deterministic bring-into-view + focus, replacing the old
- * `scrollToItem + withFrameNanos (fixed count)` guess. The fixed-frame wait
- * is the wrong tool: on a fast device it wastes time, on slow set-top
- * hardware (cold start, a big list) the node isn't placed yet and
- * [FocusRequester.requestFocus] silently no-ops, leaving the D-pad dead with
- * no feedback.
- *
- * Instead: ask for the item, then await *actual placement* — a snapshotFlow
- * over `layoutInfo.visibleItemsInfo` — capped by [timeoutMs] so a
- * pathological case (empty list, bad index, disposed screen) fails fast
- * rather than hanging a coroutine forever. One frame yield, then focus.
- *
- * Returns false when the item never became visible; callers that care can
- * fall back to `FocusManager.moveFocus`. A false result is logged so a
- * "dead remote" is diagnosable instead of silent.
- */
-
 private const val TAG = "FocusAwait"
 
 private suspend fun awaitVisibleThenFocus(
@@ -45,11 +27,10 @@ private suspend fun awaitVisibleThenFocus(
         Log.w(TAG, "$context: item never became visible within ${timeoutMs}ms")
         return false
     }
-    withFrameNanos { } // let the freshly-placed node finish attaching focus
+    withFrameNanos { }
     return runCatching { anchor.requestFocus(); true }.getOrDefault(false)
 }
 
-/** Scroll a [LazyListState] to [index] and focus [anchor] once it is laid out. */
 suspend fun focusListItem(
     state: LazyListState,
     index: Int,
@@ -63,7 +44,6 @@ suspend fun focusListItem(
     context = "focusListItem(index=$index)",
 )
 
-/** Scroll a [LazyGridState] to [index] and focus [anchor] once it is laid out. */
 suspend fun focusGridItem(
     state: LazyGridState,
     index: Int,
@@ -77,7 +57,6 @@ suspend fun focusGridItem(
     context = "focusGridItem(index=$index)",
 )
 
-/** True when [index] is fully within the viewport (no scroll needed). */
 fun LazyListState.isFullyVisible(index: Int): Boolean {
     val info = layoutInfo
     return info.visibleItemsInfo.any { item ->

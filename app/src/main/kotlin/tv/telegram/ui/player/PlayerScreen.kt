@@ -141,22 +141,12 @@ import tv.telegram.ui.components.RightSheetRule
 
 private const val TAG = "PlayerScreen"
 
-// here because tv-material3 exposes no slot for it in the colour scheme.
-// Playhead handle geometry: a 16dp disc with a 4dp white ring, filled with the
-// theme's outline colour (JetStream dark/outline = #8E9099). Drawn only while
-// the seek bar has focus — see Seeker().
 private val SeekHandleSize = 16.dp
 private val SeekHandleBorder = 4.dp
 
-// 8dp gap, the bar, 8dp gap, 48dp time slot. Pinning the bar to the leftover
-// 732dp (and both time slots to 48dp) keeps the track from re-measuring while
-// the time strings grow — 0:00 -> 1:08:24 used to stretch it mid-playback.
 private val SeekBarWidth = 732.dp
 private val SeekTimeSlotWidth = 48.dp
 
-// How long PlayerScreen waits before letting the heavy player composition run.
-// Covers the page-transition window so ExoPlayer construction never lands in the
-// middle of the enter/exit animation.
 private const val PLAYER_INIT_DELAY_MS = 250L
 
 @Composable
@@ -165,24 +155,16 @@ fun PlayerScreen(
     index: Int,
     onClose: () -> Unit,
     onNavigateTo: (Int) -> Unit,
-    /**
-     * Items already filtered to the types this screen plays. Null means the chat's loaded media.
-     */
     items: List<MediaItem>? = null,
 ) {
     val context = LocalContext.current
     val ownItems by viewModel.mediaItems.collectAsStateWithLifecycle()
-    // A handed-over list wins: prev/next then stays inside what the user opened from.
     val mediaItems = items ?: ownItems
     val speed by viewModel.playerPlaybackSpeed.collectAsStateWithLifecycle()
     val resumeMap by viewModel.playerResumePositions.collectAsStateWithLifecycle()
     val mediaExhausted by viewModel.mediaExhausted.collectAsStateWithLifecycle()
 
-    // Cross-page continuous playback: when playing near the end of the
-    // loaded media list, prefetch the next search page so the playlist
-    // keeps growing past the current data boundary.
     LaunchedEffect(index, mediaItems.size, mediaExhausted) {
-        // Only the chat's own list pages; a handed-over list is already complete.
         if (items == null && !mediaExhausted && index >= mediaItems.size - 8) {
             viewModel.loadMoreMedia()
         }
@@ -196,59 +178,30 @@ fun PlayerScreen(
 
     val current = mediaItems[index]
 
-    // Record the return target when the player opens, not only when our Back action runs
-    // and the grid then had no card to focus on return. Keyed on the item so walking to the
-    // next video updates it.
     LaunchedEffect(current.messageId) {
         android.util.Log.i("HomeBack", "player open: hint=${current.messageId}")
         viewModel.setPlayerReturnFocus(current.messageId)
     }
 
-    // Exit hook: record the messageId being played so the chats screen can
-    // hand focus back to this exact media card on return (instead of the
-    // sidebar's "Archived Chats" row). Both player-exit paths (Back, and
-    // playback ENDED with no next video) go through here.
     val closePlayer = {
         viewModel.setPlayerReturnFocus(current.messageId)
         onClose()
     }
 
-    // The videos this screen walks with prev/next. The type is a parameter because the audio
     val videoIndices = remember(mediaItems) { walkIndices(mediaItems, MediaType.Video) }
     val hasPrevVideo = hasPreviousIn(videoIndices, index)
     val hasNextVideo = hasNextIn(videoIndices, index)
-    // The strip walks the same list the prev/next buttons do.
     val videos = remember(mediaItems, videoIndices) { videoIndices.mapNotNull { mediaItems.getOrNull(it) } }
     val videoIndex = videoIndices.indexOf(index)
 
     fun neighborVideo(delta: Int): Int? = neighbourIn(videoIndices, index, delta)
 
-    // Reactive file state: collect the repo's state map so this screen
-    // recomposes when a download completes (path appears) or fails. The old
-    // one-shot stateFor() read never recomposed, so a file that had to be
-    // currentPath == null forever → the prepare effect never ran → infinite
-    // spinner / black screen.
     val fileStates by viewModel.fileRepo.states.collectAsStateWithLifecycle()
     val currentFileState = fileStates[current.fileId]
     val currentPath = (currentFileState as? FileDownloadState.Local)?.path
-    // Progressive playback: only videos the server marked supportsStreaming
-    // are streamed (moov/faststart guaranteed) — and only when the file is
-    // NOT already fully downloaded. A fully-local file must go through the
-    // plain file:// path: TdDataSource.awaitStreamPath waits on updateFile
-    // events, but a completed download never fires one, so streaming an
-    // already-downloaded file would time out and fail to play.
-    // Flipped when the stream cannot be parsed: play a complete local copy instead of the
-    // progressive td:// source (covers moov-at-end MP4s and re-opens from a non-zero offset).
     var forceLocalPlayback by remember(current.fileId) { mutableStateOf(false) }
-    // Every video streams now, whether Telegram marked it streamable or not: the tail probe
-    // fetches an end-of-file 'moov', so a non-faststart MP4 no longer has to be downloaded in
-    // full before it can start. Files that still fail to parse fall back to a complete local
-    // playback on device, so only Telegram's streamable videos use td:// again. The tail
-    // prefetch stays in the tree, disabled, until it can be verified on hardware.
     val canStream = current.type == MediaType.Video && current.supportsStreaming &&
         currentPath == null && !forceLocalPlayback
-    // retryTick: bumped by the error overlay's retry action so both effects
-    // below re-run (re-trigger download / re-prepare playback).
     var retryTick by remember(current.fileId) { mutableIntStateOf(0) }
     LaunchedEffect(current.fileId, retryTick) {
         if (canStream) {
@@ -258,28 +211,18 @@ fun PlayerScreen(
         }
     }
 
-    // Cancel the previous file's download when switching to another video
-    // or leaving the player. Without this, TDLib keeps downloading the
-    // abandoned streaming file in the background (priority 32, same as the
-    // current video) and competes for bandwidth.
     DisposableEffect(current.fileId) {
         onDispose {
             viewModel.fileRepo.cancelDownload(current.fileId)
         }
     }
 
-    // Everything below (ExoPlayer build, PlayerView inflation, renderer and
-    // MediaCodec warm-up) is main-thread work, and it used to run while the page
-    // transition was still animating — which dropped frames when opening a video
-    // from the media grid. Compose a plain shell first and let the player in
-    // once that window has passed. No poster here any more: artwork flashing up
     var playerReady by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         delay(PLAYER_INIT_DELAY_MS)
         playerReady = true
     }
     if (!playerReady) {
-        // backdrop for the ~250ms before the player is built.
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -290,17 +233,9 @@ fun PlayerScreen(
 
     val exo = remember(current.fileId) {
         ExoPlayer.Builder(context)
-            // Let MediaCodec fall back to the platform's software decoder when
-            // the hardware one refuses the format. TV boxes reject anything
-            // past 8-bit 4:2:0, so an H.264 High 4:4:4 clip fails init outright
-            // decoder accepts; slow-but-playing beats a hard failure when it
-            // does not.
             .setRenderersFactory(
                 DefaultRenderersFactory(context).setEnableDecoderFallback(true),
             )
-            // Let ExoPlayer take and handle audio focus: another app starting
-            // playback pauses us instead of the two mixing, and we duck/yield
-            // the same way. Nothing in the app asked for focus before this.
             .setAudioAttributes(AudioAttributes.DEFAULT, /* handleAudioFocus = */ true)
             .setMediaSourceFactory(
                 DefaultMediaSourceFactory(context)
@@ -316,10 +251,6 @@ fun PlayerScreen(
             }
     }
     DisposableEffect(exo) {
-        // (TDLib keeps the remote reference; streaming videos re-download
-        // almost instantly on next play, non-streaming ones re-download on
-        // demand). Prevents finished videos from piling up on tiny TV
-        // storage.
         val listener = object : Player.Listener {
             override fun onPlaybackStateChanged(playbackState: Int) {
                 if (playbackState == Player.STATE_ENDED) {
@@ -334,9 +265,6 @@ fun PlayerScreen(
         }
     }
 
-    // current file's local copy (in addition to the ENDED hook above, which
-    // only fires when a video plays to completion). Skipping away mid-video
-    // otherwise leaves the half-downloaded file on disk forever.
     DisposableEffect(Unit) {
         val fid = current.fileId
         onDispose {
@@ -345,25 +273,11 @@ fun PlayerScreen(
     }
 
     var mediaPrepared by remember(current.fileId) { mutableStateOf(false) }
-    // True once the first video frame has actually rendered. The full-screen
-    // spinner stays until this fires (not merely until prepare() returns), so
-    // streaming videos don't flash black between prepare() and the first
-    // frame. MediaPane's hover preview already does this (previewReady).
     var firstFrameRendered by remember(current.fileId) { mutableStateOf(false) }
-    // True while ExoPlayer is in STATE_BUFFERING during playback. Drives a
-    // lightweight spinner on top of the video — only reachable after the
-    // first frame (initial buffering is covered by the full-screen spinner).
     var isBuffering by remember(current.fileId) { mutableStateOf(false) }
-    // Keyed on currentPath too: when a non-streaming video needs a
-    // (re)download, the path only appears AFTER the download completes —
-    // keying on fileId alone meant the effect ran once with path == null and
-    // never re-ran, leaving the player stuck on the spinner. retryTick lets
-    // the error overlay re-run the whole prepare after a failure.
     LaunchedEffect(current.fileId, currentPath, retryTick) {
         if (mediaPrepared) return@LaunchedEffect
         if (canStream) {
-            // td:// URI — TdDataSource blocks inside open() until TDLib has
-            // assigned a local path, then streams from the growing file.
             exo.setMediaItem(ExoMediaItem.fromUri(TdDataSource.uriFor(current.fileId)))
             exo.prepare()
             val resume = resumeMap[current.fileId]
@@ -395,13 +309,8 @@ fun PlayerScreen(
         }
     }
 
-    // Playback error surfaced to the UI — previously any error left the
-    // player silently black (there was no onPlayerError listener at all).
     var playerError by remember(current.fileId) { mutableStateOf<String?>(null) }
-    // True when the failure is the device refusing the format rather than a
     var playerErrorUnsupportedCodec by remember(current.fileId) { mutableStateOf(false) }
-    // One automatic recovery for a stream ExoPlayer cannot recognise — the usual cause is a
-    // stale "completed" download whose file has no bytes left. Restarting the download from 0
     var unrecognizedRetries by remember(current.fileId) { mutableIntStateOf(0) }
     val retryPlayback = {
         playerError = null
@@ -413,12 +322,7 @@ fun PlayerScreen(
         Unit
     }
 
-    // Live play state: mirror playWhenReady (user intent) into a State so the
-    // play/pause icon flips immediately on toggle. Using playWhenReady (not
-    // isPlaying) means seeking doesn't flicker the button — isPlaying goes
-    // false during BUFFERING after a seek, playWhenReady doesn't.
     var nowPlaying by remember(current.fileId) { mutableStateOf(exo.playWhenReady) }
-    // Codec/bitrate for the info drawer: TDLib never carries them, the player does once
     var videoCodecInfo by remember(current.fileId) { mutableStateOf<String?>(null) }
     var audioCodecInfo by remember(current.fileId) { mutableStateOf<String?>(null) }
     DisposableEffect(exo) {
@@ -432,9 +336,6 @@ fun PlayerScreen(
                     .any { it is UnrecognizedInputFormatException }
                 if (unrecognised && unrecognizedRetries < 1) {
                     unrecognizedRetries++
-                    // How many bytes are actually on disk decides the recovery: with data
-                    // present the stream is fine but the extractor got a non-zero start (or
-                    // the MP4 keeps its moov at the end) — play a complete local copy. With
                     val path = viewModel.fileRepo.streamState(current.fileId)?.path
                         ?: (fileStates[current.fileId] as? FileDownloadState.Local)?.path
                     val onDisk = path?.let { File(it).length() } ?: 0L
@@ -460,7 +361,6 @@ fun PlayerScreen(
                     return
                 }
                 playerError = error.errorCodeName + ": " + (error.message ?: "")
-                // A decoder that refused the format is a device capability
                 playerErrorUnsupportedCodec =
                     error.errorCodeName.startsWith("ERROR_CODE_DECODER") ||
                         error.message?.contains("NO_EXCEEDS_CAPABILITIES") == true
@@ -491,10 +391,6 @@ fun PlayerScreen(
 
     val focusRequester = remember { FocusRequester() }
     val progressFocusRequester = remember { FocusRequester() }
-    // Info button focus requester — hoisted here so the drawer-close path
-    // can hand focus back to it (the drawer steals focus while open;
-    // without this, focus is lost after the drawer closes and the control
-    // bar can't be re-focused until it's hidden and re-shown).
     val infoButtonFocus = remember { FocusRequester() }
     LaunchedEffect(Unit) {
         withFrameNanos { }
@@ -502,36 +398,14 @@ fun PlayerScreen(
         catch (_: IllegalStateException) {}
     }
 
-    // Hidden by default: entering the player shows pure video. The page
-    // Box keeps focus (left/right seek without revealing the controller);
-    // OK / Up / Down reveal the controller with focus on the progress bar.
     var showController by remember { mutableStateOf(false) }
-    // Which picker (speed / rotation) is open, if any. Owned here rather than
-    // inside PlayerController because the capture-phase Back handler below runs
-    // before any child sees the key, so "Back closes the popover first" has to
-    // be decided at this level.
     var openPopover by remember { mutableStateOf<PlayerPopover?>(null) }
-    // Screen rotation for the video surface: 0 / 90 / 180 / 270 degrees.
-    // Portrait videos (very common in TG) play with big black bars on a
-    // landscape TV — the rotate button's popover picks the angle. Kept across
-    // video switches so a portrait playlist stays rotated.
     var rotation by remember { mutableIntStateOf(0) }
-    // Rotation corrects THIS file's shape, so it does not carry over: 90° on a
-    // portrait clip is right, but the same 90° on the next landscape video lays
-    // it on its side. Keyed on the file id so a recomposition of the same video
     LaunchedEffect(current.fileId) { rotation = 0 }
-    // viewing preference, so it survives a video switch while the player is open.
     var aspect by remember { mutableStateOf<VideoAspect?>(null) }
     var lastInteractionMs by remember { mutableStateOf(System.currentTimeMillis()) }
     var controllerShownBefore by remember { mutableStateOf(false) }
-    // Auto-hide applies only while focus sits on the progress bar; focus on
-    // the button row keeps the controller up indefinitely.
     var progressFocused by remember { mutableStateOf(false) }
-    // Focus handover — keyed ONLY on visibility, so button presses (which
-    // bump lastInteractionMs) never re-steal focus from the button row back
-    // to the progress bar. Reveal → progress bar (after enter composes);
-    // hide → page Box (after fade-out finishes, so vanishing buttons don't
-    // eat direction keys during the exit animation).
     LaunchedEffect(showController) {
         if (showController) {
             controllerShownBefore = true
@@ -544,16 +418,12 @@ fun PlayerScreen(
             catch (_: IllegalStateException) {}
         }
     }
-    // Auto-hide: only while focus is on the progress bar, 4s after the last
-    // interaction (bump restarts the timer). Focus on buttons → no auto-hide.
-    // An open popover pins the controller up while it is showing.
     LaunchedEffect(showController, lastInteractionMs, progressFocused, openPopover) {
         if (showController && progressFocused && openPopover == null) {
             delay(4000L)
             showController = false
         }
     }
-    // A popover cannot outlive the controller it hangs off.
     LaunchedEffect(showController) {
         if (!showController) openPopover = null
     }
@@ -562,7 +432,6 @@ fun PlayerScreen(
         lastInteractionMs = System.currentTimeMillis()
     }
 
-    // Media info drawer: queried from TDLib (GetFile) when opened.
     var showInfo by remember { mutableStateOf(false) }
     var fileInfo by remember(current.fileId) { mutableStateOf<TdApi.File?>(null) }
     LaunchedEffect(showInfo, current.fileId) {
@@ -571,8 +440,6 @@ fun PlayerScreen(
         }
     }
 
-    // Back hides the controller first; a second Back leaves the player.
-    // An open popover first, then the info drawer, then the controller.
     BackRegistration(BackPriority.PLAYER) {
         when {
             openPopover != null -> openPopover = null
@@ -588,8 +455,6 @@ fun PlayerScreen(
             .background(MaterialTheme.colorScheme.background)
             .focusRequester(focusRequester)
             .focusable()
-            // Capture-phase Back: intercept BEFORE the focused button/progress
-            // bar can consume it. Priority: info drawer > controller > exit.
             .onPreviewKeyEvent { ev ->
                 if (ev.type == KeyEventType.KeyDown && ev.key == Key.Back) {
                     when {
@@ -605,9 +470,6 @@ fun PlayerScreen(
             .onKeyEvent { ev ->
                 if (ev.type != KeyEventType.KeyDown) return@onKeyEvent false
                 when (ev.key) {
-                    // Hidden mode only: left/right seek. When the controller
-                    // is visible these keys belong to the progress bar / button
-                    // row (focus system), so don't swallow them here.
                     Key.DirectionLeft -> {
                         if (showController) return@onKeyEvent false
                         exo.seekTo((exo.currentPosition - 10_000L).coerceAtLeast(0L))
@@ -629,9 +491,6 @@ fun PlayerScreen(
                         neighborVideo(+1)?.let { onNavigateTo(it) }
                         true
                     }
-                    // Reveal the controller; focus lands on the progress bar
-                    // (handled by the LaunchedEffect above). Hidden mode only.
-                    // With an error showing, OK/Enter retries instead.
                     Key.DirectionUp, Key.DirectionDown, Key.DirectionCenter, Key.Enter -> {
                         if (showController) return@onKeyEvent false
                         if (playerError != null || currentFileState is FileDownloadState.Failed) {
@@ -642,15 +501,11 @@ fun PlayerScreen(
                             true
                         }
                     }
-                    // Physical play keys toggle playback directly, no reveal.
-                    // In controller mode they still count as interaction so
-                    // the auto-hide timer restarts.
                     Key.MediaPlayPause, Key.MediaPlay, Key.MediaPause -> {
                         if (exo.isPlaying) exo.pause() else exo.play()
                         if (showController) bumpController()
                         true
                     }
-                    // Speed cycle reveals the controller so the new rate shows.
                     Key.Menu -> {
                         viewModel.cyclePlayerSpeed()
                         bumpController()
@@ -661,9 +516,6 @@ fun PlayerScreen(
             },
     ) {
         val downloadError = (currentFileState as? FileDownloadState.Failed)?.reason
-        // "avc1.F4001E … NO_EXCEEDS_CAPABILITIES" says the device's decoder
-        // cannot handle this profile at all, which deserves a human line rather
-        // than the raw codec string.
         val errorMsg = playerError?.let { text ->
             if (playerErrorUnsupportedCodec) {
                 stringResource(R.string.player_error_unsupported_codec) + "\n\n" + text
@@ -673,7 +525,6 @@ fun PlayerScreen(
         } ?: downloadError?.let { stringResource(R.string.player_download_failed, it) }
 
         if (errorMsg != null) {
-            // controller stays visible underneath and the retry button takes focus.
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -703,27 +554,9 @@ fun PlayerScreen(
                 }
             }
         } else if (!mediaPrepared) {
-            // Same removal as the shell: no indicator until the PlayerView exists.
             Box(Modifier.fillMaxSize())
         } else {
-            // Read the mode in THIS scope, not inside AndroidView's update
-            // lambda. The update block runs outside the recompose scope, so a
-            // read inside it never registers a dependency: the picker ticked
-            // (its read lives in the controller's scope) while the video branch
-            // never recomposed and the new mode was never pushed to the view.
             val videoAspect = aspect
-            // Classic PlayerView (not the compose PlayerSurface): the compose
-            // surface is a bare SurfaceView hookup — it neither applies the
-            // video's rotation metadata nor preserves its aspect ratio, so
-            // portrait videos (encoded landscape + rotation=90) render
-            // stretched full-screen. PlayerView handles both: AspectRatio-
-            // FrameLayout + RESIZE_MODE_FIT letterboxes the long edge and
-            // black-bars the sides, and it applies unappliedRotationDegrees.
-            //
-            // User rotation on top: a graphicsLayer turns the whole surface
-            // 0/90/180/270° for portrait videos (very common in TG). At
-            // 90/270° the surface's aspect flips, so we scale up by the
-            // screen's W/H ratio to keep it filling the screen (cover).
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -740,35 +573,19 @@ fun PlayerScreen(
             ) {
                 AndroidView(
                     factory = { ctx ->
-                        // Inflate the TextureView-configured PlayerView. The
-                        // default SurfaceView is composited outside the View
-                        // pipeline, so inside this graphicsLayer (user rotation)
-                        // it ignores the AspectRatioFrameLayout letterboxing
-                        // until a forced relayout — portrait videos render
-                        // stretched and only snap correct when the controller
-                        // appears. TextureView respects both letterboxing and
-                        // rotation immediately.
                         (LayoutInflater.from(ctx).inflate(
                             R.layout.tellygram_player_view, null,
                         ) as PlayerView).apply {
-                            useController = false // custom compose controller below
-                            // Belt and braces with app:show_buffering="never": our own
+                            useController = false
                             setShowBuffering(PlayerView.SHOW_BUFFERING_NEVER)
                             resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
                             player = exo
-                            // The letterbox around the video matches the app's background
                             setBackgroundColor(HomeSpec.Background.toArgb())
-                            // media3's shutter (the panel shown until the first frame) defaults
-                            // to BLACK and sits above this background, so buffering read as a
                             setShutterBackgroundColor(HomeSpec.Background.toArgb())
                         }
                     },
-                    // Applied on every recomposition of this branch (and this
-                    // branch now depends on resizeMode — see videoResizeMode).
                     update = {
                         it.player = exo
-                        // Cropping to a ratio means ZOOM inside a box already constrained to
-                        // that ratio; "original" letterboxes the whole frame.
                         it.resizeMode = if (videoAspect == null) {
                             AspectRatioFrameLayout.RESIZE_MODE_FIT
                         } else {
@@ -783,21 +600,11 @@ fun PlayerScreen(
                 )
             }
 
-            // First-frame gate: the spinner OVERLAYS the surface rather than
-            // replacing it. The PlayerView must stay composed — if we swap it
-            // out for a spinner, ExoPlayer has no surface to render into,
-            // onRenderedFirstFrame never fires, and the spinner never clears
-            // (the black-screen deadlock). Same overlay pattern as the media
-            // grid's hover preview (thumbnail stays under until previewReady).
             if (!firstFrameRendered) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(color = Color.White)
                 }
             } else if (isBuffering) {
-                // Lightweight buffering indicator during playback (after the
-                // first frame — never overlaps the initial full-screen spinner).
-                // Video keeps rendering underneath; this just signals the
-                // remote isn't dead while data catches up.
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(
                         color = Color.White,
@@ -880,9 +687,6 @@ fun PlayerScreen(
             MediaInfoBody(
                 item = current,
                 fileInfo = fileInfo,
-                // The message's own duration can be 0 — animations never carried
-                // one, and a video's occasionally arrives as 0 — so hand over
-                // what the player knows once the media is prepared.
                 playedDurationMs = exo.duration.takeIf { it > 0 } ?: 0L,
                 videoCodec = videoCodecInfo,
                 audioCodec = audioCodecInfo,
@@ -924,9 +728,6 @@ private fun PlayerController(
 ) {
     val playing by remember { derivedStateOf { isPlaying() } }
 
-    // Live position/duration. ExoPlayer isn't compose state, so a ticker
-    // drives recomposition while the controller is on screen (it stops when
-    // AnimatedVisibility removes us from the tree).
     var nowPos by remember { mutableLongStateOf(positionMs()) }
     var nowDur by remember { mutableLongStateOf(durationMs()) }
     var nowBuffered by remember { mutableLongStateOf(bufferedMs()) }
@@ -939,9 +740,6 @@ private fun PlayerController(
         }
     }
 
-    // Explicit button-row navigation: one FocusRequester per visible button
-    // + selectedIndex. Left/right move between buttons via the row's
-    // onKeyEvent; Down returns to the seeker below.
     val prevFocus = remember { FocusRequester() }
     val seekBackFocus = remember { FocusRequester() }
     val playFocus = remember { FocusRequester() }
@@ -950,13 +748,8 @@ private fun PlayerController(
     val speedFocus = remember { FocusRequester() }
     val aspectFocus = remember { FocusRequester() }
     val infoFocus = infoFocusRequester
-    // The strip below the seeker: Down from the seeker lands here, Up leaves it.
     val stripFocus = remember { FocusRequester() }
 
-    // Popover focus handover: the Popup window holds focus while a picker is up,
-    // so hand the button that opened it back once it closes (the same explicit
-    // restore the RightDrawer needs). Guarded on "was open" so the first
-    // composition does not steal focus from the seeker.
     var popoverShownBefore by remember { mutableStateOf<PlayerPopover?>(null) }
     LaunchedEffect(openPopover) {
         if (openPopover != null) {
@@ -987,9 +780,6 @@ private fun PlayerController(
         }
     }
     val playIndex = buttonFocuses.indexOf(playFocus)
-    // Keyed to onPrev/onNext: buttonFocuses is rebuilt when prev/next
-    // appear or disappear (first/last video), so the index must rebuild
-    // with it or it can point at a button that no longer exists.
     var selectedIndex by remember(onPrev, onNext) { mutableIntStateOf(playIndex) }
     fun select(delta: Int) {
         onInteraction()
@@ -999,14 +789,12 @@ private fun PlayerController(
             buttonFocuses[next].requestFocus()
         }
     }
-    // Hand focus to the play button (used when moving up from the seeker).
     fun focusPlay() {
         onInteraction()
         selectedIndex = playIndex
         playFocus.requestFocus()
     }
 
-    // white 2% hairline along its top edge — not the full-frame gradient the
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -1018,7 +806,6 @@ private fun PlayerController(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        // Actions only: the design's Label column is empty now, the caption
         Row(
             modifier = Modifier
                 .width(836.dp)
@@ -1033,7 +820,6 @@ private fun PlayerController(
                             catch (_: IllegalStateException) {}
                             true
                         }
-                        // Buttons sit above the seeker; Up leaves the controller.
                         Key.DirectionUp -> { onInteraction(); onHideController(); true }
                         else -> false
                     }
@@ -1050,7 +836,6 @@ private fun PlayerController(
                 )
                 Spacer(Modifier.width(12.dp))
             }
-            // Design order: replay 10 (left of play), play/pause, forward 10.
             ControllerButton(
                 icon = Icons.Default.Replay10,
                 contentDescription = stringResource(R.string.player_btn_seek_back),
@@ -1178,17 +963,13 @@ private fun Seeker(
     modifier: Modifier = Modifier,
 ) {
     val pct = if (durationMs > 0L) (positionMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
-    // Buffered frontier (what ExoPlayer can play up to without stalling),
-    // rendered as a dim layer under the white playhead.
     val bufferedPct = if (durationMs > 0L) (bufferedMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
     val interactionSource = remember { MutableInteractionSource() }
     val isFocused by interactionSource.collectIsFocusedAsState()
-    // Report focus state for auto-hide logic.
     LaunchedEffect(isFocused) {
         onProgressFocusChange(isFocused)
     }
 
-    // between; the handle appears only while the bar itself has focus.
     Row(
         modifier = modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.Center,
@@ -1223,8 +1004,6 @@ private fun Seeker(
                             Key.DirectionRight -> { onInteraction(); onSeekFwd(); true }
                             Key.DirectionUp -> { onInteraction(); onMoveUp(); true }
                             Key.DirectionDown -> { onInteraction(); onMoveDown(); true }
-                            // OK on the seeker: no-op by design (consume it so
-                            // it doesn't bubble to the page-level handler).
                             Key.DirectionCenter, Key.Enter -> { onInteraction(); true }
                             else -> false
                         }
@@ -1250,7 +1029,6 @@ private fun Seeker(
                     )
                 }
             }
-            // Playhead handle: focus affordance only, flush with the played end.
             if (isFocused) {
                 Box(
                     modifier = Modifier
@@ -1282,11 +1060,6 @@ private fun Seeker(
     }
 }
 
-/**
- * The video strip under the seeker. Focus moves the highlight only; OK switches the video
- * (which auto-plays and resumes from its saved position). Up returns to the seeker, Down hides
- * the controller.
- */
 @Composable
 private fun VideoStrip(
     videos: List<MediaItem>,
@@ -1362,7 +1135,6 @@ private fun VideoStripCell(
 ) {
     val ctx = LocalContext.current
     val thumbId = item.thumbnailFileId ?: 0
-    // Same chain as the photo strip: medium thumbnail first, embedded minithumbnail under it.
     val path = (fileStates[thumbId] as? FileDownloadState.Local)?.path
         ?: item.thumbnailLocalPath
         ?: item.localPath
@@ -1371,7 +1143,6 @@ private fun VideoStripCell(
     }
     Box(
         modifier = Modifier
-            // 118x90 slot with the 3dp stroke outside the 112x84 picture.
             .size(width = 118.dp, height = 90.dp)
             .border(
                 3.dp,
@@ -1414,10 +1185,6 @@ private fun ControllerButton(
     val interactionSource = remember { MutableInteractionSource() }
     val isFocused by interactionSource.collectIsFocusedAsState()
 
-    // JetStream circular button: Surface Variant base + On Surface icon, both
-    // at the design's 80% node opacity.
-    // Focus swaps to the light On Secondary Container fill (#D9E3F8) with an On
-    // focused control reads on a 10-foot UI.
     val bg = if (isFocused) {
         MaterialTheme.colorScheme.onSecondaryContainer
     } else {
@@ -1450,21 +1217,13 @@ private fun ControllerButton(
     }
 }
 
-// Decode TDLib's embedded minithumbnail (raw JPEG bytes — it ships inside the
-// message, so nothing is downloaded) into something Compose can draw.
 // ── Player popovers ───────────────────────────────────────────────────────
-// the design shows for the subtitle picker; the player's pickers reuse it: a
-// 216dp column, 16dp radius, background-token fill under the design's elevation
-// shadow, 8/12dp list padding and 40dp rows (10/12 padding around the 20dp line
-// box). A focused row inverts to the On Surface fill with an Inverse On Surface
-// label and grows ~5% (201.6/192 in the design).
 private val PlayerPopoverWidth = 216.dp
 private val PlayerPopoverRadius = 16.dp
 private val PlayerPopoverRowHeight = 40.dp
 private val PlayerPopoverListPaddingV = 8.dp
 private val PlayerPopoverListPaddingH = 12.dp
 
-// Which picker the controller has open, if any.
 private enum class PlayerPopover { Speed, Aspect }
 
 private enum class VideoAspect(val label: String, val ratio: Float) {
@@ -1473,10 +1232,8 @@ private enum class VideoAspect(val label: String, val ratio: Float) {
     Wide("16:9", 16f / 9f),
 }
 
-// "1.0x" / "1.25x" — the same shape the removed inline speed label used.
 private fun formatSpeed(speed: Float): String = "${speed}x"
 
-// "0°" / "90°" — language-neutral, so no new strings are needed.
 private fun formatDegrees(degrees: Int): String = "$degrees°"
 
 @Composable
@@ -1498,9 +1255,6 @@ private fun <T> PlayerPopoverMenuPopup(
             items = items,
             current = current,
             label = label,
-            // Picking closes the popover here rather than at each call site: a
-            // call site only owns the state, and the first one that forgot to
-            // clear it left a menu sitting over the video with the tick already
             onSelect = { item ->
                 onSelect(item)
                 onDismiss()
@@ -1509,8 +1263,6 @@ private fun <T> PlayerPopoverMenuPopup(
     }
 }
 
-// Anchors the popover to the trigger: right-aligned to the button it hangs off
-// and sitting above it, clamped into the window so it can never go off-screen.
 private class PlayerPopoverPositionProvider(private val gapPx: Int) : PopupPositionProvider {
     override fun calculatePosition(
         anchorBounds: IntRect,
@@ -1534,18 +1286,8 @@ private fun <T> PlayerPopoverMenu(
 ) {
     val itemFocuses = remember(items) { items.map { FocusRequester() } }
     val selectedIndex = items.indexOf(current).coerceAtLeast(0)
-    // Single source of truth for the highlight: the pill follows this index, not
-    // the focus system. A Popup window focuses its FIRST focusable child as it
-    // opens, so a focus-driven pill painted 1.0x for a frame before the
-    // requestFocus below landed on the rate in effect — the "highlight jumps to
-    // the selected entry" flicker. Enter/Center is handled here for the same
-    // reason: the selection must be whatever the pill shows, wherever real
-    // focus happens to sit.
     var focusedIndex by remember { mutableIntStateOf(selectedIndex) }
 
-    // The Popup is a separate window, so the first requestFocus can land before
-    // its node is attached — retry a few frames, but stop as soon as the user
-    // navigates so a late retry can't yank focus back.
     LaunchedEffect(Unit) {
         withFrameNanos { }
         repeat(5) {
@@ -1562,8 +1304,6 @@ private fun <T> PlayerPopoverMenu(
 
     Column(
         modifier = Modifier
-            // The popover lives in its own window, so it needs its own copy of
-            // the D-pad sounds.
             .dpadNavigationSounds()
             .width(PlayerPopoverWidth)
             .shadow(8.dp, RoundedCornerShape(PlayerPopoverRadius))
@@ -1575,8 +1315,6 @@ private fun <T> PlayerPopoverMenu(
                 vertical = PlayerPopoverListPaddingV,
                 horizontal = PlayerPopoverListPaddingH,
             )
-            // Trap the D-pad: without this the first Up / last Down walks focus
-            // out of the popover into whatever sits behind it.
             .onPreviewKeyEvent { ev ->
                 if (ev.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                 when (ev.key) {
@@ -1611,8 +1349,6 @@ private fun PlayerPopoverItem(
     onClick: () -> Unit,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
-    // The focused look comes from the menu's index state, not from the focus
-    // system's own reporting — see SpeedMenu.
     val fill = if (focused) MaterialTheme.colorScheme.onSurface else Color.Transparent
     val fg = if (focused) {
         MaterialTheme.colorScheme.inverseOnSurface
@@ -1644,7 +1380,6 @@ private fun PlayerPopoverItem(
         Text(
             text = label,
             color = fg,
-            // app's labelLarge (its own titleSmall is 12/16 Regular).
             style = MaterialTheme.typography.labelLarge,
         )
         if (selected) {
@@ -1699,7 +1434,6 @@ private fun TryAgainButton(onRetry: () -> Unit) {
     }
 }
 
-/** "H.264 · 4.5 Mbps" straight off the prepared track; null until prepare finishes. */
 private fun describeVideo(tracks: Tracks): String? {
     val group = tracks.groups.firstOrNull { it.type == C.TRACK_TYPE_VIDEO } ?: return null
     val index = (0 until group.length).firstOrNull { group.isTrackSupported(it) } ?: 0
@@ -1718,7 +1452,6 @@ private fun describeVideo(tracks: Tracks): String? {
     return name + bitrate
 }
 
-/** "AAC · 2ch"; the row that explains "picture but no sound". */
 private fun describeAudio(tracks: Tracks): String? {
     val group = tracks.groups.firstOrNull { it.type == C.TRACK_TYPE_AUDIO } ?: return null
     val index = (0 until group.length).firstOrNull { group.isTrackSupported(it) } ?: 0
@@ -1746,7 +1479,6 @@ private fun formatMs(ms: Long): String {
     return if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%d:%02d".format(m, s)
 }
 
-/** Sheet content: the five metadata rows, a rule, then the caption (design order). */
 @Composable
 private fun ColumnScope.MediaInfoBody(
     item: MediaItem,
@@ -1757,9 +1489,6 @@ private fun ColumnScope.MediaInfoBody(
 ) {
     val sizeBytes = fileInfo?.size?.toLong()?.takeIf { it > 0 }
         ?: fileInfo?.expectedSize?.toLong()?.takeIf { it > 0 }
-    // Message metadata first (it is there before playback starts), then what the
-    // player measured — otherwise this row shows "—" for anything whose TG
-    // duration is 0.
     val durationMs = if (item.duration > 0) item.duration * 1000L else playedDurationMs
     InfoLine("时长:", if (durationMs > 0) formatMs(durationMs) else "—", RightSheetInk)
     InfoLine(
@@ -1771,8 +1500,6 @@ private fun ColumnScope.MediaInfoBody(
     InfoLine("编码:", videoCodec ?: "—", RightSheetInk)
     InfoLine("音频:", audioCodec ?: "—", RightSheetInk)
     Box(Modifier.fillMaxWidth().height(1.dp).background(RightSheetRule))
-    // The caption is the only place the full text is readable; it takes the rest of
-    // the 399dp content area and scrolls.
     Box(
         modifier = Modifier
             .fillMaxWidth()

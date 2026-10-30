@@ -50,9 +50,6 @@ class TdChatRepository(
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error.asStateFlow()
 
-    // Cooldown for live-update refreshes. UpdateChatPosition fires on every
-    // reorder (each new message changes position), so a full list reload per
-    // event would be wasteful; coalesce bursts into at most one per window.
     private var lastLiveRefreshMs = 0L
     private val liveRefreshCooldownMs = 2_000L
 
@@ -92,11 +89,6 @@ class TdChatRepository(
         }
     }
 
-    /**
-     * Live-update the unread count for a chat without a full list reload.
-     * Only the dot indicator (present/absent) is rendered from this value,
-     * so we just patch the matching ChatItem in every published list.
-     */
     private fun applyUnreadCount(chatId: Long, count: Int) {
         fun patch(list: List<ChatItem>): List<ChatItem> =
             list.map { if (it.id == chatId) it.copy(unreadCount = count) else it }
@@ -105,7 +97,6 @@ class TdChatRepository(
         _items.value = patch(_items.value)
     }
 
-    /** Patch a chat's muted state from a notification-settings update. */
     private fun applyMuted(chatId: Long, settings: TdApi.ChatNotificationSettings) {
         val muted = isMuted(settings)
         fun patch(list: List<ChatItem>): List<ChatItem> =
@@ -118,11 +109,6 @@ class TdChatRepository(
     private fun isMuted(settings: TdApi.ChatNotificationSettings): Boolean =
         !settings.useDefaultMuteFor && settings.muteFor > 0
 
-    /**
-     * Load the main chat list. With [force]=false the already-loaded guard
-     * skips redundant reloads; live updates (chat added/removed/reordered)
-     * pass force=true so the list actually refreshes.
-     */
     suspend fun loadAllChats(limit: Int = 200, force: Boolean = false) {
         if (!force && _loaded.value && _allChats.value.isNotEmpty()) {
             Log.d(TAG, "loadAllChats: already loaded (${_allChats.value.size}); skipping")
@@ -261,8 +247,6 @@ class TdChatRepository(
             else -> ChatType.Unknown
         }
 
-        // Verified flag lives on User / Supergroup in this TDLib version,
-        // not on Chat — fetch it per chat type (both hit local DB first).
         val verified = when (val t = resp.type) {
             is TdApi.ChatTypePrivate ->
                 client.execute(TdApi.GetUser(t.userId), timeoutMs = 3_000L).valueOrNull<TdApi.User>()?.isVerified ?: false
@@ -291,18 +275,12 @@ class TdChatRepository(
         )
     }
 
-    /**
-     * Summary for the chat list second line. tellygram is a photo/video-focused
-     * TV app, so only media messages produce a summary; everything else
-     * returns null and the UI falls back to the chat type name.
-     */
     private fun messageText(message: TdApi.Message): String? = when (val c = message.content) {
         is TdApi.MessagePhoto -> "Photo"
         is TdApi.MessageVideo -> "Video"
         else -> null
     }
 
-    /** Thumbnail file id of the last media message, for the small preview before the summary text. */
     private fun messageThumbFileId(message: TdApi.Message): Int? = when (val c = message.content) {
         is TdApi.MessagePhoto -> c.photo.sizes
             .filter { it.photo.id != 0 }
@@ -312,12 +290,6 @@ class TdChatRepository(
         else -> null
     }
 
-    /**
-     * Fetch ChatItems for many ids with bounded concurrency. Serial GetChat +
-     * GetUser/GetSupergroup over a 200-chat list is the cold-start bottleneck
-     * (worst case 400–600 round trips); a semaphore-capped fan-out turns it
-     * into a handful of parallel waves without flooding TDLib.
-     */
     private suspend fun fetchChatItems(ids: LongArray): List<ChatItem> {
         val semaphore = Semaphore(MAX_CONCURRENT_FETCHES)
         return coroutineScope {
@@ -327,14 +299,6 @@ class TdChatRepository(
         }.mapNotNull { it }
     }
 
-    /**
-     * Mute or unmute a chat, preserving its other notification settings
-     * (sound / preview / mentions). Muting sets muteFor to the TDLib
-     * "forever" sentinel (muteFor > 1 week is treated as permanent);
-     * unmuting sets it back to 0. The local list is patched immediately
-     * (same path as UpdateChatNotificationSettings) so the menu label and
-     * the mute icon reflect the change without a full reload.
-     */
     suspend fun setChatMuted(chatId: Long, muted: Boolean) {
         val chat = client.execute(TdApi.GetChat(chatId), timeoutMs = 5_000L).valueOrNull<TdApi.Chat>()
         val current = chat?.notificationSettings ?: TdApi.ChatNotificationSettings()
@@ -353,45 +317,23 @@ class TdChatRepository(
         applyMuted(chatId, settings)
     }
 
-    /**
-     * Pin or unpin a chat in its current list (main or archive). The
-     * [inArchive] flag selects which ChatList TDLib should operate on —
-     * a chat lives in exactly one of Main/Archive, and pinning is scoped
-     * per list.
-     */
     suspend fun setChatPinned(chatId: Long, inArchive: Boolean, pinned: Boolean) {
         val list: TdApi.ChatList = if (inArchive) TdApi.ChatListArchive() else TdApi.ChatListMain()
         client.execute(TdApi.ToggleChatIsPinned(list, chatId, pinned), timeoutMs = 5_000L)
         refreshLists()
     }
 
-    /**
-     * Archive or unarchive a chat. AddChatToList moves it between the Main
-     * and Archive lists (TDLib removes it from the other list automatically),
-     * so one call covers both directions.
-     */
     suspend fun setChatArchived(chatId: Long, archived: Boolean) {
         val list: TdApi.ChatList = if (archived) TdApi.ChatListArchive() else TdApi.ChatListMain()
         client.execute(TdApi.AddChatToList(chatId, list), timeoutMs = 5_000L)
         refreshLists()
     }
 
-    /**
-     * Remove a chat from the user's list. Private chats have no "leave" —
-     * delete history for self and drop it from the list; groups and channels
-     * are left. Both fire live-update events, but we reload explicitly for
-     * determinism.
-     */
-    /**
-     * The destructive action behind the menu's fourth row. `revoke` comes from the rules:
-     * the private toggle decides it, a group owner always wipes the history for everyone,
-     */
     suspend fun deleteChat(chat: ChatItem, revoke: Boolean) {
         when {
             chat.type == ChatType.Private ->
                 client.execute(TdApi.DeleteChatHistory(chat.id, true, revoke), timeoutMs = 5_000L)
             revoke ->
-                // Owner of a group or channel: wipe for everyone and drop it from our list.
                 client.execute(TdApi.DeleteChatHistory(chat.id, true, true), timeoutMs = 5_000L)
             else ->
                 client.execute(TdApi.LeaveChat(chat.id), timeoutMs = 5_000L)
@@ -399,15 +341,9 @@ class TdChatRepository(
         refreshLists()
     }
 
-    /**
-     * The creator's user id from a getChatAdministrators response, or null when the list
-     * has no creator (or the sender is not a plain user). Pure, so it is unit tested.
-     */
     internal fun creatorIdOf(admins: List<TdApi.ChatAdministrator>): Long? =
         admins.firstOrNull { it.isOwner }?.userId
 
-    // Groups only, and cached: the popover's wording depends on it, but the answer for a
-    // chat does not change while the app runs.
     private val ownerCache = mutableMapOf<Long, Boolean>()
 
     suspend fun isGroupOwner(chatId: Long, myUserId: Long): Boolean {
@@ -419,7 +355,6 @@ class TdChatRepository(
         return result
     }
 
-    /** Called on sign-out so a different account cannot inherit stale answers. */
     fun clearOwnerCache() {
         ownerCache.clear()
     }

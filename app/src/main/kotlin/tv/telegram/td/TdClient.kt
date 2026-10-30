@@ -34,11 +34,6 @@ object TdClient {
     )
     val updates: SharedFlow<TdApi.Object> = _updates.asSharedFlow()
 
-    // UpdateFile is emitted on its own, much larger flow. During streaming
-    // playback UpdateFile fires at a very high rate (one per downloaded
-    // chunk), so keeping it on the shared `updates` flow would starve chat
-    // / media updates (DROP_OLDEST) AND risk dropping the terminal
-    // `isDownloadingCompleted` event that unblocks a waiting download.
     private val _fileUpdates = MutableSharedFlow<TdApi.UpdateFile>(
         replay = 0,
         extraBufferCapacity = 8192,

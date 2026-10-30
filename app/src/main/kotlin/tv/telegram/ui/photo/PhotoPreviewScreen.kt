@@ -112,46 +112,30 @@ private val CaptionTitle = Color(0xFF121316)
 private val CaptionBody = Color(0xFF43474E)
 private val CaptionRule = Color(0xFF8E9099).copy(alpha = 0.1f)
 
-/** One Up/Down press scrolls the caption body by this much. */
 private val CaptionScrollStep = 64.dp
 
-/** Design: content column 836dp inside the full-width bar (960 canvas, 62 a side). */
 private val BarContentWidth = 836.dp
 
-/** How long the bar stays up after the last interaction. */
 private const val BarAutoHideMs = 4_000L
 
-/** Indices of the photo items, which is what Left/Right step through here. */
 internal fun photoIndices(items: List<MediaItem>): List<Int> =
     items.mapIndexedNotNull { i, m -> if (m.type == MediaType.Photo) i else null }
 
-/**
- *
- * Left/Right walk the photos, Back exits. The bottom bar auto-hides; any key brings it back and
- * hands focus to the current photo's slot in the strip. Aspect crops (Cover), rotation is display
- */
 @Composable
 internal fun PhotoPreviewScreen(
     state: HomeState,
     index: Int,
     onClose: () -> Unit,
-    /**
-     * already filtered to photos. Null means the chat's loaded media.
-     */
     overrideItems: List<MediaItem>? = null,
 ) {
-    // strip thumb switches the picture without a route change, so the display settings survive
-    // the walk and a thumb renders the moment it takes focus.
     var current by remember { mutableIntStateOf(index) }
     val ownItems by state.mediaItems.collectAsStateWithLifecycle()
     val items = overrideItems ?: ownItems
     val fileStates by state.fileStates.collectAsStateWithLifecycle()
     val imageFocus = remember { FocusRequester() }
-    // The current strip slot: the bar hands focus here on open, and Down from the action
     val stripFocus = remember { FocusRequester() }
     val actionsFocus = remember { FocusRequester() }
 
-    // Display settings last for this visit only: entering or leaving the preview resets them.
     var rotation by remember { mutableIntStateOf(0) }
     var aspect by remember { mutableStateOf<PreviewAspect?>(null) }
     var aspectMenu by remember { mutableStateOf(false) }
@@ -162,11 +146,9 @@ internal fun PhotoPreviewScreen(
 
     var barVisible by remember { mutableStateOf(false) }
     var lastInteraction by remember { mutableLongStateOf(System.currentTimeMillis()) }
-    // Once the user moves into the strip or a button the auto-hide timer stops, the way the
     var interacted by remember { mutableStateOf(false) }
     var retryTick by remember { mutableIntStateOf(0) }
     val scope = rememberCoroutineScope()
-    // Hide the bar and hand focus back after the fade, like the player's controller
     val hideBar: () -> Unit = {
         barVisible = false
         interacted = false
@@ -183,7 +165,6 @@ internal fun PhotoPreviewScreen(
     if (current !in items.indices) return
     val item = items[current]
 
-    // card that was actually being looked at.
     LaunchedEffect(current, items.size) {
         items.getOrNull(current)?.let { state.setPlayerReturnFocus(it.messageId) }
     }
@@ -201,7 +182,6 @@ internal fun PhotoPreviewScreen(
         }
     }
 
-    // Keep the TV awake while a photo is on screen (the player does the same).
     val view = LocalView.current
     DisposableEffect(view) {
         val previous = view.keepScreenOn
@@ -216,14 +196,10 @@ internal fun PhotoPreviewScreen(
         if (fullPath == null) state.ensureMediaFile(item.fileId, priority = 16)
     }
 
-    // Auto-hide like the player's controller: the timer only runs while the user has not moved
-    // into the bar's controls, and never while a menu is open.
     LaunchedEffect(barVisible, interacted, aspectMenu, rotationMenu, lastInteraction) {
         if (!barVisible || interacted || aspectMenu || rotationMenu) return@LaunchedEffect
         delay(BarAutoHideMs)
         barVisible = false
-        // Let the fade-out finish before handing focus back, so vanishing thumbs cannot eat
-        // direction keys during the exit (the player waits 400ms too).
         delay(400L)
         runCatching { imageFocus.requestFocus() }
     }
@@ -251,8 +227,6 @@ internal fun PhotoPreviewScreen(
             .clipToBounds()
             .focusRequester(imageFocus)
             .focusable()
-            // Back with the bar up hides it before anything else sees the press; the second
-            // Back (bar hidden) falls through to the controller and exits the preview.
             .onPreviewKeyEvent { event: KeyEvent ->
                 if (event.key == Key.Back && barVisible) {
                     hideBar()
@@ -302,7 +276,6 @@ internal fun PhotoPreviewScreen(
                 )
             }
             else -> {
-                // Placeholder first (the 320 thumbnail file only — the embedded minithumbnail
                 val ctx = LocalContext.current
                 if (thumbPath != null) {
                     AsyncImage(
@@ -401,7 +374,6 @@ internal fun PhotoPreviewScreen(
                                 menuOpen = rotationMenu,
                                 testTag = "photo-rotation",
                             )
-                            // No caption, no button: an empty sheet would be worse than a
                             if (!item.caption.isNullOrBlank()) {
                                 RoundIconButton(
                                     icon = Icons.Outlined.Info,
@@ -427,12 +399,9 @@ internal fun PhotoPreviewScreen(
                     fileStates = fileStates,
                     visible = barVisible,
                     currentFocus = stripFocus,
-                    // Up from the strip goes to the first round button; the error pane has no
                     upFocus = if (isError) null else actionsFocus,
                     onSelect = { current = it },
                     onInteraction = {
-                        // The strip is the bar's default focus: it only restarts the timer.
-                        // Only the buttons (below) stop the auto-hide.
                         lastInteraction = System.currentTimeMillis()
                     },
                 )
@@ -440,7 +409,6 @@ internal fun PhotoPreviewScreen(
         }
 
         if (aspectMenu) {
-            // Row 0 restores the original aspect; the rest are the design's crop ratios.
             val options = PreviewAspect.entries
             PreviewMenu(
                 rows = listOf("原始比例") + options.map { it.label },
@@ -520,7 +488,6 @@ private fun ErrorPane(onRetry: () -> Unit) {
     }
 }
 
-/** 40dp circle, 20dp glyph; white when active or focused, surface-container otherwise. */
 @Composable
 private fun RoundIconButton(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
@@ -528,7 +495,6 @@ private fun RoundIconButton(
     testTag: String,
     onFocus: () -> Unit = {},
     onBounds: (Rect) -> Unit = {},
-    /** Optional external handle so the strip can hand focus up to the first button. */
     requester: FocusRequester? = null,
     downFocus: FocusRequester? = null,
     menuOpen: Boolean = false,
@@ -540,7 +506,6 @@ private fun RoundIconButton(
             .size(40.dp)
             .clip(CircleShape)
             .let { if (requester != null) it.focusRequester(requester) else it }
-            // No selected state: white only while focused, and never while its menu is open.
             .background(if (highlighted) HomeSpec.White else Color(0xCC1E2023))
             .onGloballyPositioned { onBounds(it.boundsInWindow()) }
             .focusProperties {
@@ -581,7 +546,6 @@ private fun ThumbStrip(
     items: List<MediaItem>,
     state: HomeState,
     fileStates: Map<Int, FileDownloadState>,
-    /** Only claim focus while the bar is up; a hidden bar must leave it on the photo. */
     visible: Boolean,
     currentFocus: FocusRequester,
     upFocus: FocusRequester?,
@@ -596,8 +560,6 @@ private fun ThumbStrip(
     }
     LaunchedEffect(position, listState, visible) {
         if (!visible || position < 0) return@LaunchedEffect
-        // Opened from the grid at a far index, the slot is not composed yet: the bar used to
-        // ask for focus once, miss, and leave it on the photo. Bring the slot in first (the
         if (position !in listState.layoutInfo.visibleItemsInfo.map { it.index }) {
             runCatching { listState.scrollToItem(position) }
         }
@@ -644,7 +606,6 @@ private fun ThumbCell(
     var focused by remember { mutableStateOf(false) }
     val ctx = LocalContext.current
     val thumbFileId = member.thumbnailFileId ?: 0
-    // Medium thumbnail (pickThumbnail), requested like the album tiles: without this the strip
     val localPath = (fileStates[thumbFileId] as? FileDownloadState.Local)?.path
         ?: member.thumbnailLocalPath
         ?: member.localPath
@@ -708,29 +669,24 @@ private fun ThumbCell(
                 modifier = Modifier.fillMaxSize(),
             )
         }
-        // Focus is shown by the 3dp white border above.
     }
 }
 
-/** Menu popup (216 wide, radius 16, background, elevation): rows select with OK. */
 @Composable
 private fun PreviewMenu(
     rows: List<String>,
     selected: Int,
     onSelect: (Int) -> Unit,
     onDismiss: () -> Unit,
-    /** The button it hangs off, in window coordinates: the menu floats 16dp above it. */
     anchor: Rect?,
 ) {
     val rowFocus = remember { FocusRequester() }
-    // Rows stay non-focusable for one frame: otherwise the popup window auto-focuses the first
     var armed by remember { mutableStateOf(false) }
     val gapPx = with(LocalDensity.current) { 16.dp.roundToPx() }
     LaunchedEffect(Unit) {
         withFrameNanos { }
         armed = true
         withFrameNanos { }
-        // The requester sits on the selected row, so the menu opens on the current choice.
         runCatching { rowFocus.requestFocus() }
     }
     Popup(
@@ -749,7 +705,6 @@ private fun PreviewMenu(
             rows.forEachIndexed { i, label ->
                 val isSelected = i == selected
                 var focused by remember { mutableStateOf(false) }
-                // Focus owns the white background; selection shows as a white label plus the
                 val bg = if (focused) HomeSpec.White else Color.Transparent
                 val fg = when {
                     focused -> HomeSpec.InverseOnSurface
@@ -797,9 +752,6 @@ private fun PreviewMenu(
     }
 }
 
-/**
- * Falls back to the bottom-right corner when the button bounds are not known yet.
- */
 private class AboveButtonPosition(
     private val anchor: Rect?,
     private val gapPx: Int,
@@ -829,7 +781,6 @@ private fun CaptionSheet(text: String, onDismiss: () -> Unit) {
     val scope = rememberCoroutineScope()
     val step = with(LocalDensity.current) { CaptionScrollStep.roundToPx().toFloat() }
     val topPx = with(LocalDensity.current) { 14.dp.roundToPx() }
-    // Same one-frame arming as PreviewMenu: the popup window would otherwise focus its first
     var armed by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         withFrameNanos { }

@@ -30,30 +30,16 @@ import java.io.File
 import tv.telegram.td.FileDownloadState
 import tv.telegram.ui.home.HomeState
 
-/**
- * Telegram-style avatar, shared by the chat list and the top bar.
- *
- * Order of preference, matching the official clients:
- *  1. the downloaded profile photo, cropped to a circle;
- *  2. a coloured circle with the first letter of the name;
- *  3. a type glyph for names with no usable letter (emoji-only titles, and
- *     Saved Messages which has no avatar of its own).
- *
- * The colour comes from Telegram's seven-colour palette indexed by peer id —
- * not by chat type — so a peer keeps the same colour everywhere and two peers of
- * the same kind do not look identical.
- */
 private val AvatarColors = listOf(
-    Color(0xFFE17076), // red
-    Color(0xFF7BC862), // green
-    Color(0xFFE5CA77), // yellow
-    Color(0xFF65AADD), // blue
-    Color(0xFFA695E7), // purple
-    Color(0xFFEE7AAE), // pink
-    Color(0xFF6EC9CB), // cyan
+    Color(0xFFE17076),
+    Color(0xFF7BC862),
+    Color(0xFFE5CA77),
+    Color(0xFF65AADD),
+    Color(0xFFA695E7),
+    Color(0xFFEE7AAE),
+    Color(0xFF6EC9CB),
 )
 
-/** Stable colour for a peer id (works for negative ids too, e.g. channels). */
 fun avatarColorFor(id: Long): Color {
     val n = AvatarColors.size
     return AvatarColors[(((id % n) + n) % n).toInt()]
@@ -71,10 +57,6 @@ internal fun Avatar(
 ) {
     val ctx = LocalContext.current
 
-    // Subscribe to the repo's file states so the photo swaps in the moment its
-    // file lands. A one-shot read never recomposed, which made a freshly
-    // downloaded avatar appear only when something else happened to recompose
-    // the row (it read as the list flashing during focus navigation).
     val fileStates by state.fileStates.collectAsStateWithLifecycle()
     val localPath = photoFileId?.let { (fileStates[it] as? FileDownloadState.Local)?.path }
     var imageFailed by remember(photoFileId, localPath) { mutableStateOf(false) }
@@ -96,8 +78,6 @@ internal fun Avatar(
             .background(color),
         contentAlignment = Alignment.Center,
     ) {
-        // Memoised on the path: a fresh ImageRequest never equals the previous
-        // one, so Coil would restart the load and the avatar would blink.
         val request = remember(localPath) {
             localPath?.let { ImageRequest.Builder(ctx).data(File(it)).build() }
         }
@@ -137,10 +117,5 @@ internal fun Avatar(
     }
 }
 
-/**
- * First letter of a name, uppercased. Scans past leading emoji/punctuation, and
- * returns null when there is no letter at all so the caller can draw a glyph
- * instead of a meaningless character.
- */
 private fun String.avatarInitial(): String? =
     firstOrNull { it.isLetter() }?.uppercaseChar()?.toString()

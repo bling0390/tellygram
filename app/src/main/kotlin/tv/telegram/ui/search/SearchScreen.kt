@@ -67,9 +67,6 @@ import kotlinx.coroutines.delay
 fun SearchScreen(
     viewModel: MainViewModel,
     onOpenChats: () -> Unit,
-    // Focus target for the rail's Search item — the results grid routes
-    // Left here explicitly (see ResultsGrid), so Left never lands on the
-    // rail's Chats/Settings icon via directional search.
     railSearchFocus: FocusRequester? = null,
 ) {
     val chats by viewModel.chatList.collectAsStateWithLifecycle()
@@ -92,10 +89,6 @@ fun SearchScreen(
     }
 
     val searchBarFocus = remember { FocusRequester() }
-    // Initial focus on the search bar; also returns here after the keyboard
-    // closes (see below). Keyed on keyboardOpen so closing the keyboard
-    // re-requests — without this, focus is lost when the keyboard leaves
-    // composition and the first D-pad press lands somewhere random.
     LaunchedEffect(keyboardOpen) {
         if (!keyboardOpen) {
             withFrameNanos { }
@@ -104,9 +97,6 @@ fun SearchScreen(
         }
     }
 
-    // Back closes the keyboard first (rather than leaving the search page
-    // back to Chats — this handler is deeper in the tree than the one in
-    // MainActivity, so it wins while the keyboard is open).
     BackRegistration(BackPriority.KEYBOARD, enabled = keyboardOpen) { keyboardOpen = false }
 
     Box(
@@ -115,8 +105,6 @@ fun SearchScreen(
             .background(MaterialTheme.colorScheme.background),
     ) {
         Column(
-            // the field IS the top of the page — and content is inset 58dp
-            // ((960 - 844) / 2), the same margin the player controller uses.
             modifier = Modifier
                 .fillMaxSize()
                 .padding(start = 58.dp, end = 58.dp, top = 40.dp, bottom = 40.dp),
@@ -193,9 +181,6 @@ private fun SearchBar(
     query: String,
     searching: Boolean,
     fr: FocusRequester,
-    // Left from the search bar lands on the rail's Search item — directional
-    // search would otherwise pick the rail icon that vertically overlaps the
-    // bar (Chats, since the bar sits at the page top), which reads as random.
     railSearchFocus: FocusRequester? = null,
     onClick: () -> Unit,
 ) {
@@ -207,7 +192,6 @@ private fun SearchBar(
             .height(64.dp)
             .clip(RoundedCornerShape(4.dp))
             .background(MaterialTheme.colorScheme.background)
-            // stroke while focused — the focus cue is the border, not a scale.
             .border(
                 width = if (focused) 2.dp else 1.dp,
                 color = if (focused) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.border,
@@ -220,8 +204,6 @@ private fun SearchBar(
                 indication = null,
                 onClick = onClick,
             )
-            // Top of the page: Up stays put (nothing above the bar); Left
-            // lands on the rail's Search item — declarative boundary.
             .focusProperties {
                 up = FocusRequester.Cancel
                 railSearchFocus?.let { left = it }
@@ -233,7 +215,6 @@ private fun SearchBar(
         ) {
             Text(
                 text = if (query.isEmpty()) stringResource(R.string.search_placeholder) else query,
-                // Placeholder sits at 60% opacity; typed text is full strength.
                 color = if (query.isEmpty()) {
                     MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                 } else {
@@ -277,9 +258,6 @@ private fun ResultsGrid(
             ResultCard(
                 chat = chat,
                 onClick = { onSelect(chat.id) },
-                // First row: Up returns to the search bar. Left column:
-                // Left lands on the rail's Search item. Declarative
-                // boundaries — no firstRowFocused/leftEdgeFocused tracking.
                 upTarget = if (index < 4) searchBarFocus else null,
                 leftTarget = if (index % 4 == 0) railSearchFocus else null,
             )
@@ -297,7 +275,6 @@ private fun ResultCard(
     Card(
         onClick = onClick,
         scale = CardDefaults.scale(focusedScale = 1.05f),
-        // selected card is outlined with a 3px white stroke.
         border = CardDefaults.border(
             Border(BorderStroke(0.5.dp, Color.White.copy(alpha = 0.1f))),
             Border(BorderStroke(3.dp, Color.White)),
@@ -345,27 +322,14 @@ private fun DpadKeyboard(
         catch (_: IllegalStateException) {}
     }
 
-    // (row, col) of the currently focused key. The keyboard grid is rows
-    // 0-4 (letters) + row 5 (action row), columns 0-4. Used by the edge
-    // handling below: at the grid borders the direction key is consumed so
-    // focus can't escape into the search page behind (search bar, results
-    // grid — all still in the focus tree, just covered by the scrim).
     var focusedKey by remember { mutableStateOf<Pair<Int, Int>?>(null) }
 
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.6f))
-            // Focus trap for the keyboard: consume direction keys only at
-            // the grid edges (top row Up, bottom row Down, first column
-            // Left, last column Right); everywhere else let the focus
-            // system move normally.
             .onKeyEvent { ev ->
                 if (ev.type != KeyEventType.KeyDown) return@onKeyEvent false
-                // Focus may not have landed on a key yet (keyboard just
-                // opened, onFocusChanged hasn't fired): consume direction
-                // keys so they can't escape into the search page behind the
-                // scrim. Other keys (Back/OK) keep their normal handling.
                 val (row, col) = focusedKey
                     ?: return@onKeyEvent ev.key in setOf(
                         Key.DirectionUp, Key.DirectionDown,
@@ -373,7 +337,7 @@ private fun DpadKeyboard(
                     )
                 when (ev.key) {
                     Key.DirectionUp -> row == 0
-                    Key.DirectionDown -> row == 5 // bottom action row
+                    Key.DirectionDown -> row == 5
                     Key.DirectionLeft -> col == 0
                     Key.DirectionRight -> col == 4
                     else -> false
@@ -381,8 +345,6 @@ private fun DpadKeyboard(
             },
         contentAlignment = Alignment.Center,
     ) {
-        // Plain Box, not Card(onClick = {}): the empty onClick made the whole
-        // panel an accidental focus target. This is just a rounded backdrop.
         Box(
             modifier = Modifier
                 .fillMaxWidth(0.8f)
@@ -451,8 +413,6 @@ private fun KeyButton(
     Card(
         onClick = onClick,
         scale = CardDefaults.scale(focusedScale = 1.10f),
-        // Grey/800 (#3C4043) text while active; the primary (search) key is
-        // #3A4B5D with white text.
         colors = CardDefaults.colors(
             containerColor = when {
                 accent -> Color(0xFF3A4B5D)

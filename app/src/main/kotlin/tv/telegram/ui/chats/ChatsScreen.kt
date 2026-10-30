@@ -125,22 +125,13 @@ import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import java.io.File
 
-// Media grid thumbnails: if a thumbnail still isn't local after this long
-// (download stalled/failed, or the message has no thumbnail), stop spinning
-// and show a static type icon instead of an endless loading spinner.
 private const val THUMB_TIMEOUT_MS = 10_000L
 
 @Composable
 fun ChatsScreen(
     viewModel: MainViewModel,
     onOpenPlayer: (Int) -> Unit,
-    // Focus target for the rail's Chats item — the chat list routes Left
-    // here explicitly (see ChatSidebar), so Left never lands on the
-    // rail's Search/Settings icon via directional search.
     railChatsFocus: FocusRequester? = null,
-    // Focus target the rail's Chats item hands Right to: the selected chat
-    // (or the first chat when nothing is selected). Attached to exactly one
-    // chat row in ChatSidebar.
     chatsListRightFocus: FocusRequester? = null,
 ) {
     val chats by viewModel.chatList.collectAsStateWithLifecycle()
@@ -152,13 +143,7 @@ fun ChatsScreen(
     val selectedChatId by viewModel.sidebarSelectedChatId.collectAsStateWithLifecycle()
     val mediaItems by viewModel.mediaItems.collectAsStateWithLifecycle()
     val mediaLoaded by viewModel.mediaLoaded.collectAsStateWithLifecycle()
-    // Set by the player on exit (Back / playback ended): the messageId of
-    // the card that was playing. ChatsScreen hands focus back to that
-    // exact media card instead of the sidebar's first row.
     val playerReturnFocusMessageId by viewModel.playerReturnFocusMessageId.collectAsStateWithLifecycle()
-    // Only treat it as a real return target when the card actually exists
-    // in the current grid — otherwise keep the sidebar's normal initial
-    // focus behavior.
     val returnFocusTarget = playerReturnFocusMessageId?.takeIf { id ->
         mediaItems.any { it.messageId == id }
     }
@@ -170,30 +155,14 @@ fun ChatsScreen(
         }
     }
 
-    // Media grid Left at left edge → focus the currently selected chat in
-    // the sidebar (not some random neighbour from global focus search).
-    // sidebarFocusTick increments on each such Left press; ChatSidebar
-    // watches it, scrolls the selected chat into view and requests focus.
     val selectedChatFocus = remember { FocusRequester() }
     var sidebarFocusTick by remember { mutableIntStateOf(0) }
 
-    // Back-key hierarchy on the home screen: Back inside the media grid
-    // returns focus to the selected chat in the sidebar; Back inside the
-    // chat list returns focus to the rail's Chats item. Without this, Back
-    // on HOME_CHATS exits the app (MainActivity's BackHandler only covers
-    // SEARCH/settings). Focus-region tracking comes from onFocusChange
-    // callbacks on ChatSidebar / MediaPane (hasFocus bubbles up from any
-    // focused row / card).
     var sidebarFocused by remember { mutableStateOf(false) }
     var mediaFocused by remember { mutableStateOf(false) }
     BackRegistration(BackPriority.CHATS, enabled = mediaFocused || sidebarFocused) {
         when {
-            // Media grid → selected chat in the sidebar (same path as the
-            // grid's left-edge Left key: bump the tick, ChatSidebar scrolls
-            // the selected chat into view and focuses it).
             mediaFocused -> sidebarFocusTick++
-            // Chat list → rail's Chats item (same target as the list's
-            // Left key).
             sidebarFocused -> {
                 try { railChatsFocus?.requestFocus() }
                 catch (_: IllegalStateException) {}
@@ -218,11 +187,7 @@ fun ChatsScreen(
             selectedChatFocus = selectedChatFocus,
             sidebarFocusTick = sidebarFocusTick,
             railChatsFocus = railChatsFocus,
-            // Rail Chats → Right lands on the selected / first chat row.
             chatsListRightFocus = chatsListRightFocus,
-            // Returning from the player: don't grab initial focus on the
-            // first sidebar row ("Archived Chats") — the media grid takes
-            // it instead (see MediaPane's returnFocus).
             suppressInitialFocus = returnFocusTarget != null,
             onFocusChange = { sidebarFocused = it },
             modifier = Modifier
@@ -270,25 +235,11 @@ private fun ChatSidebar(
     onShowArchive: () -> Unit,
     onShowMain: () -> Unit,
     viewModel: MainViewModel,
-    // Focus target for the currently selected chat row. The media grid
-    // hands focus back to the sidebar (Left at grid's left edge) and this
-    // requester makes sure the selected chat — not some random neighbour —
-    // receives it.
     selectedChatFocus: FocusRequester,
-    // Monotonic tick: each media-grid Left transfer bumps it, and the
-    // sidebar scrolls the selected chat into view and focuses it.
     sidebarFocusTick: Int,
-    // Left from a chat row lands on the rail's Chats item instead of
-    // whichever rail icon directional search happens to pick.
     railChatsFocus: FocusRequester? = null,
-    // Rail Chats → Right lands here: the selected chat (if any), else the
-    // first chat in the list.
     chatsListRightFocus: FocusRequester? = null,
-    // True when returning from the player: skip the initial first-row
-    // focus grab so the media grid can take focus (returnFocusMessageId).
     suppressInitialFocus: Boolean = false,
-    // Back-key hierarchy: reports whether focus sits inside the chat list
-    // (ChatsScreen uses it to decide where Back should move focus).
     onFocusChange: ((Boolean) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
@@ -296,17 +247,11 @@ private fun ChatSidebar(
     val listState = rememberLazyListState()
 
     // ── Long-press context menu ──
-    // menuChat != null → context menu dialog is showing for that chat.
-    // confirm != null → destructive-action confirmation dialog is showing.
     var menuChat by remember { mutableStateOf<ChatItem?>(null) }
     var confirm by remember { mutableStateOf<ChatConfirmAction?>(null) }
-    // The row that was long-pressed; its requester is re-requested once the
-    // menu / confirm dialogs are fully closed so the D-pad lands back on it
-    // (a Dialog is a separate window — focus is otherwise lost).
     val menuReturnFocus = remember { FocusRequester() }
     var menuReturnChatId by remember { mutableStateOf<Long?>(null) }
 
-    // Return focus to the long-pressed row once every dialog is closed.
     LaunchedEffect(menuChat, confirm) {
         if (menuChat == null && confirm == null) {
             val id = menuReturnChatId ?: return@LaunchedEffect
@@ -316,7 +261,6 @@ private fun ChatSidebar(
                 menuReturnFocus.requestFocus(); true
             } catch (_: IllegalStateException) { false }
             if (!restored) {
-                // Row was removed (delete/archive); land on the first row.
                 try { firstFocus.requestFocus() } catch (_: IllegalStateException) {}
             }
         }
@@ -329,27 +273,16 @@ private fun ChatSidebar(
         catch (_: IllegalStateException) {}
     }
 
-    // Media grid pressed Left at the grid's left edge: focus the selected
-    // chat in the sidebar. Only scroll when the selected chat is NOT fully
-    // visible — an unconditional scrollToItem makes the list jump (the top
-    // "Archived Chats" entry slides out of view) and then the focus
-    // system's bringIntoView animates it back, which reads as a flicker.
     LaunchedEffect(sidebarFocusTick, selectedChatId, viewingArchive) {
         if (sidebarFocusTick > 0) {
             val offset = when {
-                viewingArchive -> 1 // "Back to Chats" entry sits at index 0
-                archiveCount > 0 -> 1 // "Archived Chats" entry sits at index 0
+                viewingArchive -> 1
+                archiveCount > 0 -> 1
                 else -> 0
             }
             val idx = chats.indexOfFirst { it.id == selectedChatId }
             if (idx >= 0) {
                 val targetIndex = idx + offset
-                // Only scroll when the selected chat is NOT fully visible —
-                // an unconditional scrollToItem makes the list jump (the top
-                // "Archived Chats" entry slides out of view) and then the
-                // focus system's bringIntoView animates it back, which reads
-                // as a flicker. focusListItem awaits real placement instead
-                // of a fixed-frame guess.
                 if (listState.isFullyVisible(targetIndex)) {
                     try { selectedChatFocus.requestFocus() }
                     catch (_: IllegalStateException) {}
@@ -410,21 +343,11 @@ private fun ChatSidebar(
             items(chats, key = { it.id }) { chat ->
                 val isSelected = chat.id == selectedChatId
                 val isFirst = chat.id == chats.firstOrNull()?.id && viewingArchive.not() && archiveCount == 0
-                // The selected chat also carries selectedChatFocus so the
-                // media grid's Left transfer can land exactly on it. When
-                // the selected chat IS the first item, keep firstFocus as
-                // the primary requester and attach selectedChatFocus as an
-                // extra (a node may carry several focus requesters).
                 val fr = if (isFirst) firstFocus else null
                 val extraFr = if (isSelected) selectedChatFocus else null
-                // Rail Chats → Right entry: the selected chat if any, else
-                // the first chat (firstFocus's row is the archive entry when
-                // an archive exists, so use chats.first() directly here).
                 val isRightEntry = if (selectedChatId != null) isSelected
                     else chat.id == chats.firstOrNull()?.id
                 val listRightFr = if (isRightEntry) chatsListRightFocus else null
-                // The long-pressed row carries menuReturnFocus so focus can
-                // come back to it after the menu closes.
                 val menuReturnFr = if (chat.id == menuReturnChatId) menuReturnFocus else null
                 SidebarItem(
                     chat = chat,
@@ -440,16 +363,12 @@ private fun ChatSidebar(
                     menuReturnFr = menuReturnFr,
                     viewModel = viewModel,
                     railChatsFocus = railChatsFocus,
-                    // First chat row (no archive entry above it) is the top
-                    // of the list — Up stays put instead of escaping to the
-                    // rail.
                     blockUp = isFirst,
                 )
             }
         }
     }
 
-    // Long-press context menu.
     menuChat?.let { chat ->
         ChatContextMenu(
             chat = chat,
@@ -464,11 +383,8 @@ private fun ChatSidebar(
                 menuChat = null
                 val targetArchived = !viewingArchive
                 if (targetArchived) {
-                    // Archiving (hiding the chat) — ask for confirmation.
                     confirm = ChatConfirmAction.Archive(chat, archived = true)
                 } else {
-                    // Unarchiving (restoring it to the main list) — reversible
-                    // and harmless, apply directly without a confirm step.
                     viewModel.toggleChatArchive(chat.id, archived = false)
                 }
             },
@@ -479,13 +395,12 @@ private fun ChatSidebar(
         )
     }
 
-    // Destructive-action confirmation dialog.
     confirm?.let { action ->
         ChatConfirmDialog(
             action = action,
             onConfirm = {
                 when (action) {
-                    is ChatConfirmAction.Delete -> // Legacy dialog: keep the old behaviour (no revoke) — the popover owns the new copy.
+                    is ChatConfirmAction.Delete ->
                     viewModel.deleteChat(action.chat, revoke = false)
                     is ChatConfirmAction.Archive ->
                         viewModel.toggleChatArchive(action.chat.id, archived = action.archived)
@@ -537,8 +452,6 @@ private fun ArchiveEntry(
     onClick: () -> Unit,
     icon: ImageVector? = null,
     fr: FocusRequester? = null,
-    // Left from the archive entry goes to the rail's Chats item (it's the
-    // top of the list, same boundary as the chat rows below it).
     railChatsFocus: FocusRequester? = null,
 ) {
     Card(
@@ -556,8 +469,6 @@ private fun ArchiveEntry(
         modifier = Modifier
             .fillMaxWidth()
             .height(48.dp)
-            // Top of the list: Up stays put (no rail above the list's first
-            // item). Left is the deliberate path back to the rail.
             .focusProperties {
                 up = FocusRequester.Cancel
                 railChatsFocus?.let { left = it }
@@ -597,9 +508,7 @@ private fun SidebarItem(
     listRightFr: FocusRequester? = null,
     menuReturnFr: FocusRequester? = null,
     viewModel: MainViewModel,
-    // Left from a chat row goes to the rail's Chats item.
     railChatsFocus: FocusRequester? = null,
-    // First chat row (no archive entry above it): Up stays put.
     blockUp: Boolean = false,
 ) {
     val ctx = LocalContext.current
@@ -629,10 +538,6 @@ private fun SidebarItem(
         modifier = Modifier
             .fillMaxWidth()
             .height(48.dp)
-            // Cross-zone boundaries declared declaratively instead of
-            // tracking first-row focus: Up at the top of the list stays put;
-            // Left always lands on the rail's Chats item (not whichever rail
-            // icon geometric search happens to pick).
             .focusProperties {
                 if (blockUp) up = FocusRequester.Cancel
                 railChatsFocus?.let { left = it }
@@ -646,7 +551,6 @@ private fun SidebarItem(
             modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            // Avatar + unread badge overlaid on its top-start corner.
             Box {
                 AvatarPlaceholder(chat = chat, viewModel = viewModel)
                 if (chat.unreadCount > 0) {
@@ -708,9 +612,6 @@ private fun SidebarItem(
                             viewModel.ensureMediaFile(thumbId, priority = 8)
                         }
                     }
-                    // One request per path. Rebuilding it inline handed Coil a
-                    // brand-new (non-equal) request on every recomposition, which
-                    // restarted the load and made the thumbnail blink.
                     val thumbRequest = remember(thumbState) {
                         thumbState?.let { ImageRequest.Builder(ctx).data(File(it)).build() }
                     }
@@ -726,8 +627,6 @@ private fun SidebarItem(
                         Spacer(Modifier.width(5.dp))
                     }
                     Text(
-                        // Empty string keeps the row height stable when the last
-                        // message is not photo/video, so the title never shifts.
                         text = chat.lastMessageText ?: "",
                         color = if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.85f) else MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.labelSmall,
@@ -735,8 +634,6 @@ private fun SidebarItem(
                     )
                 }
             }
-            // Pinned indicator sits at the row's far end, vertically centered
-            // across both title and subtitle lines.
             if (chat.isPinned) {
                 Icon(
                     imageVector = Icons.Default.PushPin,
@@ -753,11 +650,6 @@ private fun SidebarItem(
 private fun AvatarPlaceholder(chat: ChatItem, viewModel: MainViewModel) {
     val ctx = LocalContext.current
     val photoId = chat.photoSmallFileId
-    // Reactive avatar state: subscribe to the repo's state map so the avatar
-    // swaps in the moment its file lands. The old one-shot fileStateFor() read
-    // never recomposed, so a freshly downloaded avatar only appeared when some
-    // unrelated change (a focus move in the list) happened to recompose the row
-    // — which read as the list "flashing" during focus navigation.
     val fileStates by viewModel.fileRepo.states.collectAsStateWithLifecycle()
     val localPath = photoId?.let {
         (fileStates[it] as? FileDownloadState.Local)?.path
@@ -782,8 +674,6 @@ private fun AvatarPlaceholder(chat: ChatItem, viewModel: MainViewModel) {
             .padding(0.dp),
         contentAlignment = Alignment.Center,
     ) {
-        // Memoised on the path: a fresh ImageRequest is never equal to the
-        // previous one, so Coil restarted the load and the avatar blinked.
         val avatarRequest = remember(localPath) {
             localPath?.let { ImageRequest.Builder(ctx).data(File(it)).build() }
         }
@@ -813,7 +703,6 @@ private fun UnreadDot(modifier: Modifier = Modifier) {
     )
 }
 
-/** Chat-type glyph for the title row: Person (private) / Groups (group) / Campaign (channel). */
 private fun ChatType.typeIcon(): ImageVector? = when (this) {
     ChatType.Private -> Icons.Default.Person
     ChatType.Group -> Icons.Default.Groups
@@ -821,7 +710,6 @@ private fun ChatType.typeIcon(): ImageVector? = when (this) {
     else -> null
 }
 
-/** Seconds → "m:ss", or "h:mm:ss" once the duration reaches an hour. */
 private fun formatDuration(totalSeconds: Int): String {
     val s = totalSeconds.coerceAtLeast(0)
     val h = s / 3600
@@ -861,47 +749,15 @@ private fun MediaPane(
     viewModel: MainViewModel,
     selectedChatId: Long,
     onLeftToSelectedChat: () -> Unit,
-    // Set when returning from the player: scroll to and focus the card
-    // that was playing (instead of the sidebar grabbing "Archived Chats").
     returnFocusMessageId: Long? = null,
-    // Back-key hierarchy: reports whether focus sits inside the media grid
-    // (ChatsScreen uses it to decide where Back should move focus).
     onFocusChange: ((Boolean) -> Unit)? = null,
 ) {
 
     var openedIndex by rememberSaveable { mutableStateOf<Int?>(null) }
-    // When the fullscreen photo dialog closes, focus must return to the
-    // card that was being viewed — the dialog is a separate window, and
-    // without an explicit handoff focus falls to the rail's Search icon.
-    // Recorded on close, consumed (cleared) once the grid has scrolled
-    // to and focused the card.
     var photoReturnMessageId by remember { mutableStateOf<Long?>(null) }
     val photoCardFocus = remember { FocusRequester() }
-    // True while focus sits on a card in the grid's left column
-    // (index % 3 == 0). Left here would make Compose's global focus search
-    // jump to an arbitrary chat in the sidebar — instead we consume the key
-    // and hand focus explicitly to the currently selected chat. This one
-    // stays an explicit handler (not focusProperties) because the target
-    // (selected chat) may be scrolled off-screen and need bring-into-view
-    // first — a plain `left = FocusRequester` can't do that.
     var leftEdgeFocused by remember { mutableStateOf(false) }
 
-    // Switch-chat focus: when a DIFFERENT chat's media actually arrives,
-    // scroll the grid back to the top and focus the first media card (like
-    // ChatSidebar's firstFocus).
-    //
-    // Keyed on (selectedChatId, first messageId) with a chatId check so this
-    // fires exactly once per chat switch — and NOT on:
-    //   - loadMore: item[0] stays stable, the key doesn't change;
-    //   - returning from the player: lastResetChatId is saveable, so it
-    //     survives the back-stack restore, matches the current chat, and the
-    //     grid keeps its restored scroll position (focus isn't yanked back
-    //     to the top). The old effect keyed on the first messageId ran on
-    //     EVERY composition entry, defeating restoreState.
-    //
-    // scrollToItem(0) is essential: the grid reuses its state across chats,
-    // so the old scroll offset persists — without scrolling back, the first
-    // card may not even be composed and the focus request silently no-ops.
     val gridState = rememberLazyGridState()
     val firstCardFocus = remember { FocusRequester() }
     var lastResetChatId by rememberSaveable { mutableStateOf<Long?>(null) }
@@ -913,19 +769,11 @@ private fun MediaPane(
         }
     }
 
-    // Return-from-player focus: scroll to the exact card that was playing
-    // and focus it. Unlike the chat-switch effect above (keyed on
-    // lastResetChatId), this fires when the SAME chat is still selected —
-    // returning from the player keeps the chat, so that effect no-ops.
     val returnCardFocus = remember { FocusRequester() }
     LaunchedEffect(returnFocusMessageId, items.firstOrNull()?.messageId) {
         val target = returnFocusMessageId ?: return@LaunchedEffect
         val idx = items.indexOfFirst { it.messageId == target }
         if (idx >= 0) {
-            // Returning from the player removes the player's focused node, and
-            // Compose's default focus restoration can land on the rail's Search
-            // icon before this coroutine's request runs. Retry so the card
-            // reliably wins the race instead of leaving focus stranded.
             var focused = false
             for (attempt in 1..5) {
                 focused = focusGridItem(gridState, idx, returnCardFocus)
@@ -936,34 +784,22 @@ private fun MediaPane(
         }
     }
 
-    // Photo-dialog close focus: same idea as returnCardFocus but fully
-    // local — the dialog lives inside this composable, so no ViewModel
-    // hop needed. Fires once the dialog has left composition (openedIndex
-    // back to null) and the grid is rendering again.
     LaunchedEffect(openedIndex, photoReturnMessageId, items.firstOrNull()?.messageId) {
         val target = photoReturnMessageId ?: return@LaunchedEffect
-        if (openedIndex != null) return@LaunchedEffect // dialog still open
+        if (openedIndex != null) return@LaunchedEffect
         val idx = items.indexOfFirst { it.messageId == target }
         if (idx >= 0) {
             focusGridItem(gridState, idx, photoCardFocus)
-            photoReturnMessageId = null // one-shot
+            photoReturnMessageId = null
         }
     }
 
-    // Hover preview: one shared muted ExoPlayer reused across all cards.
-    // Focus on a video card for 2.5s → play the first chunk of the file
-    // inline; losing focus stops it and restores the thumbnail.
     val context = LocalContext.current
     val previewPlayer = remember {
         ExoPlayer.Builder(context).build().apply { volume = 0f }
     }
     DisposableEffect(Unit) {
         onDispose {
-            // Releasing an ExoPlayer is main-thread work, and releasing it inline
-            // put a full release in the same frame window as PlayerScreen's own
-            // player construction (press OK on a video card → visible stutter).
-            // Hand the release to the main looper one page-transition later so
-            // that window stays clear.
             android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(
                 { previewPlayer.release() },
                 600L,
@@ -972,16 +808,9 @@ private fun MediaPane(
     }
     var focusedMessageId by remember { mutableStateOf<Long?>(null) }
     var previewingMessageId by remember { mutableStateOf<Long?>(null) }
-    // Set while the preview file is being downloaded (before playback starts),
-    // so the card can show a loading spinner in place of the play icon.
     var previewLoadingMessageId by remember { mutableStateOf<Long?>(null) }
-    // Set only once the preview player has actually rendered its first frame.
-    // Until then the card keeps showing the thumbnail on top of the surface,
-    // so hover → load → play never flashes a black screen.
     var previewReadyMessageId by remember { mutableStateOf<Long?>(null) }
 
-    // First-frame signal from the shared preview player (player is created on
-    // the main thread, so the callback also lands on main — safe to touch state).
     DisposableEffect(previewPlayer) {
         val listener = object : Player.Listener {
             override fun onRenderedFirstFrame() {
@@ -993,7 +822,6 @@ private fun MediaPane(
     }
 
     LaunchedEffect(focusedMessageId) {
-        // Any focus change: stop the previous preview first.
         previewPlayer.stop()
         previewingMessageId = null
         previewLoadingMessageId = null
@@ -1003,7 +831,7 @@ private fun MediaPane(
         val item = items.firstOrNull { it.messageId == id } ?: return@LaunchedEffect
         if (item.type != MediaType.Video) return@LaunchedEffect
         delay(2500)
-        if (focusedMessageId != id) return@LaunchedEffect // focus moved away
+        if (focusedMessageId != id) return@LaunchedEffect
         previewLoadingMessageId = id
         val path = viewModel.ensurePreviewFile(item.fileId)
         previewLoadingMessageId = null
@@ -1028,9 +856,6 @@ private fun MediaPane(
             .collect { viewModel.loadMoreMedia() }
     }
 
-    // Photo fullscreen paging: when viewing near the end of the loaded
-    // list, prefetch the next search page so next/prev keeps working
-    // past the current data boundary.
     LaunchedEffect(openedIndex, items.size) {
         val idx = openedIndex ?: return@LaunchedEffect
         if (idx >= items.size - 8 && !viewModel.mediaExhausted.value) {
@@ -1041,9 +866,6 @@ private fun MediaPane(
     if (openedIndex != null) {
         val idx = openedIndex!!
         if (idx in items.indices) {
-            // True fullscreen photo viewer: a dedicated Dialog window that
-            // covers the whole screen (NavRail + chat sidebar included),
-            // instead of replacing only the media pane.
             Dialog(
                 onDismissRequest = {
                     photoReturnMessageId = items[idx].messageId
@@ -1095,17 +917,10 @@ private fun MediaPane(
             columns = GridCells.Fixed(3),
             horizontalArrangement = Arrangement.spacedBy(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
-            // Top/bottom padding gives the 8% focus-scale room to expand
-            // without clipping the first/last row against the viewport.
             contentPadding = PaddingValues(vertical = 20.dp),
             modifier = Modifier
                 .fillMaxSize()
                 .onKeyEvent { ev ->
-                    // Left on the left column: consume and hand focus to the
-                    // selected chat in the sidebar (avoids Compose's global
-                    // search landing on some random chat). Up at the first
-                    // row is handled declaratively on the card itself (see
-                    // SidebarMediaCard blockUp).
                     if (ev.type == KeyEventType.KeyDown) {
                         when {
                             ev.key == Key.DirectionLeft && leftEdgeFocused -> {
@@ -1130,16 +945,8 @@ private fun MediaPane(
                 val isFirstRow = index < 3
                 val isLeftEdge = index % 3 == 0
                 val isHome = index == 0
-                // The card that was playing before the player opened — it
-                // carries returnCardFocus so the return-from-player effect
-                // can land exactly on it.
                 val isReturnTarget = item.messageId == returnFocusMessageId
-                // The card the photo dialog was viewing before it closed —
-                // carries photoCardFocus for the local dialog-close focus.
                 val isPhotoReturnTarget = item.messageId == photoReturnMessageId
-                // Track focus for the grid-boundary key handling above:
-                // first row (Up) and left column (Left). isHome only
-                // decides which card owns the initial grid focus requester.
                 Box(
                     Modifier.onFocusChanged { focused ->
                         if (isLeftEdge) leftEdgeFocused = focused.hasFocus
@@ -1160,8 +967,6 @@ private fun MediaPane(
                         previewReady = previewReady,
                         previewPlayer = previewPlayer,
                         onFocusChange = onFocusChange,
-                        // First row has no upward candidate — Up stays put
-                        // (declarative, no firstRowFocused tracking).
                         blockUp = isFirstRow,
                         fr = when {
                             isPhotoReturnTarget -> photoCardFocus
@@ -1187,44 +992,29 @@ private fun SidebarMediaCard(
     previewPlayer: ExoPlayer? = null,
     onFocusChange: (Boolean) -> Unit = {},
     fr: FocusRequester? = null,
-    // First-row card: Up has no upward candidate, so it stays put
-    // (declarative boundary — no firstRowFocused state tracking).
     blockUp: Boolean = false,
 ) {
     val ctx = LocalContext.current
     val thumbId = item.thumbnailFileId
-    // Reactive thumbnail state: the old one-shot fileStateFor() read never
-    // recomposed when the download landed, so a card that fetched its
-    // for its own file). Collect the repo state map so the card recomposes
-    // the moment the thumbnail becomes Local.
     val fileStates by viewModel.fileRepo.states.collectAsStateWithLifecycle()
     val thumbState = if (thumbId != null) {
         (fileStates[thumbId] as? FileDownloadState.Local)?.path
     } else null
-    // Memoised on the path: rebuilding the request inline made every
-    // recomposition hand Coil a non-equal request, which restarted the load
-    // and blinked the card.
     val thumbRequest = remember(thumbState) {
         thumbState?.let {
             ImageRequest.Builder(ctx).data(File(it)).crossfade(true).build()
         }
     }
-    // Fallback: if the thumbnail still isn't local after THUMB_TIMEOUT_MS
-    // (download stalled / failed, or the message has no thumbnail at all),
-    // stop spinning and show a static type icon instead.
     var thumbTimedOut by remember(item.messageId) { mutableStateOf(false) }
     LaunchedEffect(thumbId, thumbState) {
         thumbTimedOut = false
         if (thumbId == null) {
-            thumbTimedOut = true // no thumbnail to fetch
+            thumbTimedOut = true
             return@LaunchedEffect
         }
-        if (thumbState != null) return@LaunchedEffect // already local
+        if (thumbState != null) return@LaunchedEffect
         viewModel.ensureMediaFile(thumbId, priority = 16)
         delay(THUMB_TIMEOUT_MS)
-        // Re-read at the deadline — this effect is keyed on thumbState, so a
-        // mid-wait arrival restarts it and cancels the delay; reaching here
-        // means it's still null.
         if (viewModel.fileStateFor(thumbId) !is FileDownloadState.Local) {
             thumbTimedOut = true
         }
@@ -1233,8 +1023,6 @@ private fun SidebarMediaCard(
         onClick = onClick,
         scale = CardDefaults.scale(focusedScale = 1.10f),
         glow = CardDefaults.glow(
-            // NOTE: CardGlow order is (enabled, focused, pressed) — the glow
-            // must go in slot #2 (focused) so only the focused card shows it.
             Glow.None,
             Glow(elevationColor = Color.White.copy(alpha = 0.15f), elevation = 3.dp),
             Glow.None,
@@ -1253,11 +1041,6 @@ private fun SidebarMediaCard(
     ) {
         Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
             if (previewing && previewPlayer != null) {
-                // Classic PlayerView, not the compose PlayerSurface: the
-                // compose surface is a bare SurfaceView hookup that ignores
-                // rotation metadata and aspect ratio, so portrait videos
-                // (encoded landscape + rotation=90) render stretched. PlayerView
-                // applies rotation and letterboxes via AspectRatioFrameLayout.
                 AndroidView(
                     factory = { ctx ->
                         PlayerView(ctx).apply {
@@ -1269,9 +1052,6 @@ private fun SidebarMediaCard(
                     update = { it.player = previewPlayer },
                     modifier = Modifier.fillMaxSize(),
                 )
-                // Keep the thumbnail on top until the player has rendered its
-                // first frame — the live surface only appears once there is
-                // actually something to show.
                 if (!previewReady && thumbState != null) {
                     AsyncImage(
                         model = thumbRequest,
@@ -1288,8 +1068,6 @@ private fun SidebarMediaCard(
                     modifier = Modifier.fillMaxSize(),
                 )
             } else if (thumbTimedOut) {
-                // Thumbnail never arrived (download stalled/failed, or the
-                // message has no thumbnail) — show a static type icon.
                 Box(
                     modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface),
                     contentAlignment = Alignment.Center,
@@ -1303,8 +1081,6 @@ private fun SidebarMediaCard(
                     )
                 }
             } else {
-                // Thumbnail not downloaded yet — show a centered spinner
-                // instead of the old "Photo"/"Video" placeholder.
                 Box(
                     modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface),
                     contentAlignment = Alignment.Center,
@@ -1316,11 +1092,6 @@ private fun SidebarMediaCard(
                     )
                 }
             }
-            // Duration badge (top-left) — Video only. The ▶ play chip owns
-            // the bottom-right corner, so duration sits top-left where it
-            // won't collide with the preview spinner. Always visible while
-            // the thumbnail is shown (even during hover preview — the surface
-            // is letterboxed, the badge sits over it harmlessly).
             if (item.type == MediaType.Video && item.duration > 0) {
                 Box(
                     modifier = Modifier
@@ -1336,11 +1107,7 @@ private fun SidebarMediaCard(
                     )
                 }
             }
-            // Bottom-right badge only when the thumbnail is ready — no point
-            // showing the play chip over a spinner.
             if (item.type == MediaType.Video && !previewing && thumbState != null) {
-                // No dark chip behind the loading spinner — it sits directly on
-                // the thumbnail. The idle play icon keeps its chip.
                 val badgeModifier = if (previewLoading) {
                     Modifier
                 } else {
@@ -1385,8 +1152,6 @@ private fun PhotoFullscreen(
 ) {
     BackHandler(enabled = true) { onBack() }
     val focusRequester = remember { FocusRequester() }
-    // Box must be focusable or onKeyEvent never fires; retry the focus
-    // request a few frames until the Dialog window is attached.
     LaunchedEffect(item.fileId) {
         withFrameNanos { }
         repeat(5) {
@@ -1400,7 +1165,6 @@ private fun PhotoFullscreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            // Dialog window: its own input pipeline, so its own D-pad sounds.
             .dpadNavigationSounds()
             .background(Color.Black)
             .focusable()
@@ -1447,7 +1211,6 @@ private fun PhotoFullscreen(
                 )
             }
         }
-        // Always-visible translucent arrows; hidden at the first/last edge.
         if (hasPrev) {
             Icon(
                 imageVector = Icons.Default.KeyboardArrowLeft,
@@ -1473,22 +1236,14 @@ private fun PhotoFullscreen(
     }
 }
 
-/** A destructive chat action that needs a second confirmation before running. */
 private sealed interface ChatConfirmAction {
     data class Delete(val chat: ChatItem) : ChatConfirmAction
     data class Archive(val chat: ChatItem, val archived: Boolean) : ChatConfirmAction
 }
 
-/** The D-pad / keyboard keys that fire a click on a focused item (the "OK" button). */
 private fun Key.isConfirmKey(): Boolean =
     this == Key.DirectionCenter || this == Key.Enter || this == Key.NumPadEnter
 
-/**
- * Long-press context menu for a chat row. A centered Dialog listing the four
- * chat actions (delete / mute / archive / pin), each a focusable Card so the
- * D-pad moves up/down and OK fires it. Back or OK on a dimmed backdrop closes
- * the menu; the caller restores focus to the long-pressed row.
- */
 @Composable
 private fun ChatContextMenu(
     chat: ChatItem,
@@ -1501,19 +1256,7 @@ private fun ChatContextMenu(
 ) {
     BackHandler(enabled = true) { onDismiss() }
     val firstFocus = remember { FocusRequester() }
-    // The long-press that opened this menu is still held when the dialog
-    // appears; its release (KeyUp) would otherwise land on the freshly
-    // focused first item and fire it immediately (auto-pinning on open).
-    //
-    // tv-material3 fires onLongClick on the FIRST key repeat (repeatCount==1)
-    // rather than a timer, so the opening press keeps emitting repeats
-    // (repeatCount>=2) into the menu for as long as the key is held. We must
-    // therefore only arm on a *fresh* press (repeatCount==0); swallow every
-    // repeat and the opening release, then let a fresh press's KeyUp through.
     var confirmArmed by remember { mutableStateOf(false) }
-    // Retry a few frames: the Dialog is a separate window, so the first
-    // request can land before its node is attached (same pattern as
-    // PhotoFullscreen).
     LaunchedEffect(chat.id) {
         withFrameNanos { }
         repeat(5) {
@@ -1528,20 +1271,15 @@ private fun ChatContextMenu(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                // Dialog window: its own input pipeline, so its own D-pad sounds.
                 .dpadNavigationSounds()
                 .onPreviewKeyEvent { ev ->
                     if (!ev.key.isConfirmKey()) return@onPreviewKeyEvent false
                     when (ev.type) {
                         KeyEventType.KeyDown -> {
                             if (ev.nativeKeyEvent.repeatCount == 0) {
-                                // A genuinely new press — arm the menu and
-                                // let it reach the focused item.
                                 confirmArmed = true
                                 false
                             } else {
-                                // Key-repeat leftover from the opening
-                                // long-press — swallow it.
                                 true
                             }
                         }
@@ -1645,11 +1383,6 @@ private fun ChatMenuRow(
     }
 }
 
-/**
- * Confirmation dialog for destructive actions (delete / archive). Default
- * focus lands on Cancel so an accidental OK doesn't run the action; OK on
- * Confirm runs it.
- */
 @Composable
 private fun ChatConfirmDialog(
     action: ChatConfirmAction,

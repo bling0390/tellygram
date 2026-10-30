@@ -7,48 +7,30 @@ import tv.telegram.td.MediaFilter
 import tv.telegram.td.MediaItem
 import tv.telegram.td.SenderInfo
 
-/**
- * Everything the home screen needs from the app, behind one interface so the UI can
- * be driven by fakes in tests — MainViewModel is a concrete class that starts TDLib,
- * which cannot run on the JVM.
- */
 internal interface HomeState {
     val chatList: StateFlow<List<ChatItem>>
-    /** The archived half of the list: what the Archived Chats row swaps in. */
     val archiveChats: StateFlow<List<ChatItem>>
     val mediaItems: StateFlow<List<MediaItem>>
-    /**
-     * The chat whose media the wall is showing. Owned by the data layer so a viewer round trip
-     * (which tears this screen's composition down) cannot lose it and make focus coming back to
-     */
     val currentChatId: StateFlow<Long?>
     val mediaLoadingMore: StateFlow<Boolean>
     val mediaExhausted: StateFlow<Boolean>
-    /** Live download state per file id, for avatars and thumbnails. */
     val fileStates: StateFlow<Map<Int, FileDownloadState>>
 
-    /** Card to focus after a full-screen viewer closes; null when there is none. */
     val playerReturnFocusMessageId: StateFlow<Long?>
 
     fun ensureMediaFile(fileId: Int, priority: Int = 16)
     fun openChat(chatId: Long)
     fun loadMoreMedia()
     fun setMediaFilter(filter: MediaFilter)
-    /** Remembered by the player / photo preview when they close. */
     fun setPlayerReturnFocus(messageId: Long)
     fun consumePlayerReturnFocus()
 
-    // The long-press popover's actions (delete waits for its own design).
     fun toggleChatPin(chatId: Long, inArchive: Boolean, pinned: Boolean)
     fun toggleChatMute(chatId: Long, muted: Boolean)
     fun toggleChatArchive(chatId: Long, archived: Boolean)
-    /** The popover's fourth row: revoke comes from chatDeleteRevokes(). */
     fun deleteChat(chat: ChatItem, revoke: Boolean)
-    /** Resolved on demand for groups; cached, so a long press costs one call at most. */
     suspend fun isGroupOwner(chatId: Long): Boolean
-    /** Resolved lazily when a text popup opens; null when it cannot be resolved. */
     suspend fun senderInfoFor(item: MediaItem): SenderInfo?
 
-    /** Plan (a): the list a message-addressed viewer walks, and where it starts. */
     fun openViewerByMessage(items: List<MediaItem>, messageId: Long)
 }

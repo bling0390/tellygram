@@ -3,16 +3,6 @@ package tv.telegram.ui.home
 import androidx.compose.ui.geometry.Rect
 import kotlin.math.abs
 
-/**
- *
- * Members keep their own aspect ratio, every row fills the card's width, and the finished
- * block is scaled to fill its height exactly — the frame's seven-member card comes out as
- * rows of 52 / 36 / 28 with 2px seams. Enumerating row splits is 2^(n-1) and an album holds
- * at most ten members, so the exhaustive search is a few thousand float operations.
- *
- * Aspects are clamped to [0.5, 2] so one panorama cannot squeeze its row into a sliver;
- * members with no dimensions count as square.
- */
 internal fun albumMosaicRects(
     aspects: List<Float>,
     width: Float,
@@ -29,7 +19,6 @@ internal fun albumMosaicRects(
     var bestTotal = 0f
     var bestError = Float.MAX_VALUE
 
-    // Mask 0 is the "every member in one row" split; leaving it out made a two-member
     for (mask in 0 until (1 shl (clamped.size - 1))) {
         var rows = 1
         for (boundary in 0 until clamped.size - 1) {
@@ -74,8 +63,6 @@ internal fun albumMosaicRects(
     }
 
     val rows = bestRows ?: return listOf(Rect(0f, 0f, width, height))
-    // Scale the row heights only: the seams keep their exact size, so the block ends on the
-    // card's bottom edge instead of overshooting by (1 - scale) * gaps.
     val gapTotal = gap * (rows.size - 1)
     val scale = (height - gapTotal) / (bestTotal - gapTotal)
 

@@ -114,39 +114,23 @@ import kotlinx.coroutines.Job
 import tv.telegram.ui.components.ConfirmDialog
 import tv.telegram.td.SenderInfo
 
-/**
- *
- * Geometry comes straight from the design: a 960x540 TV canvas with 58dp side
- * margins, a 32dp-tall nav bar whose top edge sits at y=32, a 268dp chat list
- * starting at y=96, and a 544x344 media grid of 160x120 cells with 20dp
- * gutters. The design places those children absolutely; here they are expressed
- * as ordinary Compose layout, which lands the boxes in the same places without
- * hard-coded offsets (so the screen still behaves if a TV reports a slightly
- * different width).
- */
 internal object HomeSpec {
     val Background = Color(0xFF1A1C1E)
     val OnSurface = Color(0xFFC7C6CA)
     val OnBackground = Color(0xFFE3E2E6)
     val InverseOnSurface = Color(0xFF1A1C1E)
-    val Tertiary = Color(0xFFDCBCE1)          // unread dot, default row
-    val TertiaryFixed = Color(0xFFF9D8FE)     // unread dot, highlighted row
-    val SecondaryContainer = Color(0x66484459) // 40% of #484459 — selected "Chat" tab
+    val Tertiary = Color(0xFFDCBCE1)
+    val TertiaryFixed = Color(0xFFF9D8FE)
+    val SecondaryContainer = Color(0x66484459)
     val OnSecondaryContainer = Color(0xFFE5DFF9)
-    val ChipOutline = Color(0x33FFFFFF)       // rgba(255,255,255,0.2)
+    val ChipOutline = Color(0x33FFFFFF)
     val White = Color(0xFFFFFFFF)
-    // settings row sits on before it is focused.
     val SurfaceContainer = Color(0xFF1E2023)
-    // settings pane. Kept as a constant, not the theme role: theme roles have
-    // not matched the design values at runtime here before.
     val OnSurfaceVariant = Color(0xFFC4C6CF)
 
     val SettingsListWidth = 268.dp
     val SettingsPaneWidth = 452.dp
     val SettingsPaneGap = 72.dp
-    // The verified badge's two colours as constants, not theme roles: the design is
-    // dark-only, and colorScheme.primary would turn steel-blue (#5288C1) under the
-    // light theme. They mirror material-theme/sys/dark/primary and .../primary-fixed.
     val Primary = Color(0xFFA8C8FF)
     val PrimaryFixed = Color(0xFFD6E3FF)
 
@@ -154,9 +138,7 @@ internal object HomeSpec {
     val ListHeight = 412.dp
     val ListGap = 4.dp
     val GutterBetweenColumns = 32.dp
-    // The chips row is 36dp tall by construction (10dp padding + a 16dp label line + 10dp),
-    // so there is no fixed height constant for it.
-    val ChipsToGrid = 32.dp                  // 96 + 36 + 32 = 164, so the grid keeps its design Y
+    val ChipsToGrid = 32.dp
 
     val GridWidth = 544.dp
     val GridHeight = 344.dp
@@ -167,54 +149,21 @@ internal object HomeSpec {
     val Corner = 4.dp
 }
 
-/** Which of the home screen's three content regions currently holds focus. */
 internal enum class HomeRegion { ChatList, Chips, Grid }
 
-/**
- * Focus targets for the D-pad graph the design annotates. `selectedChat` and
- * `topBar` are supplied by the shell: the top bar lives outside the NavHost, so
- * the two sides have to share the same requester objects.
- */
 internal class HomeFocus(
-    /** What the top bar's Down lands on: the Archived Chats / Back row. */
     val entry: FocusRequester,
-    /**
-     * The chat row Back (from the grid or the chips) returns to. Focus IS the selection
-     * fill follows.
-     */
     val selectedChat: FocusRequester,
     val topBar: FocusRequester?,
     val selectedChip: FocusRequester,
     val firstGrid: FocusRequester,
     val rememberedGrid: FocusRequester,
-    /**
-     * A requester on the grid's own container. Unlike a cell's, this node exists whenever the
-     * pane does — so directional moves can target it and let it hand focus on, instead of
-     * aiming at a recycled cell's requester (which throws "FocusRequester is not
-     * initialized" the moment its cell scrolls out of view).
-     */
     val gridContainer: FocusRequester,
-    /**
-     * The Archived Chats row itself. Focus moves here through the list container rather than
-     * directly: the row is item 0 of a LazyColumn and gets recycled once it scrolls away, and
-     * a directional key aimed at a recycled node throws ("FocusRequester is not initialized").
-     */
     val archivedRow: FocusRequester,
-    /** The card a closed viewer asked us to focus again. */
     val returnGrid: FocusRequester = FocusRequester(),
 ) {
-    /**
-     * The cell the chips' Down returns to. A plain field rather than a constructor
-     * value on purpose: focusProperties blocks run outside composition, so a lambda
-     * that captured a recreated HomeFocus would keep pointing at the old target.
-     * Reading the field at focus time always sees the current one.
-     */
     var gridEntry: FocusRequester = firstGrid
 
-    /**
-     * Whether the selected chat's row is composed right now, so a focus search may name
-     * [selectedChat]. Read live, like [gridEntry]: the row scrolls in and out of the list, and a
-     */
     var selectedChatAttached: Boolean = false
 }
 
@@ -224,45 +173,27 @@ internal fun HomeScreen(
     onOpenPlayer: (Int) -> Unit = {},
     onOpenPhoto: (Int) -> Unit = {},
     onOpenAudio: (Int) -> Unit = {},
-    /** A member picked inside the album popup: the shell routes it by type. */
     onOpenMediaItem: (MediaItem) -> Unit = {},
-    // Focus bridge from the shell: Down from the top bar lands on the selected chat
-    // row, and Back from the chat list returns to the bar's selected tab.
     contentEntryFocus: FocusRequester? = null,
     topBarFocus: FocusRequester? = null,
 ) {
     val chats by state.chatList.collectAsStateWithLifecycle()
     val archivedChats by state.archiveChats.collectAsStateWithLifecycle()
-    // Which half of the list the Archived Chats / Back row is currently showing.
-    // rememberSaveable, not remember: a trip through the player or the preview tears this
-    // composition down, and the archived list used to flip back to the main one on return
     var showingArchived by rememberSaveable { mutableStateOf(false) }
 
-    // Long-press popover: which chat it belongs to, and where focus goes when it closes.
     var menuChat by remember { mutableStateOf<ChatItem?>(null) }
-    // Which row focus should go back to once the menu closes. A stored id (like the media
-    // grid's return hint) rather than "the row the menu is open on": the requester has to stay
-    // attached after menuChat clears, or the post-close request targets a detached node and
     var returnFocusChatId by remember { mutableStateOf<Long?>(null) }
     var hadMenu by remember { mutableStateOf(false) }
     val menuReturnFocus = remember { FocusRequester() }
-    // Resolved on the long press (one cached call for groups; false for private/channels).
     var menuIsOwner by remember { mutableStateOf(false) }
-    // The confirm dialog's target and its private-chat toggle, unchecked by default.
     var deleteTarget by remember { mutableStateOf<ChatItem?>(null) }
-    // The album popup's target (frames 3558:2184); null when closed. Its identity is saved as
-    // message ids — a MediaItem carries a Bitmap — so a trip through a viewer brings the popup
-    // back instead of closing it, with focus returning to the member that was opened
     var albumTargetId by rememberSaveable { mutableStateOf<Long?>(null) }
     var albumMemberId by rememberSaveable { mutableStateOf<Long?>(null) }
     var albumTarget by remember { mutableStateOf<MediaItem?>(null) }
-    // The text popup's target (frames 3588:2212); null when closed.
     var textTarget by remember { mutableStateOf<MediaItem?>(null) }
-    // Resolved the moment the popup opens (one request), like the group-owner lookup.
     var textSender by remember { mutableStateOf<SenderInfo?>(null) }
     var deleteRadioChecked by remember { mutableStateOf(false) }
 
-    // Closing the popover hands focus back to the row it came from.
     textTarget?.let { item ->
         val sender = textSender
         TextPopup(
@@ -283,16 +214,12 @@ internal fun HomeScreen(
         AlbumPopup(
             members = album.albumMembers,
             state = state,
-            // The caption can sit on any member, not just the first.
             caption = albumHeaderCaption(album.albumMembers),
-            // On a reopen, the popup focuses the member that was opened before the viewer took
             focusMessageId = albumMemberId,
             onOpenMember = { index ->
                 album.albumMembers.getOrNull(index)?.let { member ->
                     state.openViewerByMessage(album.albumMembers, member.messageId)
                     onOpenMediaItem(member)
-                    // The popup stays open across the viewer: the ids survive navigation and the
-                    // popup comes back focused on this member.
                     albumMemberId = member.messageId
                 }
             },
@@ -309,12 +236,10 @@ internal fun HomeScreen(
         val case = chatDeleteCase(chat.type, menuIsOwner)
         ConfirmDialog(
             title = stringResource(chatDeleteTitleRes(case)),
-            // Only the owner's group body names the group; extra args are ignored elsewhere.
             text = stringResource(chatDeleteBodyRes(case), chat.title),
             confirmLabel = stringResource(chatDeleteConfirmRes(case)),
             cancelLabel = stringResource(R.string.chat_delete_cancel),
             radioLabel = if (chatDeleteHasRadio(chat.type, menuIsOwner)) {
-                // The counterpart's name is the private chat's title.
                 stringResource(R.string.chat_delete_radio, chat.title)
             } else {
                 null
@@ -338,9 +263,6 @@ internal fun HomeScreen(
             hadMenu = true
         } else if (hadMenu) {
             hadMenu = false
-            // A plain dismiss has no list change behind it, so focus goes straight back to the
-            // row that opened the menu. An action that can reorder the list (pin/unpin) leaves
-            // returnFocusChatId set: ChatList re-anchors once the refreshed list arrives
             if (returnFocusChatId == null) {
                 withFrameNanos { }
                 runCatching { menuReturnFocus.requestFocus() }
@@ -349,29 +271,15 @@ internal fun HomeScreen(
     }
     val media by state.mediaItems.collectAsStateWithLifecycle()
 
-    // Re-resolve the album popup from its saved id: the id survives navigation, the MediaItem
     LaunchedEffect(albumTargetId, media) {
         albumTarget = albumTargetId?.let { id -> media.firstOrNull { it.messageId == id } }
     }
 
     var selectedChatId by rememberSaveable { mutableStateOf<Long?>(null) }
     var filter by rememberSaveable { mutableStateOf(MediaFilter.All) }
-    // Focus selects a chat at once — the row fills and the pane's subject changes — but the
-    // pending open is cancelled whenever focus moves on, so only the chat the user lands on
-    // is ever queried.
     var pendingOpen by remember { mutableStateOf<Job?>(null) }
-    // The chat the pane is actually showing. Focus coming back to the list lands on the row
-    // it left, and that must not re-query: openAndLoad blanks the pane, resets the pagination
-    // cursor and would drop the chosen filter with it.
-    // The chat whose media is on screen comes from the repository, not from a UI mirror: a
-    // viewer round trip tears this composition down, and the lost mirror made focus coming back
     val openedChatId by state.currentChatId.collectAsStateWithLifecycle()
 
-    // D-pad graph: the edges of each region are routed explicitly rather than left to
-    // Compose's nearest-candidate search (design annotations 1-4).
-    // Two separate targets. `entry` is what the shell's top bar drops onto — the Archived
-    // Chats / Back row, the list's first focusable. `selectedChat` is the row that Back from
-    // the grid or chips returns to, which is the chat that last held focus.
     val entryFocus = remember(contentEntryFocus) { contentEntryFocus ?: FocusRequester() }
     val selectedChatFocus = remember { FocusRequester() }
     val gridContainerFocus = remember { FocusRequester() }
@@ -384,14 +292,10 @@ internal fun HomeScreen(
     var region by remember { mutableStateOf<HomeRegion?>(null) }
     var gridIndex by remember { mutableStateOf(0) }
     var rememberedGridIndex by remember { mutableStateOf(0) }
-    // The remembered cell belongs to the chat it was taken from: switching chats puts the wall
     LaunchedEffect(openedChatId) { rememberedGridIndex = 0 }
-    // Index of the card a viewer asked focus back on; -1 when none.
     var returnFocusIndex by remember { mutableStateOf(-1) }
     val returnHint by state.playerReturnFocusMessageId.collectAsStateWithLifecycle()
 
-    // Row 0's cell doubles as the "remembered" target, so point the chips' Down at the
-    // same requester when the remembered cell is [0,0].
     val focus = remember(contentEntryFocus, topBarFocus) {
         HomeFocus(
             entry = entryFocus,
@@ -404,16 +308,9 @@ internal fun HomeScreen(
             archivedRow = archivedRowFocus,
         )
     }
-    // Re-pointed every recomposition; focusProperties lambdas read it live.
-    // Read live from focusProperties; the container is always attached.
     focus.gridEntry = gridContainerFocus
 
-    // A requester whose cell is scrolled away is not attached, and requesting one
-    // throws; scrolling first also makes the cell exist. Every grid jump goes here.
     fun jumpToGrid(index: Int) {
-        // Straight there when the cell is already composed — the common case, and the
-        // one the D-pad needs to feel instant. Only a cell that is scrolled away (its
-        // requester therefore unattached) needs the scroll-then-request detour.
         val target = { if (index == 0) firstGridFocus else rememberedGridFocus }
         if (runCatching { target().requestFocus() }.isSuccess) {
             android.util.Log.i("HomeBack", "jumpToGrid($index): direct ok")
@@ -421,9 +318,6 @@ internal fun HomeScreen(
         }
         android.util.Log.w("HomeBack", "jumpToGrid($index): direct failed, scrolling")
         scope.launch {
-            // Bring the cell in first, then give the composition a few frames to attach its
-            // requester. One attempt after a fixed 16ms used to be the whole retry, and when it
-            // lost that race `runCatching` swallowed the failure and nothing moved at all — Back
             runCatching { gridState.scrollToItem(index.coerceAtLeast(0)) }
             repeat(8) {
                 withFrameNanos { }
@@ -437,25 +331,14 @@ internal fun HomeScreen(
         }
     }
 
-    // Back rules (design): grid [0,0] -> selected chat, any other grid cell -> [0,0],
-    // chips -> selected chat, chat list -> the bar's selected tab.
-    // The card a closed viewer asked focus back on, from the shell.
-
-    // Coming back from the player or the photo preview: hand focus to the card that was open
-    // instead of resetting to the first cell. The card is found by message id — an album member
-    // resolves to the album card that holds it — and the pending hint is consumed only once
-    // focus actually landed, so a grid that has not laid out yet gets a few more frames instead
     LaunchedEffect(returnHint, media.size) {
         val id = returnHint ?: return@LaunchedEffect
         val index = gridIndexForMessage(media, id)
         if (index < 0) {
-            // The loaded wall holds no card for it yet: leave the hint alone so a later page can
-            // still land on it — the contract HomeScreenTest pins.
             android.util.Log.i("HomeBack", "return: hint=$id not in media(${media.size})")
             return@LaunchedEffect
         }
         if (albumTargetId != null) {
-            // The album popup is open again and owns the return: it focuses the member that was
             android.util.Log.i("HomeBack", "return: album popup owns it (albumTarget=$albumTargetId)")
             state.consumePlayerReturnFocus()
             return@LaunchedEffect
@@ -470,14 +353,9 @@ internal fun HomeScreen(
                 state.consumePlayerReturnFocus()
                 return@LaunchedEffect
             }
-            // A card that is scrolled away — or a grid that has not laid out yet — needs the
-            // scroll first; the following frames give the composition time to catch up.
             if (attempt == 0) runCatching { gridState.scrollToItem(index) }
         }
         android.util.Log.w("HomeBack", "return: gave up on index=$index")
-        // Nothing ever took focus (e.g. the wall is showing its empty state): clear the index so
-        // the cell re-attaches its normal entry requester, but leave the hint alone — it belongs
-        // to the next viewer's return, not to this attempt.
         returnFocusIndex = -1
     }
 
@@ -497,19 +375,12 @@ internal fun HomeScreen(
     LaunchedEffect(region) {
         android.util.Log.i("HomeBack", "region -> $region")
     }
-    // Back is taken on the preview pass at the page root (see the modifier below): the system
-    // dispatcher is LIFO and the NavHost's own callback kept swallowing the key before our
     val backController = LocalBackController.current
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            // NavHost keeps the outgoing destination composed while a tab switch settles, and
-            // with a transparent root both pages drew into the same box — two content areas
-            // superimposed. An opaque root lets the incoming page cover it instead.
             .background(HomeSpec.Background)
-            // Consume Back before it reaches the system dispatcher and route it through the
-            // controller, so the top registration (grid / chips / chat list) runs as designed.
             .onPreviewKeyEvent { event ->
                 if (event.key == Key.Back && event.type == KeyEventType.KeyDown) {
                     val handled = backController.dispatch()
@@ -520,10 +391,6 @@ internal fun HomeScreen(
                 }
             },
     ) {
-        // The top bar is provided by the app shell (MainActivity) so it survives
-        // navigation; this screen only owns the lower part of the design — the
-        // chat list and the media pane — and starts at the shell's content edge
-        // (y=96 in the design).
         Column(modifier = Modifier.fillMaxSize()) {
             Row {
                 ChatList(
@@ -532,8 +399,6 @@ internal fun HomeScreen(
 
                     showingArchived = showingArchived,
         onToggleArchived = { showingArchived = !showingArchived },
-        // With nothing loaded on the right there is no cell to move into: the row's Right
-        // is cancelled instead of aiming at a requester that is not attached.
         canEnterGrid = selectedChatId != null && media.isNotEmpty(),
                     chats = chats,
                     selectedChatId = selectedChatId,
@@ -564,12 +429,9 @@ internal fun HomeScreen(
                                     returnFocusChatId = chat.id
                                 }
                                 ChatMenuAction.Archive -> {
-                                    // The row moves to the archive list, so nothing is left to
-                                    // hold focus here; fall back to the first row instead.
                                     state.toggleChatArchive(chat.id, !showingArchived)
                                     returnFocusChatId = null
                                 }
-                                // Destructive: never immediate — open the confirm dialog first.
                                 ChatMenuAction.Delete -> {
                                     deleteRadioChecked = false
                                     deleteTarget = chat
@@ -580,14 +442,10 @@ internal fun HomeScreen(
                     },
                     onSelect = { chat ->
                         selectedChatId = chat.id
-                        // Same chat already on screen — focus simply came back to the list
-                        // (Left from the grid, Back from a viewer). Nothing to load.
                         if (chat.id != openedChatId) {
                             pendingOpen?.cancel()
                             pendingOpen = scope.launch {
                                 delay(ChatOpenDebounceMs)
-                                // A chat opens on the unfiltered first page, so the chip state
-                                // and the query state stay in step.
                                 filter = MediaFilter.All
                                 state.openChat(chat.id)
                             }
@@ -599,15 +457,12 @@ internal fun HomeScreen(
                 Spacer(Modifier.width(HomeSpec.GutterBetweenColumns))
 
                 Column(modifier = Modifier.width(HomeSpec.GridWidth)) {
-                    // With no chat selected there is nothing to filter: the row is not drawn at all.
                     if (selectedChatId != null) {
                     MediaFilterRow(
                         selected = filter,
                         focus = focus,
                         onRegion = { region = it },
                         onSelect = { picked ->
-                            // Chips are server-side queries: switching one re-queries the wall
-                            // from page one instead of sifting whatever happens to be loaded.
                             if (picked != filter) {
                                 filter = picked
                                 state.setMediaFilter(picked)
@@ -626,7 +481,6 @@ internal fun HomeScreen(
                         onGridFocus = { index ->
                             region = HomeRegion.Grid
                             gridIndex = index
-                            // Remember the exact cell, any row, so Right back from the chat list
                             rememberedGridIndex = index
                         },
                         onOpen = onOpenPlayer,
@@ -651,9 +505,6 @@ internal fun HomeScreen(
     }
 }
 
-// ---------------------------------------------------------------------------
-// ---------------------------------------------------------------------------
-
 @Composable
 private fun ChatList(
     chats: List<ChatItem>,
@@ -668,39 +519,19 @@ private fun ChatList(
     menuChat: ChatItem?,
     menuIsOwner: Boolean,
     menuReturnFocus: FocusRequester,
-    /** Non-null while focus should return to that chat after the menu closes. */
     returnFocusChatId: Long?,
-    /** Called once focus actually landed back on that chat, so the pending id can be cleared. */
     onReturnFocusHandled: () -> Unit,
     onMenuOpen: (ChatItem) -> Unit,
     onMenuClose: () -> Unit,
     onMenuAction: (ChatMenuAction) -> Unit,
-    /** Focus landed on this chat: select it now, and open it once focus settles. */
     onSelect: (ChatItem) -> Unit,
-    /**
-     * OK landed on a chat: move into the pane's first card. It does NOT query — the row was
-     */
     onConfirm: () -> Unit,
 ) {
-    // The design's 268x412 box is exactly eight rows of (48 + 4), so anything
-    // past seven chats has to scroll. It is a LazyColumn for that reason only —
-    // no scrollbar, since the design draws none, and moving focus down brings the
-    // focused row into view on its own. "Archived Chats" stays the first item so
-    // it scrolls with the list, as the design's column implies.
-    // The popover is hosted here: this Box owns the list's coordinate space, so the menu can
-    // sit level with the long-pressed row and be pulled up when it would spill past the bottom.
     val listState = rememberLazyListState()
     val visibleChats = if (showingArchived) archivedChats else chats
-    // Chips and grid name the selected chat for Left, but a requester is attached only while its
-    // row is composed, and naming an unattached one throws in the focus search. Ask the list's own
-    // window instead of keeping a flag in effects: when a list swap (main <-> archived, or a
-    // refresh) reorders items, effect ordering can leave a stale false behind and Left then falls
     val entryId = entryChatId(selectedChatId, visibleChats)
     focus.selectedChatAttached = listState.layoutInfo.visibleItemsInfo.any { it.key == entryId }
 
-    // the chat to the top, which can put it outside LazyColumn's composed window, so bring it back
-    // into view before asking for focus — and only clear the pending id once focus actually
-    // landed, so a refresh that arrives late still gets its anchor.
     LaunchedEffect(returnFocusChatId, visibleChats, menuChat) {
         if (menuChat != null) return@LaunchedEffect
         val index = returnFocusIndex(visibleChats, returnFocusChatId) ?: return@LaunchedEffect
@@ -709,8 +540,6 @@ private fun ChatList(
         if (runCatching { menuReturnFocus.requestFocus() }.isSuccess) onReturnFocusHandled()
     }
     val listScope = rememberCoroutineScope()
-    // The entry target is the container, not the Archived row: the row can be recycled by the
-    // container forwards, scrolling the row back in first if it has to — same dance as the grid.
     Box(
         modifier = Modifier
             .width(HomeSpec.ListWidth)
@@ -783,7 +612,6 @@ private fun ArchivedChatsRow(
     focus: HomeFocus,
 ) {
     var focused by remember { mutableStateOf(false) }
-    // The frames draw the focused row as the white pill with the dark label.
     Row(
         modifier = Modifier
             .testTag("home-archived-row")
@@ -808,7 +636,6 @@ private fun ArchivedChatsRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
-            // In the archived list the same row turns into "Back" with an arrow.
             imageVector = if (showingArchived) Icons.AutoMirrored.Outlined.ArrowBackIos else Icons.Outlined.Archive,
             contentDescription = null,
             tint = if (focused) HomeSpec.InverseOnSurface else HomeSpec.OnSurface,
@@ -836,55 +663,35 @@ private fun ChatRow(
     onRegion: (HomeRegion) -> Unit,
     onLongPress: () -> Unit,
     menuReturn: FocusRequester?,
-    /** This row took focus: it is the selection now, and its media is queried shortly. */
     onFocused: () -> Unit,
-    /** OK landed on this row: open the chat without waiting for focus to settle. */
     onConfirmed: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     var longPressJob by remember { mutableStateOf<Job?>(null) }
     var longPressed by remember { mutableStateOf(false) }
-    // selected chat, and there is no second, chosen-only fill.
     val highlighted = focused
     val pinned = chat.isPinned
-    // Only focus/selection fills a row (the design annotates the chat-name row that
-    // way); a pinned chat keeps the plain styling and shows its state through the pin.
     val colors = chatRowColors(highlighted = highlighted, pinned = pinned)
 
-    // A Box rather than a Row: the design positions the pin absolutely
-    // (right: 16dp, vertically centred), so it overlays the row instead of taking
-    // part in the text flow — hence no spacer in front of it.
     Box(
         modifier = Modifier
             .fillMaxSizeWidth()
-            // Stable handle for the UI tests that drive the D-pad graph.
             .testTag("home-chat-row-${chat.id}")
             .clip(RoundedCornerShape(HomeSpec.Corner))
             .background(colors.fill)
             .focusProperties {
-                // Chat list: up/down plus Right into the media grid; Left does nothing.
-                // Up from the FIRST chat reaches the Archived Chats row above it — the bar
-                // itself is only reached from that row (it used to jump straight to the bar).
                 left = FocusRequester.Cancel
-                // Right only exists once the pane has cells; otherwise it would target an
-                // unattached requester (and the focus search throws on those).
                 right = if (canEnterGrid) focus.gridEntry else FocusRequester.Cancel
-                // Geometric search: the Archived row sits right above the first chat, and when
-                // it is scrolled away the search simply finds nothing and focus stays put.
                 up = FocusRequester.Default
             }
             .onFocusChanged { st ->
                 focused = st.isFocused
                 if (st.isFocused) {
-                    // Focus returns when the popover closes, but the key-up that ended the
-                    // long press went to the menu — clear the leftover state here or the
-                    // next tap on this row would be swallowed as "still held".
                     longPressed = false
                     longPressJob?.cancel()
                     longPressJob = null
                     onRegion(HomeRegion.ChatList)
-                    // Focus selects: this chat becomes the pane's subject right away.
                     onFocused()
                 }
             }
@@ -893,8 +700,6 @@ private fun ChatRow(
 
             .onKeyEvent { event: androidx.compose.ui.input.key.KeyEvent ->
 
-                // TV OK arrives as DPAD_CENTER; Enter covers keyboards and emulators.
-                // HOLDING it opens the long-press popover; a tap is still a plain click.
                 val ok = event.key == Key.DirectionCenter || event.key == Key.Enter
                 when {
                     event.type == KeyEventType.KeyDown && ok -> {
@@ -921,10 +726,6 @@ private fun ChatRow(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 8.dp),
-            // Measured from the design's exported rows (4x PNG, 268x48dp): the avatar
-            // ink sits at y 8..39 (centre 23.9 = the row's centre) while the title and
-            // its trailing icons sit at y 11..24 (centre ~18) — i.e. the name line is
-            // pinned to the TOP of the 32dp content box, not centred on the avatar.
             verticalAlignment = Alignment.Top,
         ) {
             Box {
@@ -939,9 +740,6 @@ private fun ChatRow(
                     Box(
                         modifier = Modifier
                             .align(Alignment.TopStart)
-                            // The design puts the dot at (18,10) inside a row whose
-                            // content starts at (16,8) and whose avatar is 32dp, so
-                            // it sits 2dp inside the avatar's top-left corner.
                             .offset(x = 2.dp, y = 2.dp)
                             .size(6.dp)
                             .clip(CircleShape)
@@ -962,18 +760,12 @@ private fun ChatRow(
                     color = colors.text,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    // also what keeps it clear of the absolutely positioned pin.
                     modifier = Modifier
                         .weight(1f, fill = false)
                         .widthIn(max = 130.dp),
                 )
-                // Order and spacing follow the design's three row examples, where the
-                // icons sit at fixed x offsets: Verified first, then the chat-type
-                // glyph, then mute — 12dp apart on 12dp icons, i.e. a 2dp gap.
                 if (chat.isVerified) {
                     Spacer(Modifier.width(2.dp))
-                    // Verified keeps its own colour scale: primary while the row is
-                    // plain or pinned, primary-fixed once it is focused or selected.
                     Icon(
                         Icons.Outlined.Verified,
                         null,
@@ -997,8 +789,6 @@ private fun ChatRow(
                 imageVector = Icons.Outlined.PushPin,
                 contentDescription = null,
                 tint = colors.text,
-                // Absolute placement per the design: 16dp from the row's right edge,
-                // vertically centred, 16dp glyph rotated -45°. (16 * sqrt(2) = 22.63 —
                 modifier = Modifier
                     .align(Alignment.CenterEnd)
                     .padding(end = 16.dp)
@@ -1016,9 +806,6 @@ private fun ChatType.typeIcon() = when (this) {
     else -> null
 }
 
-// ---------------------------------------------------------------------------
-// ---------------------------------------------------------------------------
-
 @Composable
 internal fun MediaFilterRow(
     selected: MediaFilter,
@@ -1030,7 +817,6 @@ internal fun MediaFilterRow(
         MediaFilter.entries.forEachIndexed { index, entry ->
             FilterChip(
                 label = entry.label,
-                // The check marks the filter in effect — any of them, not just ALL
                 selected = entry == selected,
                 isFirst = index == 0,
                 isLast = index == MediaFilter.entries.lastIndex,
@@ -1045,7 +831,6 @@ internal fun MediaFilterRow(
 @Composable
 private fun FilterChip(
     label: String,
-    /** True for the filter in effect: it carries the check and is the list's return target. */
     selected: Boolean,
     isFirst: Boolean,
     isLast: Boolean,
@@ -1054,11 +839,9 @@ private fun FilterChip(
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
-    // The pill is the FOCUS treatment; being the filter in effect only adds the check
     val colors = filterChipColors(focused)
     Row(
         modifier = Modifier
-            // Stable handle for the tests that measure a chip's box.
             .testTag("home-filter-chip-$label")
             .clip(RoundedCornerShape(HomeSpec.Corner))
             .background(colors.fill)
@@ -1068,9 +851,6 @@ private fun FilterChip(
                 shape = RoundedCornerShape(HomeSpec.Corner),
             )
             .focusProperties {
-                // Chips: sideways plus Down to the remembered grid cell. The first chip
-                // reaches the selected chat, the last one stops (annotations 4, 5).
-                // Name the selected chat only while its row is composed: an unattached
                 left = if (isFirst && focus.selectedChatAttached) focus.selectedChat else FocusRequester.Default
                 right = if (isLast) FocusRequester.Cancel else FocusRequester.Default
                 up = FocusRequester.Cancel
@@ -1080,8 +860,6 @@ private fun FilterChip(
             .let { if (selected) it.focusRequester(focus.selectedChip) else it }.focusable()
 
             .onKeyEvent { event: androidx.compose.ui.input.key.KeyEvent ->
-
-                // TV OK arrives as DPAD_CENTER; Enter covers keyboards and emulators.
 
                 if (event.type == KeyEventType.KeyUp &&
 
@@ -1100,12 +878,7 @@ private fun FilterChip(
                 }
 
             }
-            // Uniform 10/20, and the height now comes from this padding instead of a fixed
-            // 36dp. The old fixed 32dp box plus this padding left a 12dp content box, which
-            // clipped the label's descender ("Image" was the visible casualty).
             .padding(horizontal = 20.dp, vertical = 10.dp),
-        // Vertical centring: the design says alignItems=center. The row width
-        // hugs its content, so the chip is centred horizontally by construction.
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
@@ -1113,8 +886,6 @@ private fun FilterChip(
             Icon(
                 imageVector = Icons.Outlined.Done,
                 contentDescription = null,
-                // The check rides the chip's own label colour: white on the outlined chip,
-                // dark once the row is the focused pill.
                 tint = colors.text,
                 modifier = Modifier
                     .size(14.dp)
@@ -1129,9 +900,6 @@ private fun FilterChip(
     }
 }
 
-// ---------------------------------------------------------------------------
-// ---------------------------------------------------------------------------
-
 @Composable
 private fun MediaGrid(
     items: List<MediaItem>,
@@ -1144,26 +912,15 @@ private fun MediaGrid(
     onGridFocus: (Int) -> Unit,
     onOpen: (Int) -> Unit,
     onOpenAudio: (Int) -> Unit = {},
-    /** Confirming an album card opens the popup instead of a viewer. */
     onOpenAlbum: (MediaItem) -> Unit = {},
-    /** Confirming a text card opens its content instead of a viewer. */
     onOpenText: (MediaItem) -> Unit = {},
-    /** Land focus on the remembered cell; HomeScreen owns the scroll-then-request dance. */
     onEnterGrid: () -> Unit,
 ) {
     val exhausted by state.mediaExhausted.collectAsStateWithLifecycle()
     val loadingMore by state.mediaLoadingMore.collectAsStateWithLifecycle()
-    // Used to hand focus on to a cell after the container takes it.
     val scope = rememberCoroutineScope()
 
-    // The repository pages 100 messages at a time, so without this the grid would
-    // simply stop at the first page and read as "that is all the media there is".
-    // Load the next page as soon as the last item comes into view; the exhausted
-    // flag stops the requests once the chat runs out.
     LaunchedEffect(gridState, loadingMore, exhausted) {
-        // Re-armed by every finished load: a page can add nothing at all (service messages,
-        // albums already collapsed into an earlier page, or a filter that rejects them), and
-        // then the layout never changes and atEnd stays true — the old distinctUntilChanged
         if (loadingMore || exhausted) {
             android.util.Log.i(
                 "HomePaging",
@@ -1192,7 +949,6 @@ private fun MediaGrid(
             .width(HomeSpec.GridWidth)
             .height(HomeSpec.GridHeight)
             .focusRequester(focus.gridContainer)
-            // Deferred a frame: a focus request made inside a focus callback is ignored.
         .onFocusChanged { st -> if (st.isFocused) scope.launch { onEnterGrid() } }
             .focusable(),
     ) {
@@ -1202,7 +958,6 @@ private fun MediaGrid(
         modifier = Modifier
             .width(HomeSpec.GridWidth)
             .height(HomeSpec.GridHeight),
-        // Slots are 6dp wider/taller than the cards (3dp of ring each side).
         horizontalArrangement = Arrangement.spacedBy(slotGap(HomeSpec.CellGap, HomeSpec.FocusBorder)),
         verticalArrangement = Arrangement.spacedBy(slotGap(HomeSpec.CellGap, HomeSpec.FocusBorder)),
         contentPadding = PaddingValues(0.dp),
@@ -1255,21 +1010,14 @@ private fun MediaCell(
 
     MediaCard(
         focused = focused,
-        // Stable handle for the UI tests that drive the D-pad graph.
         tag = "home-media-cell-$index",
-        // At rest the grid's ring reads as the app background (#1A1C1E), per the design tokens.
         borderColor = HomeSpec.Background,
         modifier = Modifier
             .focusProperties {
-                // Media grid: four-way with explicit edges (annotation 3) — column 0
-                // reaches the selected chat, column 2 stops, row 0 goes up to the
-                // active chip.
                 left = if (isFirstCol && focus.selectedChatAttached) focus.selectedChat else FocusRequester.Default
                 right = if (isLastCol) FocusRequester.Cancel else FocusRequester.Default
                 up = if (isFirstRow) focus.selectedChip else FocusRequester.Default
             }
-            // One requester per cell, most recent intent first: a focus request only
-            // honours whichever requester is attached, so they must not stack.
             .let { m ->
                 when {
                     isReturn -> m.focusRequester(focus.returnGrid)
@@ -1289,16 +1037,12 @@ private fun MediaCell(
 
             .onKeyEvent { event: androidx.compose.ui.input.key.KeyEvent ->
 
-                // TV OK arrives as DPAD_CENTER; Enter covers keyboards and emulators.
-
                 if (event.type == KeyEventType.KeyUp &&
 
                     (event.key == Key.DirectionCenter || event.key == Key.Enter)
 
                 ) {
 
-                    // Text shows its content in a popup; an album opens its members; the
-                    // rest keep their viewer.
                     if (kind is MediaCellKind.Text) {
                         onOpenText()
                     } else if (kind is MediaCellKind.Album && item.albumMembers.isNotEmpty()) {
@@ -1336,7 +1080,6 @@ private fun BoxScope.MediaGlyph(imageVector: ImageVector) {
     )
 }
 
-/** The one glyph that genuinely differs from Material's set, so it ships as an asset. */
 @Composable
 private fun BoxScope.MediaGlyphFromRes(@DrawableRes res: Int) {
     Icon(
@@ -1349,7 +1092,6 @@ private fun BoxScope.MediaGlyphFromRes(@DrawableRes res: Int) {
     )
 }
 
-/** Album card: Collections glyph + "+N" (design: 48dp glyph, 8dp gap, 14/20 label). */
 @Composable
 private fun BoxScope.MediaAlbumCell(count: Int) {
     Column(
@@ -1371,14 +1113,4 @@ private fun BoxScope.MediaAlbumCell(count: Int) {
     }
 }
 
-/**
- * Photo / video card. The thumbnail is preferred; the design's Image / Video file
- * glyph is the fallback for the cases the spec calls "abnormal": no thumbnail to
- * fetch at all, a fetch that has not landed within [ThumbnailTimeoutMs], or an
- * image that failed to decode. While a fetch is simply in flight the card stays
- * empty rather than showing the glyph, so a slow thumbnail does not read as
- * a broken one.
- */
-
-/** Every list row in the design spans the full 268dp column. */
 private fun Modifier.fillMaxSizeWidth(): Modifier = this.then(Modifier.width(HomeSpec.ListWidth))

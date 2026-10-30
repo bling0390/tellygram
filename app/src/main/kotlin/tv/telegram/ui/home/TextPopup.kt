@@ -61,31 +61,21 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 
-/** The text popup's palette and cap, from the frames (3588:2212). */
 internal object TextPopupSpec {
-    val Panel = Color(0xFFE3E2E6)   // inverse-surface
-    val Title = Color(0xFF121316)   // surface
-    val Body = Color(0xFF43474E)    // surface-variant
+    val Panel = Color(0xFFE3E2E6)
+    val Title = Color(0xFF121316)
+    val Body = Color(0xFF43474E)
     val Scrim = Color(0x991A1C1E)
-    /** Shown behind the avatar while its file is on its way (or when there is none). */
     val AvatarFallback = Color(0xFFC4C6CF)
 
     val MaxTextHeight = 400.dp
 }
 
-/**
- * A text message's popup: a 412dp light panel, horizontally centred over the same dim the
- * dialogs use, with a fixed title and the message body. The body is never ellipsised — it
- * scrolls inside a capped area instead, so a very long message cannot push the panel
- * off-screen. There are no buttons: Back (or a click outside) closes it.
- */
 @Composable
 internal fun TextPopup(
     text: String,
-    /** Resolved lazily by the screen; null falls back to the literal "Sender:". */
     senderName: String?,
     avatarFileId: Int?,
-    /** The sender's id: the shared Avatar uses it for the fallback colour. */
     senderId: Long,
     state: HomeState,
     onDismiss: () -> Unit,
@@ -95,9 +85,6 @@ internal fun TextPopup(
     val bodyScroll = rememberScrollState()
     val scope = rememberCoroutineScope()
     val stepPx = with(androidx.compose.ui.platform.LocalDensity.current) { 72.dp.toPx() }
-    // The Dialog is a separate window: the first requestFocus can land before its node is
-    // attached, so retry a few frames — the same dance the player's popup uses, and there is
-    // only one focusable here, so a late retry cannot yank focus away from anything.
     LaunchedEffect(Unit) {
         withFrameNanos { }
         repeat(5) {
@@ -106,7 +93,6 @@ internal fun TextPopup(
         }
     }
 
-    // Back closes it explicitly: the same proven pattern as the other popups here.
     BackHandler(enabled = true) { onDismiss() }
 
     Dialog(
@@ -130,7 +116,6 @@ internal fun TextPopup(
                 verticalArrangement = Arrangement.spacedBy(24.dp),
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    // Avatar + sender name (frames 3588:2282), replacing the fixed title.
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
@@ -160,7 +145,6 @@ internal fun TextPopup(
                             .heightIn(max = TextPopupSpec.MaxTextHeight)
                             .testTag("$tagPrefix-body")
                             .verticalScroll(bodyScroll)
-                            // Belt and braces: turn D-pad Up/Down into scroll requests even if
                             .onPreviewKeyEvent { ev: androidx.compose.ui.input.key.KeyEvent ->
                                 if (ev.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                                 when (ev.key) {
@@ -175,8 +159,6 @@ internal fun TextPopup(
                                     else -> false
                                 }
                             }
-                            // Focusable so the TV remote's Up/Down scroll it: verticalScroll
-                            // alone only handles drag/wheel. The popup focuses it on open
                             .focusRequester(bodyFocus)
                             .focusable(),
                     ) {
@@ -191,4 +173,3 @@ internal fun TextPopup(
         }
     }
 }
-

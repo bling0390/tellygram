@@ -64,33 +64,6 @@ import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.type
 
-/**
- *
- * Tokens read off the node:
- *  - surface = `sys/dark/inverse-surface` (#E3E2E6): the dialog is LIGHT against
- *    the dark UI. Radius 4dp, Elevation Dark/4.
- *  - padding 24 vertical / 32 horizontal, 12dp between title, body and buttons,
- *    content 348 wide (so the frame is 412).
- *  - title: `headline/small` (Inter 400 24/32) in `sys/dark/surface`.
- *  - body: `body/medium` (Inter 400 14/20) in `sys/dark/surface-variant`.
- *  - buttons 40dp tall, radius 4, 14dp apart. The action button is hug-width on
- *    the LEFT (`sys/dark/inverse-on-surface` fill, Elevation Dark/2, label
- *    `sys/dark/on-surface`); the safe one fills the rest on the RIGHT (10% black
- *    fill, 1dp `sys/dark/outline` border, label `sys/dark/surface-variant`).
- *  - button labels are `title/small` = Inter Medium 14/20, which in this app is
- *    `labelLarge` — its own `titleSmall` is 12/16 Regular, so it is not the match.
- *
- *  - focus starts on the SAFE button: an accidental D-pad OK must not run a
- *    destructive action (the chat confirm dialog already worked this way).
- *  - focused buttons take `secondaryContainer` for fill and
- *    `onSecondaryContainer` for the label, so the focus reads at couch distance
- *    and the label stays legible on it.
- *  - Compose allows one shadow per layer, so Elevation Dark/4 and Elevation
- *    Dark/2 land as 8dp and 2dp.
- *
- * Either button may be omitted: the clear-cache dialog shows progress with no
- * buttons at all, then a single "Done".
- */
 @Composable
 fun ConfirmDialog(
     title: String,
@@ -100,40 +73,23 @@ fun ConfirmDialog(
     confirmLabel: String? = null,
     onConfirm: (() -> Unit)? = null,
     cancelLabel: String? = null,
-    /**
-     * When set, the panel and buttons carry `"$tagPrefix-dialog"`, `-cancel` and `-confirm`
-     * tags — the UI tests locate the dialog through them.
-     */
     tagPrefix: String? = null,
-    /**
-     * Optional toggle above the buttons. The private delete dialog uses it for "also delete
-     */
     radioLabel: String? = null,
     radioChecked: Boolean = false,
     onRadioClick: (() -> Unit)? = null,
-    /** Long bodies (release notes) scroll inside the panel instead of growing it. */
     scrollableBody: Boolean = false,
 ) {
     val cancelFocus = remember { FocusRequester() }
     val confirmFocus = remember { FocusRequester() }
     val radioFocus = remember { FocusRequester() }
-    // Long bodies scroll with the D-pad: the panel's preview pass turns Up/Down into scroll
-    // requests, so the buttons keep their focus behaviour — the same trick the text popup uses
     val bodyScroll = rememberScrollState()
     val bodyScope = rememberCoroutineScope()
     val stepPx = with(LocalDensity.current) { 72.dp.toPx() }
-
-    // No focus dance: the design puts the safe button FIRST in the row, so the dialog
-    // window focuses it on open by itself. The old loop re-requested focus for ~300ms,
-    // which meant anything the user (or a test) focused in that window got yanked back.
 
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
-        // usePlatformDefaultWidth = false makes the dialog window fill the screen, but the
-        // window's own dim turned out to be invisible here — the panel was all there was, so
-        // nothing covered the top bar or the shell's side margins. Paint the scrim ourselves.
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -180,7 +136,6 @@ fun ConfirmDialog(
                 text = text,
                 color = ConfirmDialogSpec.Body,
                 style = MaterialTheme.typography.bodyMedium,
-                // Release notes can be long: scroll them inside the panel instead of growing
                 modifier = if (scrollableBody) {
                     Modifier
                         .heightIn(max = 320.dp)
@@ -196,7 +151,6 @@ fun ConfirmDialog(
                     checked = radioChecked,
                     onClick = { onRadioClick?.invoke() },
                     focusRequester = radioFocus,
-                    // Sealed to the dialog: Down reaches Cancel, Up has nowhere to go.
                     up = FocusRequester.Cancel,
                     down = cancelFocus,
                     tagPrefix = tagPrefix,
@@ -204,16 +158,11 @@ fun ConfirmDialog(
             }
             if (confirmLabel != null || cancelLabel != null) {
                 Spacer(Modifier.height(12.dp))
-                // Per the frames: the safe button hugs the LEFT and the action fills the
-                // rest on the RIGHT (the older node had them the other way round).
                 Row(
                     modifier = Modifier.width(348.dp),
                     horizontalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
                     if (cancelLabel != null) {
-                        // The button's content is Box(fillMaxSize), which reports the incoming
-                        // max width as its own — so an unconstrained button swallows the whole
-                        // row and squeezes the other to zero. Pin the safe one to its content.
                         ConfirmDialogButton(
                             label = cancelLabel,
                             primary = false,
@@ -221,8 +170,6 @@ fun ConfirmDialog(
                             focusRequester = cancelFocus,
                             modifier = Modifier
                                 .width(IntrinsicSize.Max)
-                                // Up reaches the toggle when there is one; otherwise it stops
-                                // instead of wandering out of the dialog.
                                 .focusProperties {
                                     up = if (radioLabel != null) radioFocus else FocusRequester.Cancel
                                 },
@@ -230,9 +177,6 @@ fun ConfirmDialog(
                         )
                     }
                     if (confirmLabel != null) {
-                        // The weight goes on a plain Box: a tv Card given Modifier.weight
-                        // laid out zero-width here, so the action button vanished and
-                        // could not take focus.
                         Box(modifier = Modifier.weight(1f)) {
                             ConfirmDialogButton(
                                 label = confirmLabel,
@@ -255,7 +199,6 @@ fun ConfirmDialog(
     }
 }
 
-/** One 40dp dialog button: the design's hug-width action, or the filled safe one. */
 @Composable
 private fun ConfirmDialogButton(
     label: String,
@@ -311,7 +254,6 @@ private fun ConfirmDialogButton(
     }
 }
 
-/** The dialog's palette, straight from the frames (not from theme roles, which drift). */
 internal object ConfirmDialogSpec {
     val Panel = Color(0xFFE3E2E6)
     val Title = Color(0xFF121316)
@@ -320,17 +262,12 @@ internal object ConfirmDialogSpec {
     val Scrim = Color(0x991A1C1E)
 }
 
-/**
- * The two button states. The action button is the dark primary at rest and flips to white
- * on focus; the safe one is a ghost that does the same. Facts from the frames, unit tested.
- */
 internal fun confirmDialogButtonColors(primary: Boolean, focused: Boolean): RowColors = when {
     focused -> RowColors(HomeSpec.White, HomeSpec.InverseOnSurface)
     primary -> RowColors(HomeSpec.InverseOnSurface, HomeSpec.OnSurface)
     else -> RowColors(Color(0x1A000000), ConfirmDialogSpec.Body)
 }
 
-/** The dialog's optional toggle: a 16dp glyph, the label, and nothing that escapes. */
 @Composable
 private fun ChatRadioRow(
     label: String,

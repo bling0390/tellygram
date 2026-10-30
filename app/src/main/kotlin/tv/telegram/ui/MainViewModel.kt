@@ -44,10 +44,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app), HomeState, Settin
     val fileRepo = TdFileRepository(
         client = TdClient,
         scope = viewModelScope,
-        // Windowed streaming, SmartTube-style: buffer ≈ device RAM / 18,
-        // clamped to [64MB, 256MB]. Multi-GB videos never fully land on the
-        // TV's tiny storage — the download only runs a window ahead of the
-        // playhead (extended on demand as playback advances).
         windowBytes = streamWindowBytes(app),
         filesDirectory = java.io.File(app.filesDir, "tdlib-files").absolutePath,
     )
@@ -91,18 +87,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app), HomeState, Settin
     override fun deleteChat(chat: ChatItem, revoke: Boolean) {
         viewModelScope.launch {
             chatRepo.deleteChat(chat, revoke)
-            // If the deleted chat was selected, clear the media pane.
             if (_sidebarSelectedChatId.value == chat.id) {
                 selectSidebarChat(null)
             }
         }
     }
 
-    /**
-     * The list a viewer should walk when it was opened by message id, plus where to start.
-     * Handed over rather than stored on the items: prev/next then always matches the list the
-     * user came from (an album's members, or the chat's loaded media), with no second truth.
-     */
     private val _viewerContext = MutableStateFlow<ViewerContext?>(null)
     val viewerContext: StateFlow<ViewerContext?> = _viewerContext.asStateFlow()
 
@@ -136,11 +126,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app), HomeState, Settin
         }
     }
 
-    /**
-     * Windowed-streaming buffer size derived from device RAM (SmartTube
-     * heuristic: ram/18), clamped to a sane [64MB, 256MB] band for small TV
-     * storage. Falls back to 128MB if RAM can't be queried.
-     */
     private fun streamWindowBytes(app: Application): Long {
         val memInfo = ActivityManager.MemoryInfo()
         val am = app.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
@@ -178,10 +163,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app), HomeState, Settin
     private val _sidebarSelectedChatId = MutableStateFlow<Long?>(null)
     val sidebarSelectedChatId: StateFlow<Long?> = _sidebarSelectedChatId.asStateFlow()
 
-    // Last played media messageId — set when the player exits so the chats
-    // screen can hand focus back to that exact media card (instead of the
-    // sidebar's first row "Archived Chats"). Consumed (cleared) by
-    // ChatsScreen once it has scrolled to and focused the card.
     private val _playerReturnFocusMessageId = MutableStateFlow<Long?>(null)
     override val playerReturnFocusMessageId: StateFlow<Long?> = _playerReturnFocusMessageId.asStateFlow()
 
@@ -196,7 +177,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app), HomeState, Settin
     private val _themeMode = MutableStateFlow(ThemeMode.Dark)
     val themeMode: StateFlow<ThemeMode> = _themeMode.asStateFlow()
 
-    /** Set by logOut(): the Closed state that follows is ours, not a startup failure. */
     @Volatile private var signOutRequested = false
 
     private val _language = MutableStateFlow(Language.English)
@@ -222,15 +202,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app), HomeState, Settin
     override fun setLanguage(lang: Language) {
         _language.value = lang
         SettingsRepository.setLanguage(getApplication(), lang)
-        // Store AND apply: without this the choice only took effect after a restart.
         SettingsRepository.applyLocale(getApplication(), lang)
     }
 
     override fun logOut() {
-        // Ask TDLib first (it clears its local database), then drop our own state. TDLib
-        // answers LogOut by landing the client in AuthorizationStateClosed, and a Closed
-        // client can never request a QR code again — so the state collector below stops,
-        // wipes and restarts the client once that happens.
         signOutRequested = true
         auth.logOut()
         closeChat()
@@ -240,7 +215,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app), HomeState, Settin
     }
 
     fun realSignOut() {
-        // A different account must not inherit this one's ownership answers.
         chatRepo.clearOwnerCache()
         closeChat()
         _sidebarSelectedChatId.value = null
@@ -254,7 +228,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app), HomeState, Settin
             databaseDirectory = java.io.File(app.filesDir, "tdlib").absolutePath,
             filesDirectory = java.io.File(app.filesDir, "tdlib-files").absolutePath,
         )
-        // client was restarted by realSignOut; re-apply proxy for the fresh instance
         TdClient.enableProxy(
             host     = BuildConfig.PROXY_HOST,
             port     = BuildConfig.PROXY_PORT,
@@ -271,7 +244,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app), HomeState, Settin
         }
     }
 
-    /** Playback rates offered by the player's speed popover, slowest first. */
     val playerSpeeds: List<Float> = listOf(0.5f, 1.0f, 1.5f, 2.0f)
 
     fun setPlayerSpeed(speed: Float) {
@@ -280,8 +252,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app), HomeState, Settin
 
     fun cyclePlayerSpeed(): Float {
         val speeds = playerSpeeds
-        // indexOf(-1) (a rate set from outside the list) falls back to the
-        // first entry, so cycling always lands on a listed rate.
         val next = speeds[(speeds.indexOf(_playerPlaybackSpeed.value) + 1) % speeds.size]
         _playerPlaybackSpeed.value = next
         return next
@@ -308,12 +278,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app), HomeState, Settin
             auth.state.collect { st ->
                 if (st is AuthState.Ready) {
                     refreshMe()
-                    // Explicitly load the chat list on Ready. TdChatRepository only
-                    // auto-loads on the UpdateAuthorizationState(Ready) event, which
-                    // TDLib emits once per authorization. If the Activity is recreated
-                    // while the process survives (e.g. TV home button → low memory),
-                    // a fresh repository never sees that event and would stay on
-                    // "loading chats…" forever. These calls are idempotent.
                     chatRepo.loadAllChats()
                     chatRepo.loadArchiveChats()
                 }
@@ -333,8 +297,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app), HomeState, Settin
                 if (shouldRestartClosedClient(st, signOutRequested)) {
                     signOutRequested = false
                     Log.i("MainViewModel", "sign-out closed the TDLib client; restarting it")
-                    // stop + wipe DB + start, then re-apply the proxy — realSignOut does all
-                    // of it and emits GoToQrCode, so the login flow can request a fresh QR.
                     realSignOut()
                 }
                 wasReady = isReady
@@ -373,7 +335,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app), HomeState, Settin
         viewModelScope.launch { mediaRepo.loadMore() }
     }
 
-    /** Switching a filter chip re-queries the media wall from page one. */
     override fun setMediaFilter(filter: MediaFilter) {
         val chatId = mediaRepo.currentChatId.value ?: return
         viewModelScope.launch { mediaRepo.openAndLoad(chatId, filter) }
@@ -393,19 +354,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app), HomeState, Settin
         viewModelScope.launch { fileRepo.ensureLocal(fileId, priority) }
     }
 
-    /** Download only the first chunk of a file — enough for a hover preview. */
     suspend fun ensurePreviewFile(fileId: Int): String? = fileRepo.ensurePreview(fileId)
 }
 
-/**
- * TDLib answers LogOut() by closing the client, and a Closed client can never request a
- * QR code again — only a freshly created one can. Restart it, but only for our own
- * sign-out: an unexpected Closed at any other time is not ours to "fix" blind.
- */
 internal fun shouldRestartClosedClient(state: AuthState, signOutRequested: Boolean): Boolean =
     signOutRequested && state is AuthState.Closed
 
-/** What a message-addressed viewer walks, and where it starts. */
 data class ViewerContext(
     val items: List<MediaItem>,
     val messageId: Long,

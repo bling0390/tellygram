@@ -12,17 +12,12 @@ object Routes {
 
     fun player(index: Int): String = "player/$index"
 
-    // The audio player: a track gets its own screen rather than the video-shaped one
     const val AUDIO_PLAYER = "audioPlayer/{index}"
     fun audioPlayer(index: Int): String = "audioPlayer/$index"
 
-    // Full-screen photo preview, opened by confirming an image card.
     const val PHOTO = "photo/{index}"
     fun photo(index: Int): String = "photo/$index"
 
-    // Addressing a viewer by MESSAGE instead of by index into the chat's loaded media.
-    // The album popup needs this: only the album's first message is in that list, the rest
-    // the view model, so prev/next stay consistent with what was opened.
     const val PLAYER_AT = "playerAt/{messageId}"
     fun playerAt(messageId: Long): String = "playerAt/$messageId"
     const val PHOTO_AT = "photoAt/{messageId}"

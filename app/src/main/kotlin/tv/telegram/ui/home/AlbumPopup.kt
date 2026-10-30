@@ -60,42 +60,29 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.drawscope.Stroke
 
-/** The popup's palette, taken from the frames (3558:2184). */
 internal object AlbumPopupSpec {
-    val Panel = Color(0xFFE3E2E6)        // inverse-surface
-    val Title = Color(0xFF121316)        // surface
-    val Body = Color(0xFF43474E)         // surface-variant
-    /** The hairline between the caption and the strip: outline at 10%. */
+    val Panel = Color(0xFFE3E2E6)
+    val Title = Color(0xFF121316)
+    val Body = Color(0xFF43474E)
     val Divider = Color(0x1A8E9099)
     val Scrim = Color(0x991A1C1E)
 }
 
-/**
- * The album popup: a 672dp light panel, horizontally centred over a dimmed screen, holding a
- * fixed title, the album's caption (with its hairline) and a horizontally scrolling strip of
- * the members. Only Left/Right move inside — there is one row, so Up/Down are cancelled.
- * Confirming a member hands it to the caller, which opens the usual viewer.
- */
 @Composable
 internal fun AlbumPopup(
     members: List<MediaItem>,
-    /** Same card content as the grid: thumbnails, their loading/glyph states and the badges. */
     state: HomeState,
     onOpenMember: (Int) -> Unit,
     onDismiss: () -> Unit,
     caption: String? = null,
     tagPrefix: String = "album-popup",
-    /** The member the popup should focus when it (re)opens; null focuses the first one. */
     focusMessageId: Long? = null,
 ) {
     val firstFocus = remember { FocusRequester() }
     val listState = rememberLazyListState()
     val hasCaption = !caption.isNullOrBlank()
-    // Which member owns the entry focus: the one that was opened before a viewer took over, or
     val focusIndex = remember(members, focusMessageId) { albumFocusIndex(members, focusMessageId) }
 
-    // The Dialog is its own window, so the first request can beat the node; retry a frame. A
-    // reopened popup may also land on a member scrolled out of the row, so bring it in first.
     LaunchedEffect(Unit) {
         runCatching { listState.scrollToItem(focusIndex.coerceAtLeast(0)) }
         withFrameNanos { }
@@ -105,7 +92,6 @@ internal fun AlbumPopup(
         }
     }
 
-    // Back closes it explicitly: the same proven pattern as the chat screen's menu.
     BackHandler(enabled = true) { onDismiss() }
 
     Dialog(
@@ -129,7 +115,6 @@ internal fun AlbumPopup(
                 verticalArrangement = Arrangement.spacedBy(24.dp),
             ) {
                 Column(
-                    // Full content width: a 371dp column left ~237dp of empty panel on the
                     modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
@@ -140,7 +125,6 @@ internal fun AlbumPopup(
                     )
                     if (hasCaption) {
                         Text(
-                            // Free to wrap: the caption grows the header (and the panel with
                             text = caption.orEmpty(),
                             style = MaterialTheme.typography.bodyMedium,
                             color = AlbumPopupSpec.Body,
@@ -183,12 +167,10 @@ internal fun AlbumPopup(
     }
 }
 
-/** One member: the grid's card content, with the popup's own Left/Right-only focus graph. */
 @Composable
 private fun AlbumMemberTile(
     member: MediaItem,
     state: HomeState,
-    /** This tile owns the popup's entry focus (the first one, or the member that was reopened). */
     isEntry: Boolean,
     isFirst: Boolean,
     isLast: Boolean,
@@ -197,17 +179,13 @@ private fun AlbumMemberTile(
     tag: String,
 ) {
     var focused by remember { mutableStateOf(false) }
-    // Only a FRESH press arms the tile: the long press that opened the popup keeps emitting
-    // repeats, and its release would otherwise fire the first member (same gate as the menu).
     var confirmArmed by remember { mutableStateOf(false) }
     MediaCard(
         focused = focused,
         tag = tag,
-        // At rest the popup's cards carry a light outline (inverse-surface), not a hidden one.
         borderColor = AlbumPopupSpec.Panel,
         modifier = Modifier
             .focusProperties {
-                // One row: only Left/Right move, and the ends stop.
                 left = if (isFirst) FocusRequester.Cancel else FocusRequester.Default
                 right = if (isLast) FocusRequester.Cancel else FocusRequester.Default
                 up = FocusRequester.Cancel
@@ -237,7 +215,6 @@ private fun AlbumMemberTile(
                 }
             },
     ) {
-        // Same content as the grid's cards: thumbnail (loading/glyph states), glyphs, badges.
         MediaCardContent(item = member, state = state)
     }
 }

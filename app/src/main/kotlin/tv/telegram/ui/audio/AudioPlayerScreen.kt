@@ -66,20 +66,8 @@ import tv.telegram.ui.player.hasPreviousIn
 import tv.telegram.ui.player.neighbourIn
 import tv.telegram.ui.player.walkIndices
 
-/** How often the transport line refreshes while the screen is up. */
 private const val PositionPollMs = 500L
 
-/**
- * video-shaped one.
- *
- * Decided shape: transport is play/pause, +/-10s, previous/next and a linear progress line — no
- * repeat, no shuffle, no queue counter; the queue is the audio the wall has loaded, so "next"
- * stops where the loaded list stops. Focus lands on play/pause, Back stops playback and hands
- * focus back to the card. A finished track drops its local copy, like video does.
- *
- * The circular spectrum goes in the empty upper area; it is its own step (the PCM tap), so this
- * screen is deliberately the plain version first.
- */
 @Composable
 fun AudioPlayerScreen(
     viewModel: MainViewModel,
@@ -97,8 +85,6 @@ fun AudioPlayerScreen(
     }
     val current = items[index]
 
-    // The queue is the audio the wall has loaded (decision 5 / B2). loadMore grows the list and
-    // this rebuilds with it; nothing is prefetched (B3).
     val queue = remember(items) { walkIndices(items, MediaType.Audio) }
     val hasPrev = hasPreviousIn(queue, index)
     val hasNext = hasNextIn(queue, index)
@@ -113,15 +99,11 @@ fun AudioPlayerScreen(
         if (path == null) viewModel.ensureMediaFile(current.fileId, priority = 32)
     }
 
-    // The spectrum: the processor sits in the player's audio chain, the analyser runs the FFT on a
-    // scope of its own (never on the playback thread), and the ring draws what it measured.
     val analyserScope = rememberCoroutineScope()
     val analyser = remember { SpectrumAnalyzer(analyserScope) }
     LaunchedEffect(analyser) { analyser.start() }
     val spectrum = remember { SpectrumAudioProcessor(onWindow = { window -> analyser.offer(window) }) }
     DisposableEffect(spectrum, analyser) {
-        // The band layout follows the stream's own rate, which the processor learns when it is
-        // configured. A path whose PCM we cannot read simply never reports (decision E2).
         spectrum.onFormat = { rate -> analyser.adoptSampleRate(rate) }
         onDispose { spectrum.onFormat = null }
     }
@@ -129,9 +111,6 @@ fun AudioPlayerScreen(
 
     val exo = remember(current.fileId) { buildAudioPlayer(context, viewModel.fileRepo, spectrum) }
 
-    // The listener outlives recompositions (it is keyed on the player), so it reads the queue
-    // through these: otherwise a track that ends after loadMore grew the queue would decide
-    // "no next" from a stale value.
     val queueHasNext by rememberUpdatedState(hasNext)
     val stepFromQueue by rememberUpdatedState(step)
 
@@ -139,7 +118,6 @@ fun AudioPlayerScreen(
         val listener = object : Player.Listener {
             override fun onPlaybackStateChanged(playbackState: Int) {
                 if (playbackState == Player.STATE_ENDED) {
-                    // remote reference stays in TDLib and a replay re-fetches it.
                     viewModel.fileRepo.deleteLocalFile(current.fileId)
                     if (queueHasNext) stepFromQueue(1)
                 }
@@ -152,7 +130,6 @@ fun AudioPlayerScreen(
         }
     }
 
-    // Play as soon as the file is local. A failed download surfaces as the retry row below.
     LaunchedEffect(current.fileId, path, retryTick) {
         if (path == null) return@LaunchedEffect
         exo.setMediaItem(ExoMediaItem.fromUri("file://$path"))
@@ -175,8 +152,6 @@ fun AudioPlayerScreen(
     val playPauseFocus = remember { FocusRequester() }
     LaunchedEffect(current.fileId) { runCatching { playPauseFocus.requestFocus() } }
 
-    // Record the return target when the track opens, not only on our exit action
-    // grid then had no card to focus on return.
     LaunchedEffect(current.messageId) {
         android.util.Log.i("HomeBack", "audio player open: hint=${current.messageId}")
         viewModel.setPlayerReturnFocus(current.messageId)
@@ -187,7 +162,6 @@ fun AudioPlayerScreen(
         viewModel.setPlayerReturnFocus(current.messageId)
         onClose()
     }
-    // Back stops the track and returns to the card it came from (decision F2).
     BackRegistration(BackPriority.PLAYER) { exit() }
 
     val artist = audioArtist(current)
@@ -203,9 +177,6 @@ fun AudioPlayerScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            // The spectrum took the cover's place (decisions D1-D3). It only ever draws what the
-            // tap measured, so silence, a paused track and an unreadable stream all rest as the
-            // ring rather than animating a lie.
             SpectrumRing(
                 levels = levels,
                 modifier = Modifier
@@ -241,7 +212,6 @@ fun AudioPlayerScreen(
 
             Spacer(Modifier.height(8.dp))
 
-            // Linear line, per decision D4.
             LinearProgressIndicator(
                 progress = { progressFraction(positionMs, durationMs) },
                 modifier = Modifier
@@ -296,7 +266,6 @@ fun AudioPlayerScreen(
             }
 
             if (failure != null) {
-                // Decision E1: the retry lives on this screen instead of behind the card's OK.
                 TransportButton(
                     label = "重试 · ${failure.reason}",
                     tag = "audio-retry",
@@ -307,10 +276,6 @@ fun AudioPlayerScreen(
     }
 }
 
-/**
- * One transport control. A plain focusable row rather than a TV Button: the design's controls are
- * text-sized, and the focus ring is all the chrome they need.
- */
 @Composable
 private fun TransportButton(
     label: String,

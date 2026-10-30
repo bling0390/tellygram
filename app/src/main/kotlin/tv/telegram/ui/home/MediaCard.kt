@@ -117,26 +117,17 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.drawscope.Stroke
 
-/**
- * The visual half of a media card, shared by the grid and the album popup so the two cannot
- * drift apart — down to details like the album's "+N". Focus and key handling stay with each
- * caller: the grid drives a four-way graph, the popup only Left/Right.
- */
 @Composable
 internal fun BoxScope.MediaCardContent(item: MediaItem, state: HomeState) {
     when (item.cellKind()) {
-        // Audio is the one glyph-only kind the design draws.
         is MediaCellKind.Audio -> MediaGlyph(Icons.Outlined.AudioFile)
         is MediaCellKind.Text -> MediaTextCell(item)
         is MediaCellKind.Album -> MediaAlbumMosaic(item, state)
-        // Photo / video: the thumbnail is the card; the file glyph stands in when there is
-        // nothing to show.
         is MediaCellKind.Photo -> MediaThumbnail(item, state, isVideo = false)
         is MediaCellKind.Video -> MediaThumbnail(item, state, isVideo = true)
     }
 }
 
-/** How long a card waits for its thumbnail before falling back to the glyph. */
 internal const val ThumbnailTimeoutMs = 6_000L
 
 @Composable
@@ -151,11 +142,6 @@ private fun BoxScope.MediaGlyph(imageVector: ImageVector) {
     )
 }
 
-/**
- * One album tile: the embedded minithumbnail paints immediately as a placeholder, the
- * downloaded thumbnail (TDLib's medium size — see pickThumbnail) covers it once it lands, and
- * the type glyph is the last resort. The minithumbnail alone was visibly soft at TV sizes
- */
 @Composable
 private fun BoxScope.AlbumTile(
     member: MediaItem,
@@ -167,7 +153,6 @@ private fun BoxScope.AlbumTile(
         ?: member.thumbnailLocalPath
         ?: member.localPath
     LaunchedEffect(thumbFileId, localPath) {
-        // Below the cards' priority: a wall of albums should not starve the cell the user is on.
         if (localPath == null && thumbFileId != 0) state.ensureMediaFile(thumbFileId, priority = 30)
     }
     member.minithumbnail?.let { mini ->
@@ -202,9 +187,6 @@ private fun BoxScope.AlbumTile(
     }
 }
 
-/**
- * Text card (design 3645:2269): the message body, 12/8 padding, 12/16 Medium, clipped at six
- */
 @Composable
 private fun BoxScope.MediaTextCell(item: MediaItem) {
     Text(
@@ -219,17 +201,10 @@ private fun BoxScope.MediaTextCell(item: MediaItem) {
         overflow = TextOverflow.Ellipsis,
         modifier = Modifier
             .fillMaxSize()
-            // 10dp top/bottom (not the frame's 12) so six 16dp lines fit the 96dp body:
-            // with 12 the font padding left only five full lines plus an ellipsis
             .padding(horizontal = 8.dp, vertical = 10.dp),
     )
 }
 
-/**
- * Album card (design 3638:2249): the members as a collage that keeps each one's aspect ratio
- * and fills the card exactly, with 2dp seams. Small images are TDLib's embedded
- * minithumbnails — nothing to download and nothing big to decode. No glyph, no "+N"
- */
 @Composable
 private fun BoxScope.MediaAlbumMosaic(item: MediaItem, state: HomeState) {
     val members = item.albumMembers.ifEmpty { listOf(item) }
@@ -294,25 +269,16 @@ private fun BoxScope.MediaThumbnail(item: MediaItem, state: HomeState, isVideo: 
         waitOver = true
     }
 
-    // Three states: the thumbnail, a spinner while it is on its way, and the type
-    // glyph once it is known not to arrive. Compose's icon set has no
-    // progress_activity (that is a Material Symbols glyph), and a static loading
-    // icon would read as a frozen card, so the spinner is the M3 indicator that
-    // PlayerScreen already uses — and it is bounded by the same timeout, so a card
-    // can never spin forever.
     val showImage = localPath != null && !imageFailed
     val showGlyph = !showImage && (imageFailed || waitOver || thumbFileId == 0)
     val showLoading = !showImage && !showGlyph
 
-    // Read the context in the composable scope: reading a CompositionLocal inside
-    // the remember lambda is not a composable context.
     val ctx = LocalContext.current
 
     if (showImage) {
         AsyncImage(
             model = remember(localPath) { ImageRequest.Builder(ctx).data(File(localPath!!)).crossfade(false).build() },
             contentDescription = item.caption,
-            // Fit the long edge instead of cropping: the whole frame stays visible and the
             contentScale = ContentScale.Fit,
             onError = { imageFailed = true },
             modifier = Modifier
@@ -320,10 +286,6 @@ private fun BoxScope.MediaThumbnail(item: MediaItem, state: HomeState, isVideo: 
                 .size(width = HomeSpec.CellWidth, height = HomeSpec.CellHeight),
         )
     } else if (showLoading) {
-        // Material Symbols' progress_activity, spun by hand: the icon set bundled
-        // with Compose predates it, so it ships as a vector and the rotation is
-        // ours. Still bounded by the same timeout above — a card can never spin
-        // forever.
         val spin by rememberInfiniteTransition(label = "cellSpin").animateFloat(
             initialValue = 0f,
             targetValue = 360f,
@@ -350,8 +312,6 @@ private fun BoxScope.MediaThumbnail(item: MediaItem, state: HomeState, isVideo: 
         )
     }
 
-    // Play affordance + duration ride on top of the thumbnail only: the design's
-    // glyph-only card carries neither.
     if (isVideo && showImage) {
         Icon(
             imageVector = Icons.Outlined.PlayCircle,
@@ -374,32 +334,21 @@ private fun BoxScope.MediaThumbnail(item: MediaItem, state: HomeState, isVideo: 
     }
 }
 
-/**
- * The card's frame, shared so the grid and the popup cannot drift: 160x120, 4dp corners, the
- * surface-container fill, and the focused ring drawn OUTSIDE the card (the design's focused
- * card measures 166x126 = 160 + 3 + 3). Focus and key handling stay with the caller, which
- * passes its own chain through [modifier].
- */
 @Composable
 internal fun MediaCard(
     focused: Boolean,
     tag: String? = null,
-    /** The ring's tint while unfocused: the card's own fill by default, a light outline in the popup. */
     borderColor: Color = HomeSpec.SurfaceContainer,
     modifier: Modifier = Modifier,
     content: @Composable BoxScope.() -> Unit,
 ) {
     Box(
         modifier = Modifier
-            // The SLOT is the box model now: 166x126 holds the 3dp ring plus the 160x120 card,
             .size(
                 width = HomeSpec.CellWidth + HomeSpec.FocusBorder * 2,
                 height = HomeSpec.CellHeight + HomeSpec.FocusBorder * 2,
             )
             .let { if (tag != null) it.testTag(tag) else it }
-            // The ring is drawn BEFORE the clip. Compose's clip() also clips the drawing of the
-            // modifiers after it, and the ring sits entirely OUTSIDE the card — so drawing it
-            // card paints over its inner half and the outer 3dp is the visible edge.
             .focusStroke(
                 draw = true,
                 width = HomeSpec.FocusBorder,
@@ -407,7 +356,6 @@ internal fun MediaCard(
                 corner = HomeSpec.Corner,
             )
             .then(modifier)
-            // Inside the slot: the ring's band, then the visual card itself.
             .padding(HomeSpec.FocusBorder)
             .clip(RoundedCornerShape(HomeSpec.Corner))
             .background(HomeSpec.SurfaceContainer, RoundedCornerShape(HomeSpec.Corner)),
@@ -415,11 +363,6 @@ internal fun MediaCard(
     )
 }
 
-/**
- * The focused ring, entirely outside the node: a 3dp stroke centred on a path inflated by
- * half the width, so the card's outer bounds grow by the full stroke (Compose's
- * Modifier.border draws inside instead). The corner radius grows with it to stay concentric.
- */
 internal fun Modifier.focusStroke(
     draw: Boolean,
     width: Dp,
@@ -430,7 +373,6 @@ internal fun Modifier.focusStroke(
 } else {
     drawWithContent {
         drawContent()
-        // Inset by half the stroke so the ring's OUTER edge is flush with the slot's bounds.
         val half = width.toPx() / 2f
         drawRoundRect(
             color = color,

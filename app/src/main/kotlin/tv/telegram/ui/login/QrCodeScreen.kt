@@ -41,20 +41,10 @@ import tv.telegram.R
 import tv.telegram.td.AuthState
 import tv.telegram.ui.MainViewModel
 
-/**
- * QR login screen. Renders the QR code (and its copy) whenever a
- * WaitQrCode link is available. While no link is available yet
- * (initializing, waiting for a fresh link after sign-out, etc.) the QR
- * area shows a loading indicator. Errors are appended under the left
- * column text instead of replacing the whole page.
- */
 @Composable
 fun QrCodeScreen(viewModel: MainViewModel) {
     val authState by viewModel.authState.collectAsStateWithLifecycle()
 
-    // Last known-good QR link. Keeps the QR visible while the Ready event
-    // is still in flight (navigation is async), avoiding a loading flash
-    // right before switching to the home screen.
     var lastQrLink by remember { mutableStateOf<String?>(null) }
 
     val currentLink = (authState as? AuthState.WaitQrCode)?.link
@@ -62,16 +52,12 @@ fun QrCodeScreen(viewModel: MainViewModel) {
     LaunchedEffect(currentLink) {
         if (!currentLink.isNullOrEmpty()) lastQrLink = currentLink
     }
-    // Re-entering the login flow (e.g. fresh client after sign-out) means
-    // any previously shown QR is stale: drop it so the area shows loading.
     LaunchedEffect(authState) {
         if (authState is AuthState.WaitTdlibParams || authState is AuthState.WaitEncryptionKey) {
             lastQrLink = null
         }
     }
 
-    // While Ready (about to be navigated away) keep showing the last QR;
-    // any other non-QR state (LoggingIn, bootstrap, etc.) shows loading.
     val displayLink = when {
         !currentLink.isNullOrEmpty() -> currentLink
         authState is AuthState.Ready -> lastQrLink
@@ -111,9 +97,6 @@ private fun QrContent(
             Text(
                 text = title,
                 color = MaterialTheme.colorScheme.onBackground,
-                // displayMedium (45sp): displayLarge (57sp) is JetStream's
-                // Top-10 rank-number tier, which read far too large for a login
-                // heading.
                 style = MaterialTheme.typography.displayMedium,
             )
             Spacer(Modifier.height(16.dp))

@@ -12,13 +12,6 @@ import kotlin.math.cos
 import kotlin.math.min
 import kotlin.math.sin
 
-/**
- * A radial spectrum visual: the tap's band levels as a ring of bars, coloured along the radius,
- * resting at the minimum radius whenever there is nothing to show.
- *
- * It only draws what the tap measured — a silent or unreadable stream is the resting ring, never a
- * decorative animation.
- */
 @Composable
 internal fun SpectrumRing(levels: FloatArray, modifier: Modifier = Modifier) {
     val banded = mirroredLevels(levels)
@@ -29,15 +22,12 @@ internal fun SpectrumRing(levels: FloatArray, modifier: Modifier = Modifier) {
         val centre = Offset(size.width / 2f, size.height / 2f)
         val slot = (2.0 * PI / banded.size).toFloat()
 
-        // D3: the resting ring. Bands at level 0 leave this as the whole picture.
         drawCircle(color = HomeSpec.SurfaceContainer, radius = inner, style = Stroke(width = 4f))
 
         val thickness = inner * slot * 0.65f
         for (i in banded.indices) {
             val level = banded[i]
             if (level <= 0f) continue
-            // Band 0 starts at the top and runs clockwise; the mirror pairing in mirroredLevels
-            // assumes exactly that.
             val angle = -PI.toFloat() / 2f + i * slot
             val dx = cos(angle)
             val dy = sin(angle)

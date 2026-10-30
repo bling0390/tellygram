@@ -26,14 +26,6 @@ import tv.telegram.R
 import tv.telegram.td.AuthState
 import tv.telegram.ui.MainViewModel
 
-/**
- * Cold-start screen. Only rendered while TDLib is still initializing
- * (WaitTdlibParams / WaitEncryptionKey). Once the state leaves that
- * window, MainViewModel emits a NavEvent and this screen is navigated
- * away (qrLogin for a fresh login, home when already authenticated).
- * An initialization failure is shown here instead of being pushed to
- * the QR screen.
- */
 @Composable
 fun ColdStartScreen(viewModel: MainViewModel) {
     val authState by viewModel.authState.collectAsStateWithLifecycle()

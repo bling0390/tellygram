@@ -99,8 +99,6 @@ import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import tv.telegram.td.MediaType
 
-// AppCompatActivity, not ComponentActivity: the per-app language API
-// (AppCompatDelegate.setApplicationLocales) only applies through AppCompat activities.
 class MainActivity : AppCompatActivity() {
 
     private val viewModel: MainViewModel by viewModels()
@@ -126,52 +124,23 @@ private fun AppNavHost(viewModel: MainViewModel, backController: BackController)
     val authState by viewModel.authState.collectAsStateWithLifecycle()
 
     val navController = rememberNavController()
-    // Back belongs to the controller (see BackController). The NavHost registers its own back
-    // callback after this tree's handler and the dispatcher is LIFO, so it swallowed Back before
     LaunchedEffect(navController) {
         navController.enableOnBackPressed(false)
         android.util.Log.i("HomeBack", "NavHost back disabled; the controller owns Back")
     }
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
-    // Legacy rail destinations only. Home and Settings are SHELL pages — they bring the
-    // global top bar and the shell's own margins, so the rail (and its reserved width)
-    // must not appear on them.
     val inHome = showsRail(currentRoute)
 
-    // the detail pane out side by side), not a drawer overlay: the rail
-    // navigates to it like any other destination and Back pops it.
-    // Focus target for the rail's settings item — the drawer returns focus
-    // here when it closes.
     val settingsRailFocus = remember { FocusRequester() }
-    // Focus target for the rail's chats item. The chat list routes Left
-    // here explicitly (see ChatSidebar): directional focus search from a
-    // chat row would otherwise land on whichever rail icon is vertically
-    // nearest — Search near the top, Settings near the bottom — which
-    // reads as random.
     val chatsRailFocus = remember { FocusRequester() }
-    // Focus target the rail's Chats item hands Right to: the chat list's
-    // selected chat (or the first chat when nothing is selected). Right from
-    // the rail would otherwise land on a random row via spatial focus search.
     val chatsListRightFocus = remember { FocusRequester() }
-    // Focus target for the rail's search item. The search results grid
-    // routes Left here explicitly (see ResultsGrid) for the same reason.
     val searchRailFocus = remember { FocusRequester() }
-    // The rail stays focusable everywhere: settings is a page now, so nothing
-    // needs the old "drop the rail while the drawer slides" dance.
     var railEnabled by remember { mutableStateOf(true) }
 
-    // Exit-confirmation dialog: Back on the rail (outermost layer) asks
-    // first instead of quitting immediately. railFocused comes from
-    // NavRail's onFocusChange (hasFocus bubbles up from the focused icon).
     var railFocused by remember { mutableStateOf(false) }
     var showExitConfirm by remember { mutableStateOf(false) }
-    // True once the dialog has been opened; the close handler restores
-    // focus to the current route's rail item (the dialog is a separate
-    // window — focus would otherwise be lost when it leaves).
     var exitDialogWasShown by remember { mutableStateOf(false) }
-    // Hoisted out of the dialog's onClick lambdas: LocalContext.current is
-    // a @Composable read and can't be called from a plain onClick.
     val context = LocalContext.current
     LaunchedEffect(showExitConfirm) {
         if (!showExitConfirm && exitDialogWasShown) {
@@ -201,9 +170,6 @@ private fun AppNavHost(viewModel: MainViewModel, backController: BackController)
         }
     }
 
-    // Root Back dispatcher: exactly one BackHandler, priority resolved by
-    // the controller. Layers register their own action (BackRegistration)
-    // instead of relying on "deepest composed BackHandler wins".
     LaunchedEffect(backController.hasActive) {
         android.util.Log.i("HomeBack", "backController.hasActive -> ${backController.hasActive}")
     }
@@ -212,12 +178,10 @@ private fun AppNavHost(viewModel: MainViewModel, backController: BackController)
         backController.dispatch()
     }
 
-    // Rail focus (outermost layer): Back asks for exit confirmation.
     BackRegistration(BackPriority.RAIL_EXIT, enabled = inHome && railFocused) {
         exitDialogWasShown = true
         showExitConfirm = true
     }
-    // Search route: Back returns to the chat list.
     BackRegistration(BackPriority.SEARCH_NAV, enabled = currentRoute == Routes.HOME_SEARCH) {
         navController.navigate(Routes.HOME_CHATS) {
             popUpTo(Routes.HOME) { saveState = true }
@@ -226,15 +190,8 @@ private fun AppNavHost(viewModel: MainViewModel, backController: BackController)
         }
     }
 
-    // Decide the initial destination once, at first composition. Making this
-    // reactive to authState would rebuild the whole NavGraph whenever auth
-    // leaves Ready (e.g. mid sign-out), resetting the UI to COLD_START and
-    // racing the GoToQrCode/GoToHome events. Navigation is event-driven only.
     val startDestination = remember { authStartRoute(authState) }
 
-    // Log-out drops the authorization state back to the login flow. The graph is
-    // deliberately not reactive to authState (that would rebuild the whole NavHost), so
-    // watch it here and step out of the shell pages when it stops being Ready.
     LaunchedEffect(authState) {
         if (authState is tv.telegram.td.AuthState.Ready) return@LaunchedEffect
         val target = authStartRoute(authState)
@@ -246,52 +203,25 @@ private fun AppNavHost(viewModel: MainViewModel, backController: BackController)
         }
     }
 
-    // Sidebar is always icon-only: a fixed 96dp rail. No expand/collapse
-    // animation, so the NavHost padding never changes and the page never
-    // jumps when focus moves between the rail and the content area.
     val railWidth = 84.dp
 
-    // Pages that render inside the app shell: they get the shared top bar and
-    // the design's content box (y=96, x=58). Everything else (login, player)
-    // keeps the whole window.
-    // Both shell pages share the global top bar.
     val isShellPage = currentRoute == Routes.HOME_SCREEN || currentRoute == Routes.HOME_SETTINGS
 
-    // Focus bridge between the shell's top bar and the home screen's chat list: Down
-    // from the bar lands on the selected chat row, and Back from that list returns to
-    // the bar. Both live outside this function's branches so the bar and the NavHost
-    // destination share the same objects.
     val homeContentFocus = remember { androidx.compose.ui.focus.FocusRequester() }
-    // The settings page's own Down target. The bar must never point at the home
-    // screen's requester while that screen is not composed: an unattached
-    // FocusRequester throws as soon as the focus search touches it.
     val settingsContentFocus = remember { androidx.compose.ui.focus.FocusRequester() }
     val homeTopBarFocus = remember { androidx.compose.ui.focus.FocusRequester() }
     val settingTabFocus = remember { androidx.compose.ui.focus.FocusRequester() }
 
-    // D-pad presses play the platform's navigation sounds for the whole
-    // activity window (rail, pages, in-tree overlays). Dialog / Popup windows
-    // own separate input pipelines and carry their own copy.
     Box(modifier = Modifier.fillMaxSize().dpadNavigationSounds()) {
-        // The shell keeps the top bar outside the NavHost, so it survives
-        // navigation: pages swap below it while the bar keeps its focus and
-        // state. It also owns the design's content box for those pages.
         Column(modifier = Modifier.fillMaxSize()) {
             if (isShellPage) {
                 Spacer(Modifier.height(TopNavBarTopMargin))
                 val me by viewModel.currentUser.collectAsStateWithLifecycle()
-                // Focus bridge between the shell's top bar and the home screen's chat
-                // list: Down from the bar lands on the selected chat row, and Back from
-                // that list returns to the bar.
-                // Telegram can deliver the profile photo a beat after login; one
-                // retry covers that without polling. Until it lands (or if the
-                // account has no photo) Avatar draws the initial instead.
                 LaunchedEffect(Unit) {
                     if (me?.photoFileId == null) viewModel.refreshMe()
                 }
                 TopNavBar(
                     onTabSelected = { tab ->
-                        // Chat and Setting are the two shell pages; search stays inert.
                         val target = when (tab) {
                             TopNavTab.Chat -> Routes.HOME_SCREEN
                             TopNavTab.Setting -> Routes.HOME_SETTINGS
@@ -304,10 +234,6 @@ private fun AppNavHost(viewModel: MainViewModel, backController: BackController)
                         }
                     },
                     onTabConfirmed = { tab ->
-                        // list's entry for Chat — its Archived row, the list's first
-                        // focusable — and the first section row for Setting. Both are the
-                        // requesters the bar's Down already uses, so the two keys take one
-                        // path per page.
                         runCatching {
                             contentEntryFor(tab, homeContentFocus, settingsContentFocus).requestFocus()
                         }
@@ -323,7 +249,6 @@ private fun AppNavHost(viewModel: MainViewModel, backController: BackController)
                     },
                     avatar = {
                         Avatar(
-                            // Real photo when available, initial otherwise.
                             photoFileId = me?.photoFileId,
                             name = me?.displayName ?: "",
                             id = me?.id ?: 0L,
@@ -334,9 +259,6 @@ private fun AppNavHost(viewModel: MainViewModel, backController: BackController)
                 Spacer(Modifier.height(TopNavBarBottomGap))
             }
 
-            // nothing else requests it, and the platform does not choose a first focusable
-            // on its own. Keyed on isShellPage, so a page switch inside the shell — which
-            // keeps it true — never takes focus back out of the list the user moved into.
             EntryFocus(active = isShellPage, target = homeTopBarFocus)
 
             NavHost(
@@ -369,7 +291,6 @@ private fun AppNavHost(viewModel: MainViewModel, backController: BackController)
                     state = viewModel,
                     onOpenPlayer = { index -> navController.navigate(Routes.player(index)) },
                     onOpenMediaItem = { item ->
-                        // A member picked in the album popup: same split as the grid's cards.
                         navController.navigate(
                             if (item.type == MediaType.Photo) Routes.photoAt(item.messageId)
                             else Routes.playerAt(item.messageId)
@@ -431,12 +352,9 @@ private fun AppNavHost(viewModel: MainViewModel, backController: BackController)
                 }
             }
 
-            // Opened from the album popup: address by message, walk the handed-over list.
             composable(
                 route = Routes.PHOTO_AT,
                 arguments = listOf(navArgument("messageId") { type = NavType.LongType }),
-                // Full-screen photo viewer: cut, do not fade. The home's side is already
-                // None, so a fade here read as "home vanishes, preview fades in over the
                 enterTransition = { EnterTransition.None },
                 exitTransition = { ExitTransition.None },
                 popEnterTransition = { EnterTransition.None },
@@ -478,7 +396,6 @@ private fun AppNavHost(viewModel: MainViewModel, backController: BackController)
                 )
             }
 
-            // Opened from the album popup: address by message, walk the handed-over list.
             composable(
                 route = Routes.PLAYER_AT,
                 arguments = listOf(navArgument("messageId") { type = NavType.LongType }),
@@ -519,9 +436,6 @@ private fun AppNavHost(viewModel: MainViewModel, backController: BackController)
             composable(
                 route = Routes.AUDIO_PLAYER,
                 arguments = listOf(navArgument("index") { type = NavType.IntType }),
-                // Cut in rather than animate, like the video player: the screen builds an
-                // ExoPlayer as it enters, and a page animation on top of that is what dropped
-                // frames when the video player was added.
                 enterTransition = { EnterTransition.None },
                 exitTransition = { ExitTransition.None },
                 popEnterTransition = { EnterTransition.None },
@@ -544,10 +458,6 @@ private fun AppNavHost(viewModel: MainViewModel, backController: BackController)
             composable(
                 route = Routes.PLAYER,
                 arguments = listOf(navArgument("index") { type = NavType.IntType }),
-                // A full-screen video player should cut in, not animate. The
-                // NavHost default is a long cross-fade, and PlayerScreen has to
-                // build an ExoPlayer (plus inflate a PlayerView) as it enters;
-                // running both at once dropped frames on TV hardware.
                 enterTransition = { EnterTransition.None },
                 exitTransition = { ExitTransition.None },
                 popEnterTransition = { EnterTransition.None },
@@ -583,12 +493,6 @@ private fun AppNavHost(viewModel: MainViewModel, backController: BackController)
                 chatsFocus = chatsRailFocus,
                 searchFocus = searchRailFocus,
                 chatsRightFocus = chatsListRightFocus,
-                // While the settings drawer is open, the rail must not
-                // participate in focus search — otherwise pressing Up from
-                // the drawer's first row escapes to the rail's chats item.
-                // Delayed (railEnabled) so the drawer's first row can claim
-                // focus directly instead of the focus system flashing the
-                // chat list's "Archived Chats" for a frame.
                 enabled = railEnabled,
                 onFocusChange = { railFocused = it },
                 modifier = Modifier
@@ -598,8 +502,6 @@ private fun AppNavHost(viewModel: MainViewModel, backController: BackController)
             )
         }
 
-        // Exit confirmation (Back on the rail). Confirm quits the app;
-        // cancel / Back closes it and focus returns to the rail item.
         if (showExitConfirm) {
             ConfirmDialog(
                 title = stringResource(R.string.exit_confirm_title),
@@ -626,10 +528,6 @@ private fun NavRail(
     searchFocus: FocusRequester? = null,
     chatsRightFocus: FocusRequester? = null,
     enabled: Boolean = true,
-    // Reports whether any rail item holds focus (hasFocus bubbles up from
-    // the focused icon). AppNavHost uses it so Back on the rail — the
-    // outermost layer — opens an exit-confirmation dialog instead of
-    // quitting immediately.
     onFocusChange: ((Boolean) -> Unit)? = null,
 ) {
     val entries = listOf(
@@ -637,14 +535,6 @@ private fun NavRail(
         NavEntry(Routes.HOME_CHATS, stringResource(R.string.nav_chats), Icons.Default.Chat),
         NavEntry(Routes.HOME_SETTINGS, stringResource(R.string.nav_settings), Icons.Default.Settings),
     )
-
-    // No unconditional focus grab here: the content area (chat sidebar /
-    // search bar) owns initial focus per route. The rail gains focus only
-    // when the user deliberately moves Left into it, or when the settings
-    // drawer closes (settingsFocus restore). The old Unit-keyed request
-    // raced the content screens' own initial-focus requests and usually won
-    // (rail composes last in the Box), so returning from the player landed
-    // focus on the Search icon instead of the chat list / media grid.
 
     Column(
         modifier = modifier
@@ -658,18 +548,13 @@ private fun NavRail(
             RailItem(
                 entry = entry,
                 selected = current == entry.route,
-                // enabled gates BOTH focusability (canFocus below) and
-                // activation — while the settings drawer is open the rail
-                // must not be clickable either (mouse / accessibility).
                 onClick = { if (enabled) onSelect(entry.route) },
                 fr = when (idx) {
-                    0 -> searchFocus // Search — results grid Left lands here
-                    1 -> chatsFocus // Chats — chat list Left lands here
+                    0 -> searchFocus
+                    1 -> chatsFocus
                     2 -> settingsFocus
                     else -> null
                 },
-                // Chats item → Right enters the chat list at the selected /
-                // first chat instead of a random row.
                 rightTarget = if (idx == 1) chatsRightFocus else null,
                 enabled = enabled,
             )
@@ -687,9 +572,6 @@ private fun RailItem(
     enabled: Boolean = true,
 ) {
     var focused by remember { mutableStateOf(false) }
-    // Selected and focused items get a true CIRCLE background (CircleShape,
-    // not RoundedCornerShape percent — the old 26 was 26% which renders a
-    // rounded-rect on a 52dp card). Focus feedback = circle chip + brighter icon.
     val containerColor = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
     Card(
         onClick = onClick,
@@ -711,9 +593,6 @@ private fun RailItem(
         modifier = Modifier
             .width(48.dp)
             .height(48.dp)
-            // While the settings drawer is open (enabled = false) the rail
-            // item drops out of focus search — D-pad can't escape the drawer
-            // into the rail. Visuals (selected chip) stay unchanged.
             .focusProperties {
                 canFocus = enabled
                 rightTarget?.let { right = it }
@@ -739,18 +618,9 @@ private fun RailItem(
     }
 }
 
-/**
- * True only for the routes that still live behind the legacy navigation rail. The shell
- * pages (HomeScreen, SettingsScreen) draw the global top bar instead; showing both left the
- * rail's toggle hidden under the bar.
- */
 internal fun showsRail(route: String?): Boolean =
     route == Routes.HOME_CHATS || route == Routes.HOME_SEARCH
 
-/**
- * Where a cold NavHost (or a log-out) should land for this authorization state. Extracted
- * so the mapping is unit tested instead of living inside a remember block.
- */
 internal fun authStartRoute(state: tv.telegram.td.AuthState): String = when {
     state is AuthState.Ready -> Routes.HOME_SCREEN
     state is AuthState.WaitTdlibParams ||
@@ -759,12 +629,6 @@ internal fun authStartRoute(state: tv.telegram.td.AuthState): String = when {
     else -> Routes.QR_LOGIN
 }
 
-/**
- * Which page's content entry an OK on [tab] hands focus to — each page's own entry requester,
- * the one the top bar's Down already targets. Extracted the way [showsRail] and
- * [authStartRoute] are, so the mapping is unit tested rather than living inside the bar's
- * callback.
- */
 internal fun contentEntryFor(
     tab: TopNavTab,
     home: FocusRequester,

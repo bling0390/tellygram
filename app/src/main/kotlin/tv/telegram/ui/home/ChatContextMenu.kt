@@ -54,17 +54,10 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.type
 import androidx.activity.compose.BackHandler
 
-/**
- * The long-press popover: a 268x188 panel (radius 16, Elevation Dark/4) holding four fixed
- * rows — pin, mute, archive, delete — whose labels and glyphs follow the chat's state.
- * Focus starts on the first row, the edges stop instead of wrapping, and Back closes
- * (see the screen's Back rule).
- */
 @Composable
 internal fun ChatContextMenu(
     chat: ChatItem,
     archived: Boolean,
-    /** Resolved by the screen before opening: the destructive row is worded per owner. */
     isOwner: Boolean,
     top: Dp,
     onSelect: (ChatMenuAction) -> Unit,
@@ -72,8 +65,6 @@ internal fun ChatContextMenu(
 ) {
     val firstFocus = remember { FocusRequester() }
 
-    // The row that opened it is still focused when the menu composes, so wait a frame and
-    // retry once — the same dance the dialog uses.
     LaunchedEffect(Unit) {
         withFrameNanos { }
         if (!runCatching { firstFocus.requestFocus() }.isSuccess) {
@@ -82,13 +73,10 @@ internal fun ChatContextMenu(
         }
     }
 
-    // Back closes the popover from anywhere inside it. NOT via onKeyEvent on this Column:
-    // key events only bubble along the FOCUS path, and this Column is not a focus node, so a
     BackHandler(enabled = true) { onDismiss() }
 
     Column(
         modifier = Modifier
-            // The screen's own origin is already the list's left edge (the shell insets it).
             .padding(top = top)
             .width(HomeSpec.ListWidth)
             .height(ChatMenuHeightDp.dp)
@@ -127,7 +115,6 @@ private fun ChatMenuItemRow(
     onSelect: (ChatMenuAction) -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
-    // Armed by a fresh OK press; the release then runs the row (see the key handler).
     var confirmArmed by remember { mutableStateOf(false) }
     val label = stringResource(labelRes)
     Row(
@@ -138,9 +125,6 @@ private fun ChatMenuItemRow(
             .background(if (focused) HomeSpec.White else androidx.compose.ui.graphics.Color.Transparent,
                 RoundedCornerShape(8.dp))
             .focusProperties {
-                // Sealed to the menu: Up/Down move inside it, the ends stop, and Left/Right
-                // are cancelled outright. Without those two the geometric search would hop
-                // out of the popover onto a chat row or a media cell behind it.
                 left = FocusRequester.Cancel
                 right = FocusRequester.Cancel
                 up = if (isFirst) FocusRequester.Cancel else FocusRequester.Default
@@ -148,7 +132,6 @@ private fun ChatMenuItemRow(
             }
             .onFocusChanged {
                 focused = it.isFocused
-                // Navigating away with a press still held drops the arming.
                 if (!it.isFocused) confirmArmed = false
             }
             .let { if (isFirst) it.focusRequester(firstFocus) else it }
@@ -157,11 +140,6 @@ private fun ChatMenuItemRow(
                 if (event.key != Key.DirectionCenter && event.key != Key.Enter) return@onKeyEvent false
                 when (event.type) {
                     KeyEventType.KeyDown -> {
-                        // Only a FRESH press arms the row. The long press that opened this
-                        // menu is still held, and tv-material3-style long presses keep
-                        // emitting repeats (repeatCount >= 1) — arming on those (or on the
-                        // opening release) would fire the freshly focused first row the
-                        // moment the user lets go. Copied from the chat screen's menu.
                         if (event.nativeKeyEvent.repeatCount == 0) confirmArmed = true
                         true
                     }
@@ -170,7 +148,6 @@ private fun ChatMenuItemRow(
                             confirmArmed = false
                             onSelect(action)
                         }
-                        // Always swallow: the opening release must not reach anyone else.
                         true
                     }
                     else -> false
@@ -200,7 +177,6 @@ private fun Icon16(icon: ImageVector, focused: Boolean) {
     )
 }
 
-/** Pin, mute and archive flip their glyph with the state; delete never does. */
 internal fun chatMenuIcon(action: ChatMenuAction, muted: Boolean, archived: Boolean): ImageVector =
     when (action) {
         ChatMenuAction.Pin -> Icons.Outlined.PushPin

@@ -33,19 +33,10 @@ class TdMediaRepository(
     private val _exhausted = MutableStateFlow(false)
     val exhausted: StateFlow<Boolean> = _exhausted.asStateFlow()
 
-    // Set of messageIds currently in _items, so live-append dedup is O(1)
-    // instead of mapping the whole list on every new message.
     private val knownMessageIds = HashSet<Long>()
 
-    // Pagination cursor: the oldest RAW message id we have pulled, not the oldest
-    // kept item. Albums are completed by pulling extra messages, and a page can
-    // legitimately keep nothing (service messages), so deriving the cursor from
-    // the item list would either skip messages or loop forever on the same page.
     private var oldestFetchedMessageId: Long = 0L
 
-    // Which chip is driving the queries. Every page is asked for with the matching
-    // TDLib filter, so a chip switch starts a fresh query instead of re-filtering
-    // what happens to be loaded.
     private var currentFilter: MediaFilter = MediaFilter.All
 
     init {
@@ -64,14 +55,9 @@ class TdMediaRepository(
 
     private fun handleNewMessage(message: TdApi.Message) {
         val chatId = _currentChatId.value ?: return
-        // Only live-append messages from the currently open chat. Without
-        // this check, media sent to ANY chat on another device would leak
-        // into the open chat's media list.
         if (message.chatId != chatId) return
         val item = parseMessage(message, chatId) ?: return
         if (!item.matches(currentFilter)) return
-        // A message that belongs to the album already on screen grows that card
-        // instead of adding a near-duplicate cell next to it.
         val albumId = message.mediaAlbumId
         if (albumId != 0L) {
             val idx = _items.value.indexOfFirst { it.albumId == albumId }
@@ -109,9 +95,6 @@ class TdMediaRepository(
 
         client.send(TdApi.OpenChat(chatId))
 
-        // Paginated per filter: fromMessageId=0 starts at the newest message and
-        // each later page advances the cursor. The filter is what makes a chip
-        // switch a fresh query rather than a re-filter of loaded items.
         val resp = when (
             val r = client.execute(
                 TdApi.SearchChatMessages(
@@ -140,24 +123,16 @@ class TdMediaRepository(
         _items.value = items
         knownMessageIds.addAll(items.map { it.messageId })
         _loaded.value = true
-        // TDLib can answer a 100-message request with fewer messages while history remains.
         if (resp.messages.isEmpty()) {
             _exhausted.value = true
         }
 
-        // A filter can land on a page that shows nothing: "Text" has no server-side
-        // filter, and ALL passes every message through the type guard. Keep pulling
-        // until something shows or the chat runs out (bounded, so a chat full of
-        // service messages cannot spin here).
         var extraPages = 0
         while (_items.value.isEmpty() && !_exhausted.value && extraPages < 3) {
             extraPages++
             loadMore(limit)
         }
 
-        // Opening a chat = reading it (TV OK is an explicit "I'm looking at
-        // this chat" action, not a hover). Mark the newest message as viewed
-        // so TDLib emits UpdateChatReadInbox → the unread dot clears.
         val newestId = resp.messages.firstOrNull()?.id
         if (newestId != null) {
             client.send(TdApi.ViewMessages(chatId, 0L, longArrayOf(newestId), true))
@@ -190,16 +165,6 @@ class TdMediaRepository(
             "loadMore: start chat=$chatId cursor=$oldestFetchedMessageId items=${current.size} filter=$currentFilter",
         )
         try {
-            // Advance the search cursor past the oldest loaded media message.
-            // offset=0 returns matches before fromMessageId; the seen-set below
-            // dedupes just in case a message comes back twice.
-            // A page can legitimately yield nothing new — service messages, or an album
-            // already collapsed into an earlier page. Treating that as "the chat is over"
-            // instead, bounded so a chat full of junk cannot spin here (openAndLoad does
-            // the same dance for its first page).
-            //
-            // oldestFetchedMessageId, and keeping the pre-loop value made every retry ask for
-            // the same page again — three identical answers with nothing added.
             var extraPages = 0
             while (true) {
                 val cursor = if (oldestFetchedMessageId != 0L) {
@@ -212,7 +177,6 @@ class TdMediaRepository(
                         chatId, "", null, cursor, 0, limit,
                         currentFilter.searchFilter(), 0L,
                     ),
-                    // Without a timeout a hung request kept `loadingMore` true forever: the grid
                     timeoutMs = 10_000L,
                 ).valueOrNull<TdApi.Messages>()
                 if (resp == null) {
@@ -234,9 +198,6 @@ class TdMediaRepository(
                     _items.value = _items.value + added
                     knownMessageIds.addAll(newItems.map { it.messageId })
                 }
-                // a 100-message request with fewer messages while plenty of history remains: a
-                // channel with 80k media stopped at 60 items because the fourth page came back
-                // short. A short page just means advance the cursor and ask again.
                 if (resp.messages.isEmpty()) {
                     _exhausted.value = true
                     break
@@ -349,9 +310,6 @@ class TdMediaRepository(
                 audio = c.audio,
                 caption = c.caption.text,
             )
-            // Text messages: exactly "content is MessageText" (media captions are
-            // not MessageText — they ride along on their own content type). Blank
-            // bodies are dropped rather than shown as empty cards.
             is TdApi.MessageText -> {
                 val body = c.text.text
                 if (body.isBlank()) return null
@@ -374,12 +332,6 @@ class TdMediaRepository(
         }
     }
 
-    /**
-     * Albums are contiguous, and a page boundary can cut one in half — which would
-     * both under-count its "+N" and make the next page repeat members already
-     * shown. If the page ends inside an album, pull a little more until the album
-     * closes. Albums hold at most ten messages, so two extra pulls of ten bound it.
-     */
     private suspend fun completeTrailingAlbum(chatId: Long, page: MutableList<TdApi.Message>) {
         val albumId = page.lastOrNull()?.mediaAlbumId ?: 0L
         if (albumId == 0L) return
@@ -390,7 +342,6 @@ class TdMediaRepository(
                     chatId, "", null, cursor, 0, 10,
                     TdApi.SearchMessagesFilterEmpty(), 0L,
                 ),
-                // Same timeout as the page fetches: this runs inside loadMore, and a hang here
                 timeoutMs = 10_000L,
             ).valueOrNull<TdApi.Messages>()?.messages ?: return
             if (extra.isEmpty()) return
@@ -399,10 +350,6 @@ class TdMediaRepository(
         }
     }
 
-    /**
-     * Collapses each contiguous run of messages that share a mediaAlbumId into a
-     * single item carrying albumId + albumSize; everything else maps one-to-one.
-     */
     private fun groupAlbums(messages: List<TdApi.Message>, chatId: Long): List<MediaItem> {
         val out = ArrayList<MediaItem>(messages.size)
         var i = 0
@@ -416,8 +363,6 @@ class TdMediaRepository(
             var j = i
             while (j < messages.size && messages[j].mediaAlbumId == albumId) j++
             val run = messages.subList(i, j)
-            // Keep every member, not just the first: the album popup shows the members, and
-            // re-querying them later would cost a round trip we already paid for.
             val members = run.mapNotNull { parseMessage(it, chatId) }
             members.firstOrNull()?.let {
                 out += it.copy(
@@ -434,9 +379,6 @@ class TdMediaRepository(
     private fun pickLargest(sizes: Array<TdApi.PhotoSize>): TdApi.PhotoSize? =
         sizes.maxByOrNull { it.width * it.height }
 
-    /**
-     * The size stored as the item's thumbnail: the medium box (see [pickThumbnailIndex]), not
-     */
     private fun pickThumbnail(sizes: Array<TdApi.PhotoSize>): TdApi.PhotoSize? {
         val usable = sizes.filter { it.photo.id != 0 }
         val index = pickThumbnailIndex(usable.map { it.width to it.height }) ?: return null
@@ -464,19 +406,6 @@ class TdMediaRepository(
     }
 }
 
-/**
- * Whether loadMore should stop hammering the server. A page that adds nothing is worth
- * another try (the cursor moved on), but only a couple of times; anything beyond that is
- * a chat that simply has no more displayable media in this stretch.
- */
-/**
- * The audio branch of the message mapping, lifted out of [TdMediaRepository.parseMessage] so it
- * can be unit tested without a TDLib client. It is the only place a track's own metadata — title,
- *
- * TDLib reports an absent ID3 field as an empty string rather than null, and the player's
- * fallback chain (title -> file name -> "unknown track") keys on null, so the empty case is
- * normalised away here rather than at each call site.
- */
 internal fun audioMediaItem(
     messageId: Long,
     chatId: Long,
@@ -505,10 +434,4 @@ internal fun audioMediaItem(
 internal fun shouldStopPaging(added: Int, extraPages: Int, maxExtraPages: Int = 3): Boolean =
     added > 0 || extraPages >= maxExtraPages
 
-/**
- * Album members in display order. TDLib hands messages back newest-first, but an album reads in
- * chronological order, so this reverses them. next/previous share this list, so both follow the
- * same order. The card's cover is unaffected:
- * it is the item the whole album hangs off, not members[0].
- */
 internal fun albumMembersInDisplayOrder(members: List<MediaItem>): List<MediaItem> = members.reversed()

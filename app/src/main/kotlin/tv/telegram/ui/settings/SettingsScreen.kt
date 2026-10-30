@@ -70,44 +70,14 @@ import androidx.compose.material.icons.outlined.Translate
 import androidx.compose.material.icons.outlined.HelpOutline
 import tv.telegram.ui.components.ConfirmDialog
 
-/**
- * Settings as a page, rebuilt from the design frames `3239:2418` (default) and
- * `3240:2375` (the "Check for updates" row focused).
- *
- * Geometry is the frames': the list is 268 wide at x=58 with 4dp between items and
- * 14/16 item padding, the pane is 452 wide at x=398, and 72dp separates them. The
- * shell supplies the 58dp side margin, so this screen only adds the 10dp that lifts
- * its content from the shell's 96dp origin to the frame's 106dp.
- *
- * Row rules, straight from the frames: the section holding focus is a white pill with its rows
- * filled beneath it; display-only rows (Version, License) are unfilled; the actionable row
- * ("Check for updates") sits on a surface-container panel and turns white while focused.
- * Everything is 4dp rounded.
- */
 @Composable
 internal fun SettingsScreen(
     state: SettingsState,
-    /**
-     * Shown as the Version row's value. Defaults to the build's own versionName so the
-     * page reports what is actually installed; tests inject a fixed value.
-     */
     versionName: String = BuildConfig.VERSION_NAME,
-    /**
-     * The shell hands the top bar's Down here: it must point at something *this* page
-     * actually composes, otherwise the bar's focus search targets an unattached requester and
-     * leaves focus on the bar.
-     */
     contentEntryFocus: FocusRequester? = null,
-    /**
-     * The Setting tab's requester: Up from the list's first row lands there instead of
-     */
     topBarFocus: FocusRequester? = null,
     modifier: Modifier = Modifier,
-    /**
-     * How the About pane's "Check for updates" asks GitHub. Injectable so the UI tests can
-     */
     checkForUpdate: suspend (String) -> UpdateCheck = ::fetchLatestRelease,
-    /** Opens the download page; null hands it to the system. */
     openDownloadPage: ((String) -> Unit)? = null,
 ) {
     var selected by remember { mutableStateOf(SettingsSection.Accounts) }
@@ -117,36 +87,21 @@ internal fun SettingsScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    // Left/Right between the section list and the pane: Right from the list always reaches
-    // the pane's entry stop, and a pane row going Left returns to the CHOSEN section (the
-    // default geometric search drifted to whichever item happened to sit leftwards).
-    // chosen section is always the one that last held focus: one requester covers both the
-    // "return to the chosen section" and the "return where I came from" cases.
     val selectedSectionFocus = remember { FocusRequester() }
     val paneEntryFocus = remember { FocusRequester() }
-    // Accounts and About that is the single actionable row; in the language pane it is the
-    // first language. Deliberately separate from paneEntryFocus, which the Right key uses and
-    // which remembers the row the user last visited.
     val paneFirstFocus = remember { FocusRequester() }
     var lastLanguageFocus by remember { mutableStateOf<Language?>(null) }
 
-    // Only panes that compose a focusable row may be the list's Right target: Help has none,
-    // and pointing the search at an unattached requester throws.
     val paneEntryOrNull = if (selected == SettingsSection.HelpAndSupport) null else paneEntryFocus
 
     val authState by state.authState.collectAsStateWithLifecycle()
     val user by state.currentUser.collectAsStateWithLifecycle()
     val language by state.language.collectAsStateWithLifecycle()
 
-    // NavHost keeps the outgoing page composed while a tab switch settles, and a transparent
-    // root let the two content areas draw into the same box.
     Box(modifier = modifier.fillMaxSize().background(HomeSpec.Background)) {
     Row(
-        // The frame's 10dp: shell content starts at 96, the frame draws from 106.
         modifier = Modifier
             .fillMaxSize()
-            // Only the dialog's own scrim dims the page — no blur: the design's backdrop
-            // blur needs API 31+ and cannot reach outside the page from a Dialog window.
             .padding(top = 10.dp),
         horizontalArrangement = Arrangement.spacedBy(HomeSpec.SettingsPaneGap),
     ) {
@@ -158,23 +113,16 @@ internal fun SettingsScreen(
                 SectionItem(
                     section = section,
                     onSelect = { selected = section },
-                    // OK enters the pane this section shows. Help composes no focusable row, so
-                    // there is nowhere to go and the press stays on the row.
                     onConfirmed = {
                         if (section != SettingsSection.HelpAndSupport) {
                             runCatching { paneFirstFocus.requestFocus() }
                         }
                     },
-                    // Only the first entry is the bar's Down target.
                     requester = if (index == 0) contentEntryFocus else null,
-                    // Up from the first row lands on the Setting tab (not the Chat tab).
                     upRequester = if (index == 0) topBarFocus else null,
-                    // A pane row going Left comes back to the chosen section.
                     sectionFocus = if (section == selected) selectedSectionFocus else null,
                     rightRequester = paneEntryOrNull,
-                    // The last item ends the list: Down must not escape below it.
                     cancelDown = section == SettingsSection.entries.last(),
-                    // Help composes no pane row and is the last entry: only Up may move.
                     cancelLeft = section == SettingsSection.HelpAndSupport,
                     cancelRight = section == SettingsSection.HelpAndSupport,
                 )
@@ -188,13 +136,10 @@ internal fun SettingsScreen(
             when (selected) {
                 SettingsSection.Accounts -> {
                     PaneTitle(stringResource(R.string.settings_account))
-                    // Four display rows (unfilled, like the About pane's) and the one
-                    // actionable row the frames draw.
                     DisplayRow(stringResource(R.string.settings_account_row_id), user?.id?.toString() ?: "—")
                     DisplayRow(stringResource(R.string.settings_account_row_username), orDash(user?.username ?: ""))
                     DisplayRow(
                         stringResource(R.string.settings_account_row_phone),
-                        // Shown in full, per the design (no masking).
                         orDash(user?.phoneNumber ?: ""),
                     )
                     DisplayRow(stringResource(R.string.settings_account_row_bio), orDash(user?.bio ?: ""))
@@ -244,10 +189,7 @@ internal fun SettingsScreen(
                             selected = option == language,
                             onSelect = { state.setLanguage(option) },
                             leftRequester = selectedSectionFocus,
-                            // OK on the section row lands on the FIRST language; Right keeps
-                            // its remembered-row behaviour through entryRequester.
                             firstRequester = if (index == 0) paneFirstFocus else null,
-                            // Right from the list lands on the remembered row, else the first.
                             entryRequester = if (option == (lastLanguageFocus ?: Language.entries.first())) {
                                 paneEntryFocus
                             } else {
@@ -262,9 +204,6 @@ internal fun SettingsScreen(
 
                 SettingsSection.HelpAndSupport -> {
                     PaneTitle(stringResource(R.string.settings_help))
-                    // Display-only, per the product decision: not focusable, and confirming
-                    // it does nothing. The frame stacks label over address, but a 48dp row
-                    // with 12dp padding only leaves 24dp — so they share one line here.
                     Row(
                         modifier = Modifier
                             .testTag("settings-help-contact")
@@ -292,8 +231,6 @@ internal fun SettingsScreen(
     }
 
         if (showLogOut) {
-            // The shared component: a real Dialog, so the scrim covers the whole window
-            // (top bar included) and the panel centres in the frame, like the design.
             ConfirmDialog(
                 title = stringResource(R.string.settings_logout_dialog_title),
                 text = stringResource(R.string.settings_logout_dialog_body),
@@ -333,14 +270,11 @@ internal fun SettingsScreen(
                     ConfirmDialog(
                         title = stringResource(R.string.settings_update_available, dialog.version),
                         text = if (dialog.notes.isBlank()) noNotes else dialog.notes,
-                        // Release notes can run long; the panel scrolls them.
                         scrollableBody = true,
                         onDismiss = { updateDialog = null },
                         confirmLabel = stringResource(R.string.settings_update_download),
                         cancelLabel = stringResource(R.string.settings_update_later),
                         onConfirm = {
-                            // Hand it to the system and leave the panel up: a box with no
-                            // browser shows its own prompt, and only Back or Cancel closes
                             if (openDownloadPage != null) {
                                 openDownloadPage(DownloadPageUrl)
                             } else {
@@ -356,7 +290,6 @@ internal fun SettingsScreen(
     }
 }
 
-/** The update flow's dialog states: nothing at all while a check is in flight. */
 private sealed interface UpdateDialog {
     data object UpToDate : UpdateDialog
     data class Available(val version: String, val notes: String) : UpdateDialog
@@ -369,10 +302,6 @@ private fun UpdateFailure.messageRes(): Int = when (this) {
     UpdateFailure.Parse -> R.string.settings_update_failed_parse
 }
 
-/**
- * Hands the download page to the system. A TV without a browser answers with its own prompt
- * ("you don't have an app to do that"), and a box without even that fails silently — either way
- */
 private fun openInBrowser(context: Context, url: String) {
     runCatching {
         context.startActivity(
@@ -393,18 +322,13 @@ private enum class SettingsSection(val labelRes: Int, val icon: ImageVector) {
 @Composable
 private fun SectionItem(
     section: SettingsSection,
-    /** Called when this row takes focus: focus IS the selection. */
     onSelect: () -> Unit,
-    /** Called when OK lands on it: hand focus to the pane this section shows. */
     onConfirmed: () -> Unit,
     requester: FocusRequester? = null,
-    /** The chosen row's own requester, so a pane row's Left can return to it. */
     sectionFocus: FocusRequester? = null,
     rightRequester: FocusRequester? = null,
     cancelDown: Boolean = false,
-    /** Up target for the first row: the Setting tab. */
     upRequester: FocusRequester? = null,
-    /** The Help entry is the list's end: only Up may move out of it. */
     cancelLeft: Boolean = false,
     cancelRight: Boolean = false,
 ) {
@@ -413,12 +337,8 @@ private fun SectionItem(
     Row(
         modifier = Modifier
             .testTag("settings-section-${section.name}")
-            // The design's list column stretches (alignItems: stretch), so the pill must
-            // span the whole 268dp row — without this the Row hugs icon+label and the
-            // highlight only covers ~half the row.
             .fillMaxWidth()
             .background(colors.fill, RoundedCornerShape(HomeSpec.Corner))
-            // The requester must sit before focusable() to be the focus target.
             .let { if (requester != null) it.focusRequester(requester) else it }
             .let { if (sectionFocus != null) it.focusRequester(sectionFocus) else it }
             .focusProperties {
@@ -428,7 +348,6 @@ private fun SectionItem(
                 if (cancelLeft) left = FocusRequester.Cancel
                 down = if (cancelDown) FocusRequester.Cancel else FocusRequester.Default
             }
-            // Focus selects, exactly like the top bar: no separate chosen-only look.
             .onFocusState { focused = it; if (it) onSelect() }
             .focusable()
             .onKeyEvent { event: KeyEvent ->
@@ -466,7 +385,6 @@ private fun SectionItem(
     }
 }
 
-/** A display-only row: label on the left, value on the right, no fill (per the frame). */
 @Composable
 private fun DisplayRow(label: String, value: String) {
     Row(
@@ -480,8 +398,6 @@ private fun DisplayRow(label: String, value: String) {
             style = MaterialTheme.typography.titleMedium,
         )
         Spacer(Modifier.width(8.dp))
-        // The value takes the leftover width rather than its natural one, so a long bio
-        // ellipsizes there instead of pushing the row past its 48dp line.
         Text(
             text = value,
             color = HomeSpec.OnSurfaceVariant,
@@ -502,9 +418,6 @@ private fun VersionRow(versionName: String) =
 private fun LicenseRow() =
     DisplayRow(stringResource(R.string.settings_about_row_license), stringResource(R.string.settings_about_license_value))
 
-/**
- * reports the request while it is in flight, so a slow network does not read as a dead button.
- */
 @Composable
 private fun CheckForUpdatesRow(
     leftRequester: FocusRequester? = null,
@@ -524,7 +437,6 @@ private fun CheckForUpdatesRow(
     firstRequester = firstRequester,
 )
 
-/** An actionable row: surface-container at rest, white with the dark label once focused. */
 @Composable
 private fun ActionRow(
     label: String,
@@ -532,7 +444,6 @@ private fun ActionRow(
     onClick: () -> Unit,
     leftRequester: FocusRequester? = null,
     entryRequester: FocusRequester? = null,
-    /** OK on the section row above lands here: this is the pane's first focusable row. */
     firstRequester: FocusRequester? = null,
 ) {
     var focused by remember { mutableStateOf(false) }
@@ -545,8 +456,6 @@ private fun ActionRow(
             .let { if (firstRequester != null) it.focusRequester(firstRequester) else it }
             .focusProperties {
                 if (leftRequester != null) left = leftRequester
-                // A pane with a single actionable row is a closed list: Up, Down and Right
-                // all stop here instead of letting the default search wander off.
                 up = FocusRequester.Cancel
                 down = FocusRequester.Cancel
                 right = FocusRequester.Cancel
@@ -572,7 +481,6 @@ private fun ActionRow(
         Icon(
             imageVector = Icons.Default.ChevronRight,
             contentDescription = null,
-            // On-surface at rest (matching its label), dark once the row turns white.
             tint = paneChevronColor(focused),
             modifier = Modifier.size(24.dp),
         )
@@ -586,17 +494,12 @@ private fun LanguageRow(
     onSelect: () -> Unit,
     leftRequester: FocusRequester? = null,
     entryRequester: FocusRequester? = null,
-    /** Carried by the pane's first row, where OK on the section row above lands. */
     firstRequester: FocusRequester? = null,
-    // The list is a closed column: Up at the first row, Down at the last one and Right
-    // anywhere stop there instead of letting the default search escape to the section list.
     cancelUp: Boolean = false,
     cancelDown: Boolean = false,
     onFocus: () -> Unit = {},
 ) {
     var focused by remember { mutableStateOf(false) }
-    // The design puts the white fill on FOCUS only; being the chosen language shows up as
-    // the trailing check instead (the top bar keeps a pill for its selection).
     val colors = actionableRowColors(focused)
     Row(
         modifier = Modifier
@@ -623,8 +526,6 @@ private fun LanguageRow(
                 }
             }
             .fillMaxSizeWidth()
-            // Fixed height, like the frame (452x48): a hug height made the selected row grow
-            // by the 24dp check (12+24+12) while the others stayed at 12+20+12.
             .height(48.dp)
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -635,7 +536,6 @@ private fun LanguageRow(
             Icon(
                 imageVector = Icons.Outlined.Done,
                 contentDescription = null,
-                // White on the dark row, dark on the focused white row.
                 tint = trailingIconColor(focused),
                 modifier = Modifier
                     .size(24.dp)
@@ -684,9 +584,7 @@ private fun languageLabel(lang: Language): String = when (lang) {
     Language.TraditionalChinese -> stringResource(R.string.settings_language_traditional_chinese)
 }
 
-/** Focus tracking helper: keeps every row's focus bookkeeping identical. */
 private fun Modifier.onFocusState(onChange: (Boolean) -> Unit): Modifier =
     this.onFocusChanged { state -> onChange(state.isFocused) }
 
-/** Rows span the pane's 452dp column. */
 private fun Modifier.fillMaxSizeWidth(): Modifier = this.then(Modifier.width(HomeSpec.SettingsPaneWidth))

@@ -47,20 +47,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 
-/**
- *
- * It lives outside the NavHost (see MainActivity's shell) so it survives
- * navigation: pages below it swap, the bar does not, which keeps its focus and
- * state stable and avoids re-composing it on every route change.
- *
- * Geometry and colours mirror the design: avatar 32dp, 20dp gap, the "Chat" /
- * "Setting" tabs, a 22dp search glyph, and the wordmark pinned right at 70%
- * opacity.
- */
 enum class TopNavTab { Chat, Setting }
 
 val TopNavBarHeight = 32.dp
-/** Design: bar top edge at y=32, page content starts at y=96. */
 val TopNavBarTopMargin = 32.dp
 val TopNavBarBottomGap = 32.dp
 val TopNavBarSideMargin = 58.dp
@@ -68,27 +57,12 @@ val TopNavBarSideMargin = 58.dp
 @Composable
 fun TopNavBar(
     onTabSelected: (TopNavTab) -> Unit,
-    /**
-     * OK on a tab: hand focus to that page's content. Separate from [onTabSelected], which
-     * fires the moment an entry takes focus (focus IS the selection) — merely moving across
-     * the bar must not also drop focus into a page.
-     */
     onTabConfirmed: (TopNavTab) -> Unit = {},
     onSearchClick: () -> Unit,
     modifier: Modifier = Modifier,
-    // The signed-in user's avatar. Injected rather than loaded here so the bar
-    // stays free of data dependencies and can render in previews/tests.
     avatar: @Composable () -> Unit = { TopNavDefaultAvatar() },
-    // deliberately inert for now.
 
-    // Focus bridge across the shell boundary. The bar lives outside the NavHost and
-    // the chat list inside it, so the shell owns both requesters and hands them to
-    // both sides: Down from the bar lands on the selected chat row, and Back from
-    // the chat list returns to the bar's selected tab.
     selectedTabFocus: FocusRequester? = null,
-    /**
-     * The Setting tab's own requester: the settings page's first row routes Up here instead
-     */
     settingTabFocus: FocusRequester? = null,
     contentFocus: FocusRequester? = null,
 ) {
@@ -100,7 +74,6 @@ fun TopNavBar(
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            // Avatar: the design shows a 32dp circle holding an image.
             avatar()
             Spacer(Modifier.width(20.dp))
             TopNavTabButton(
@@ -133,11 +106,8 @@ fun TopNavBar(
                     .clip(RoundedCornerShape(4.dp))
                     .background(navPillColor(searchFocused) ?: Color.Transparent)
                     .focusProperties {
-                        // The bar only moves sideways and down (design annotations
-                        // #1-#3): Down leaves for the chat list, Up does nothing.
                         down = contentFocus ?: FocusRequester.Default
                         up = FocusRequester.Cancel
-                        // Last entry: Right stops here instead of escaping to the row below.
                         right = FocusRequester.Cancel
                     }
                     .onFocusChanged { searchFocused = it.isFocused }
@@ -173,7 +143,6 @@ fun TopNavBar(
                 modifier = Modifier.size(24.dp),
             )
             Spacer(Modifier.width(6.dp))
-            //  face is not bundled yet, so it falls back to the theme's Inter.
             Text(
                 text = "TELLYGRAM",
                 style = MaterialTheme.typography.titleSmall,
@@ -183,7 +152,6 @@ fun TopNavBar(
     }
 }
 
-/** Shown when no avatar is injected (previews, tests). */
 @Composable
 private fun TopNavDefaultAvatar() {
     Box(
@@ -197,18 +165,12 @@ private fun TopNavDefaultAvatar() {
 @Composable
 private fun TopNavTabButton(
     label: String,
-    // Design 3594:2138: a 16dp glyph sits 4dp before the label.
     icon: ImageVector,
-    // One testTag per node: the container keeps this stable name, and the focus/blur
-    // tag rides on the label below.
     containerTag: String,
     onFocused: () -> Unit,
-    /** OK on this entry: hand focus to the page's content. */
     onConfirmed: () -> Unit,
     downFocus: FocusRequester? = null,
     requester: FocusRequester? = null,
-    // The bar's edges: Left at the first entry and Right at the last one stop there,
-    // otherwise the default focus search can escape downward into the chips row.
     cancelLeft: Boolean = false,
     cancelRight: Boolean = false,
 ) {
@@ -218,7 +180,6 @@ private fun TopNavTabButton(
             .testTag(containerTag)
             .height(TopNavBarHeight)
             .clip(RoundedCornerShape(4.dp))
-            // Exactly one entry is filled at a time: the one holding focus. There is
             .background(navPillColor(focused) ?: Color.Transparent)
             .focusProperties {
                 down = downFocus ?: FocusRequester.Default
@@ -266,21 +227,12 @@ private fun TopNavTabButton(
 }
 
 private object TopNavColors {
-    /** Unfocused tab and logo label: the design's material-theme/sys/dark/on-surface. */
     val Label = Color(0xFFC7C6CA)
-    /** Label sitting on the filled pill: material-theme/sys/dark/inverse-on-surface. */
     val LabelActive = Color(0xFF1A1C1E)
-    /** The pill itself: material-theme/white, 81x32, 4dp rounded. */
     val Pill = Color(0xFFFFFFFF)
 }
 
-/**
- * The bar's two-state rule, kept out of the composables so it can be asserted: the
- * entry holding focus gets the white pill with the dark inverse label; the rest stay
- * unfilled and are labelled on-surface. (Design: Nav in frames 3239:2418 / 3240:2375.)
- */
 internal fun navPillColor(focused: Boolean): Color? = if (focused) TopNavColors.Pill else null
 
 internal fun navLabelColor(focused: Boolean): Color =
     if (focused) TopNavColors.LabelActive else TopNavColors.Label
-

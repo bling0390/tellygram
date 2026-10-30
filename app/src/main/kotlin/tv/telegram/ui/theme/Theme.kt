@@ -20,13 +20,6 @@ import androidx.tv.material3.Typography
 import androidx.tv.material3.darkColorScheme
 import androidx.tv.material3.lightColorScheme
 
-//   Dark palette = node 76:671 ("Dark"); type scale = node 76:599; shape = 76:807.
-// Sizes/weights AND the family match JetStream's Inter scale: Inter is bundled
-// in res/font (SIL OFL 1.1, see res/raw/inter_ofl.txt). Inter carries no CJK
-// glyphs, so Chinese copy falls back to the system CJK font automatically —
-// ships no light palette, so the light scheme below is kept from the original
-// tellygram theme.
-
 private val JetStreamDarkColors = darkColorScheme(
     primary = Color(0xFFA8C8FF),
     onPrimary = Color(0xFF003062),
@@ -59,7 +52,6 @@ private val JetStreamDarkColors = darkColorScheme(
     scrim = Color(0xFF000000),
 )
 
-// Kept from the original tellygram scheme (JetStream has no light palette yet).
 private val TellygramLightColors = lightColorScheme(
     primary = Color(0xFF5288C1),
     onPrimary = Color.White,
@@ -73,9 +65,6 @@ private val TellygramLightColors = lightColorScheme(
     onSurfaceVariant = Color(0xFF555555),
 )
 
-// Inter (SIL OFL 1.1) — static instances bundled in res/font so every API level
-// gets real weights (a variable font collapses to Regular below API 26, and this
-// app's minSdk is 21). Only the weights the type scale and call sites use ship.
 private val InterFamily = FontFamily(
     Font(R.font.inter_regular, weight = FontWeight.Normal),
     Font(R.font.inter_medium, weight = FontWeight.Medium),
@@ -83,7 +72,6 @@ private val InterFamily = FontFamily(
     Font(R.font.inter_bold, weight = FontWeight.Bold),
 )
 
-// JetStream type scale — Inter sizes/weights, rendered in Inter.
 private val JetStreamTypography = Typography(
     displayLarge = TextStyle(fontFamily = InterFamily, fontWeight = FontWeight.SemiBold, fontSize = 57.sp, lineHeight = 64.sp),
     displayMedium = TextStyle(fontFamily = InterFamily, fontWeight = FontWeight.Normal, fontSize = 45.sp, lineHeight = 52.sp),
@@ -102,8 +90,6 @@ private val JetStreamTypography = Typography(
     labelSmall = TextStyle(fontFamily = InterFamily, fontWeight = FontWeight.Medium, fontSize = 11.sp, lineHeight = 16.sp),
 )
 
-// JetStream shape scale: buttons + cards are 4dp. Circular icon buttons are
-// handled by call sites (CircleShape), not this scale.
 private val JetStreamShapes = Shapes(
     extraSmall = RoundedCornerShape(4.dp),
     small = RoundedCornerShape(4.dp),
@@ -117,10 +103,6 @@ fun TellygramTheme(
     themeMode: tv.telegram.ui.ThemeMode = tv.telegram.ui.ThemeMode.Dark,
     content: @Composable () -> Unit,
 ) {
-    // Compose loads res/font faces asynchronously: the first use of a weight
-    // paints with the system fallback and then swaps to Inter, which reads as a
-    // brief text flash. Warm the family up front so navigating never hits a cold
-    // font face. (This Compose version's preload() takes the family only.)
     val fontResolver = LocalFontFamilyResolver.current
     LaunchedEffect(fontResolver) {
         fontResolver.preload(InterFamily)

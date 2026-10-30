@@ -1,19 +1,11 @@
 package tv.telegram.ui.settings
 
-/**
- * "v1.0.129" or "1.0.129-debug" -> "1.0.129"; null when the tag is not a dotted number (the
- * About pane only offers an update when it can compare versions).
- */
 internal fun releaseVersion(tag: String): String? {
     val trimmed = tag.trim().removePrefix("v").removePrefix("V")
     val core = trimmed.substringBefore('-').trim()
     return core.takeIf { Regex("""^\d+(\.\d+)*$""").matches(it) }
 }
 
-/**
- * Segment-wise numeric comparison: 1.0.100 is newer than 1.0.99 (a string compare would not see
- * that), and a missing segment counts as zero.
- */
 internal fun isNewerVersion(candidate: String, current: String): Boolean {
     val a = candidate.split('.').mapNotNull { it.toIntOrNull() }
     val b = current.split('.').mapNotNull { it.toIntOrNull() }
@@ -25,11 +17,6 @@ internal fun isNewerVersion(candidate: String, current: String): Boolean {
     return false
 }
 
-/**
- * Release notes are Markdown; the TV dialog shows plain text. Headings lose their hashes,
- * bullets become a middle dot, and inline markers (**bold**, `code`, [label](url)) keep only
- * their text.
- */
 internal fun plainChangelog(markdown: String): String {
     val lines = markdown.replace("\r\n", "\n").split('\n').map { raw ->
         var line = raw.trimEnd()

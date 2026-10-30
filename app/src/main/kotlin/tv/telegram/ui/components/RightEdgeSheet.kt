@@ -42,13 +42,6 @@ internal val RightSheetTitle = Color(0xFF121316)
 internal val RightSheetInk = Color(0xFF43474E)
 internal val RightSheetRule = Color(0xFF8E9099).copy(alpha = 0.1f)
 
-/**
- * A 384x512 sheet flush with the right edge, 14dp from the top, rounded only on the side that
- * faces the picture. Own window (Popup), so it sits above the player without resizing it; Back
- * falls through to the screen's own handler, as before.
- *
- * The caller owns visibility; [restoreFocus] gets focus back after the sheet leaves.
- */
 @Composable
 internal fun RightEdgeSheet(
     visible: Boolean,
@@ -57,8 +50,6 @@ internal fun RightEdgeSheet(
     restoreFocus: FocusRequester? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    // Restore only after a sheet that was actually open: the first composition has
-    // visible == false and must not steal focus.
     var wasOpen by remember { mutableStateOf(false) }
     LaunchedEffect(visible) {
         if (visible) {
@@ -74,8 +65,6 @@ internal fun RightEdgeSheet(
     val focus = remember { FocusRequester() }
     val topPx = with(LocalDensity.current) { 14.dp.roundToPx() }
     LaunchedEffect(Unit) {
-        // Same one-frame arming as the photo caption sheet: the popup window would
-        // otherwise grab focus before the request lands.
         withFrameNanos { }
         runCatching { focus.requestFocus() }
     }
@@ -109,7 +98,6 @@ internal fun RightEdgeSheet(
     }
 }
 
-/** Right edge, 14dp down: x = 576 on the 960 canvas. */
 private class RightEdgePosition(private val topPx: Int) : PopupPositionProvider {
     override fun calculatePosition(
         anchorBounds: IntRect,
