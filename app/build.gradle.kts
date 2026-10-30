@@ -1,7 +1,3 @@
-// ──────────────────────────────────────────────────────────────────────
-// app/build.gradle.kts — Tellygram Android TV app
-// See docs/ARCHITECTURE.md, docs/BUILD.md, docs/RELEASE.md
-// ──────────────────────────────────────────────────────────────────────
 import java.util.Properties
 
 plugins {
@@ -10,7 +6,6 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
-// Load signing config from gitignored keystore.properties
 val keystoreProperties = Properties().apply {
     val f = rootProject.file("keystore.properties")
     if (f.exists()) f.inputStream().use { load(it) }
@@ -20,23 +15,10 @@ android {
     namespace  = "tv.telegram"
     compileSdk = 35
 
-    // Load local.properties once (gitignored; never commit). Both
-    // defaultConfig and buildTypes need these values, so we lift the
-    // load out of defaultConfig into android-block scope.
     val localProps = Properties().apply {
         val f = rootProject.file("local.properties")
         if (f.exists()) f.inputStream().use { load(it) }
     }
-    // Credentials can arrive three ways, in priority order:
-    //   1. -P property        (scripted local builds)
-    //   2. environment        (CI: the runner exports them after masking them
-    //                         in the log, so they are never a command-line
-    //                         argument and never appear in logs)
-    //   3. local.properties   (developer machine; gitignored)
-    // Personal-build CI must NOT go through local.properties: that file lives
-    // in the work tree, and the values it feeds end up in generated
-    // BuildConfig.java and in the APK's DEX — which is expected for the user's
-    // own credential, but it must not be left behind for the next job.
     fun credential(name: String): String =
         (
             providers.gradleProperty(name).orNull
@@ -47,56 +29,28 @@ android {
     val tgApiId   = credential("TG_API_ID")
     val tgApiHash = credential("TG_API_HASH")
 
-    // Proxy config — applied ONLY in buildTypes.debug below; release
-    // gets empty defaults so TdClient.enableProxy() no-ops. Keeps
-    // developer proxy infrastructure out of distributed release APKs.
-    // Empty host or 0 port in debug also makes enableProxy() a no-op,
-    // so leaving these unset is fine for devs outside firewall regions.
     val proxyHost = localProps.getProperty("PROXY_HOST", "")
     val proxyPort = localProps.getProperty("PROXY_PORT", "")
     val proxyType = localProps.getProperty("PROXY_TYPE", "socks5")
     val proxyUser = localProps.getProperty("PROXY_USER", "")
     val proxyPass = localProps.getProperty("PROXY_PASS", "")
 
-    // Release version: three parts, bumped by hand when a release goes out (the git
-    // tag mirrors it). Local builds never touch it, so the repo does not churn.
     val baseVersion = "1.2.1"
 
-    // The BUILD_NUMBER that followed the 1.1.0 release. Debug builds are named
-    // 1.1.<BUILD_NUMBER - debugPatchBase>-debug so a release resets the visible patch
-    // (1.1.1-debug, 1.1.2-debug, …) while versionCode keeps climbing — resetting both would
-    // drop versionCode below the installed debug build, which Android refuses to install
-    // (2026-10-21). Bump this to the current counter whenever a release goes out.
     val debugPatchBase = 171
     val baseParts = baseVersion.split(".").mapNotNull { it.toIntOrNull() }
     val baseMajor = baseParts.getOrNull(0) ?: 1
     val baseMinor = baseParts.getOrNull(1) ?: 0
     val basePatch = baseParts.getOrNull(2) ?: 0
 
-    // The build number is what Android actually compares (and what tells one
-    // build from another). Local builds bump BUILD_NUMBER in local.properties
-    // after each assembleDebug (doLast block below); CI passes the workflow run
-    // number, so every personal build is monotonically newer than the last.
-    // Android only compares versionCode, and it must never go backwards.
-    // Deriving it from the version keeps the two from drifting: 1.0.2 -> 10002.
     val versionParts = baseVersion.split(".").mapNotNull { it.toIntOrNull() }
     require(versionParts.isNotEmpty()) { "baseVersion must look like 1.2.3" }
     val derivedVersionCode = versionParts[0] * 10000 +
         (versionParts.getOrNull(1) ?: 0) * 100 +
         (versionParts.getOrNull(2) ?: 0)
 
-    // Local dev counter: lives in local.properties (untracked) and is bumped after
-    // every assembleDebug. Debug builds iterate the patch on top of the release's
-    // major.minor — 1.0.3-debug, 1.0.4-debug … — so consecutive local installs are
-    // distinguishable, while release builds keep using baseVersion. It is also the
-    // About screen / log diagnostic, and CI passes its run number in its place.
     val buildNumber = (localProps.getProperty("BUILD_NUMBER", "0").toIntOrNull() ?: 0)
 
-    // Debug builds carry the local counter: 1.0.<counter>-debug with a matching
-    // versionCode, so consecutive local installs are distinguishable and compare
-    // correctly. Release builds are left exactly as defaultConfig defines them, so
-    // the hand-bumped version and the git tag stay in charge there.
-    // Robolectric renders Compose in JVM tests, so it needs the app's resources.
     testOptions {
         unitTests {
             isIncludeAndroidResources = true
@@ -108,9 +62,6 @@ android {
             if (variant.buildType == "debug") {
                 variant.outputs.forEach { output ->
                     output.versionCode.set(baseMajor * 10000 + baseMinor * 100 + buildNumber)
-                    // Display name restarts at 1 after a release; versionCode above does not.
-                    // Never reuse the release number: the first debug build after 1.2.1
-                    // is 1.2.2-debug, then 1.2.3, … (2026-10-27).
                     val patch = (buildNumber - debugPatchBase).coerceAtLeast(basePatch + 1)
                     output.versionName.set("$baseMajor.$baseMinor.$patch-debug")
                 }
@@ -125,23 +76,14 @@ android {
         versionCode   = baseMajor * 10000 + baseMinor * 100 + basePatch
         versionName   = baseVersion
 
-        // Telegram API credentials — applied to both debug AND release
-        // (same Telegram app, same credentials regardless of build type).
         buildConfigField("int",    "TG_API_ID",   tgApiId)
         buildConfigField("String", "TG_API_HASH", "\"$tgApiHash\"")
-        // Surfaced in the About screen / logs so a build can be identified
-        // without parsing the APK.
         buildConfigField("int",    "BUILD_NUMBER", buildNumber.toString())
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
     }
 
-    // Multi-ABI splits (D-005).
-    // Personal builds pass -Pabi=<arch> so a build produces exactly the artifact
-    // that was asked for: one ABI with splits on, or a plain universal APK with
-    // splits off when "universal" is requested. Without the property a developer
-    // build still emits every ABI plus the universal one.
     val requestedAbi = providers.gradleProperty("abi").orNull?.trim().orEmpty()
     val singleAbi = requestedAbi.isNotEmpty() && requestedAbi != "universal"
     splits {
@@ -175,12 +117,6 @@ android {
             isMinifyEnabled = false
             applicationIdSuffix = ".debug"
 
-            // Proxy ONLY in debug builds. PROXY_HOST comes from
-            // local.properties; from inside an Android emulator the host
-            // machine's loopback is 10.0.2.2 (NOT 127.0.0.1 — that's the
-            // emulator itself). If host is empty or port is 0,
-            // TdClient.enableProxy() no-ops, so leaving these unset is
-            // fine for devs outside firewall regions (China, Iran, etc.).
             buildConfigField("String", "PROXY_HOST", "\"$proxyHost\"")
             buildConfigField("int",    "PROXY_PORT", if (proxyPort.isNotBlank()) proxyPort else "0")
             buildConfigField("String", "PROXY_TYPE", "\"$proxyType\"")
@@ -198,11 +134,6 @@ android {
                 signingConfig = signingConfigs.getByName("release")
             }
 
-            // No proxy in release. TdClient.enableProxy() short-circuits
-            // on empty host / 0 port, so this is effectively a no-op call.
-            // Explicit BuildConfig fields (vs. omitting) make it obvious
-            // to anyone reading the source that release builds are
-            // proxy-free.
             buildConfigField("String", "PROXY_HOST", "\"\"")
             buildConfigField("int",    "PROXY_PORT", "0")
             buildConfigField("String", "PROXY_TYPE", "\"\"")
@@ -223,20 +154,6 @@ android {
         buildConfig = true
     }
 
-    // Custom APK filenames are applied in scripts/publish-apks.sh (rename
-    // pass after copy) rather than via androidComponents.onVariants —
-    // AGP 8.4's new variants API exposes VariantOutput as a read-only
-    // metadata object with no `filename` setter, and the legacy
-    // applicationVariants API has type-resolution issues in Kotlin DSL
-    // (.all { } is inferred as the stdlib Boolean predicate). The shell
-    // approach is simpler, fully version-controlled via build.gradle.kts
-    // reads, and survives AGP upgrades.
-    //
-    // Final names: tellygram-<version>-<buildType>-<abi|universal>.apk
-    //   - debug builds:   tellygram-1.0.0-debug-arm64-v8a.apk
-    //   - release builds: tellygram-1.0.0-release-arm64-v8a.apk
-    //   - universal:      tellygram-1.0.0-<buildType>-universal.apk
-
     packaging {
         resources.excludes += setOf(
             "/META-INF/{AL2.0,LGPL2.1}",
@@ -249,13 +166,7 @@ android {
         }
     }
 
-    // Auto-bump BUILD_NUMBER in local.properties after each successful
-    // assembleDebug. Next build will then be versionCode = buildNumber+1
-    // and the next build reports versionCode = N+1.
     afterEvaluate {
-        // ?.doLast works without the type-inference gotcha of ?.configure { }
-        // (configure has multiple overloads; Kotlin can't pick one from a
-        // lambda body that doesn't reference the receiver).
         tasks.findByName("assembleDebug")?.doLast {
             val newBuildNumber = buildNumber + 1
             val propsFile = rootProject.file("local.properties")
@@ -272,7 +183,6 @@ android {
 }
 
 dependencies {
-    // AndroidX core
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.appcompat)
     implementation(libs.androidx.lifecycle.runtime)
@@ -280,10 +190,8 @@ dependencies {
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)
 
-    // Navigation Compose (D-032) — see NavHost usage in MainActivity.kt
     implementation(libs.androidx.navigation.compose)
 
-    // Compose (BOM-aligned)
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.graphics)
@@ -293,42 +201,30 @@ dependencies {
     implementation(libs.androidx.compose.ui.tooling.preview)
     debugImplementation(libs.androidx.compose.ui.tooling.preview)
 
-    // Compose for TV (D-006, D-013)
     implementation(libs.androidx.tv.foundation)
     implementation(libs.androidx.tv.material)
 
-    // Java 8+ API desugaring (required for media3 1.7 on minSdk 21-25)
     coreLibraryDesugaring(libs.desugar.jdk.libs)
 
-    // ExoPlayer for video playback
     implementation(libs.androidx.media3.exoplayer)
     implementation(libs.androidx.media3.ui)
     implementation(libs.androidx.media3.common)
     implementation(libs.androidx.media3.datasource)
     implementation(libs.androidx.media3.ui.compose)
 
-    // Coil for image loading
     implementation(libs.coil.compose)
 
-    // TDLib (D-002, D-026, D-027, D-029) — JNI bindings via libtd module
-    //   libtdjni.so + TdApi.java vendored under :libtd
-    //   Loaded at runtime by Client.create() via System.loadLibrary("tdjni")
     implementation(project(":libtd"))
 
-    // QR rendering (D-003)
     implementation(libs.zxing.core)
 
-    // Unit / JVM tests
     testImplementation(libs.junit4)
     testImplementation(libs.robolectric)
     testImplementation(libs.androidx.test.ext.junit)
     testImplementation(platform(libs.androidx.compose.bom))
     testImplementation(libs.androidx.compose.ui.test.junit4)
-    // Robolectric unit tests also need the test-host Activity declared in the
-    // debug manifest, which is what this artifact contributes.
     debugImplementation(libs.androidx.compose.ui.test.manifest)
 
-    // Instrumented tests (won't run on vultr — they're for completeness)
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.androidx.test.espresso.core)
 }
