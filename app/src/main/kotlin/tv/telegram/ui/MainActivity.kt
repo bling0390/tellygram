@@ -741,8 +741,8 @@ private fun RailItem(
 
 /**
  * True only for the routes that still live behind the legacy navigation rail. The shell
- * pages (HomeScreen, SettingsScreen) draw the global top bar instead — showing both was
- * reserved on top.
+ * pages (HomeScreen, SettingsScreen) draw the global top bar instead; showing both left the
+ * rail's toggle hidden under the bar.
  */
 internal fun showsRail(route: String?): Boolean =
     route == Routes.HOME_CHATS || route == Routes.HOME_SEARCH

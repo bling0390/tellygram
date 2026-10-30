@@ -12,8 +12,9 @@ import tv.telegram.td.TdFileRepository
 import tv.telegram.ui.audio.SpectrumRenderersFactory
 
 /**
- * what our players need — the decoder fallback TV boxes require, the audio focus ExoPlayer takes
- * on our behalf, and the TdDataSource that plays straight out of TDLib.
+ * Builds a player with exactly what our screens need — the decoder fallback TV boxes require,
+ * the audio focus ExoPlayer takes on our behalf, and the TdDataSource that plays straight out
+ * of TDLib.
  *
  * Each screen builds and releases its own instance: playback never outlives its screen (decision
  * 4), so there is no shared instance to leak or to keep in sync. PlayerScreen still builds its
@@ -23,8 +24,8 @@ internal fun buildAudioPlayer(
     context: Context,
     fileRepo: TdFileRepository,
     /**
-     * player — the switch decision A1 asked for, so a caller that does not want the ring pays
-     * nothing for it.
+     * Optional audio processor for the spectrum ring. Null builds a plain player, so a caller
+     * that does not want the ring pays nothing for it.
      */
     spectrum: AudioProcessor? = null,
 ): ExoPlayer = ExoPlayer.Builder(context)

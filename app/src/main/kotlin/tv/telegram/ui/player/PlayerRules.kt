@@ -7,9 +7,9 @@ import tv.telegram.td.MediaType
  * The list a player walks with prev/next: the indices of the loaded items whose type is [type],
  * in display order.
  *
- * end of the loaded list, and it extends by itself when loadMore appends, because callers rebuild
- * this from the same reactive list. The type is a parameter so the video player and the audio
- * player read one rule instead of two that can drift.
+ * It is not bounded by the end of the loaded list: it extends by itself when loadMore appends,
+ * because callers rebuild this from the same reactive list. The type is a parameter so the video
+ * player and the audio player read one rule instead of two that can drift.
  */
 internal fun walkIndices(items: List<MediaItem>, type: MediaType): List<Int> =
     items.mapIndexedNotNull { index, item -> index.takeIf { item.type == type } }

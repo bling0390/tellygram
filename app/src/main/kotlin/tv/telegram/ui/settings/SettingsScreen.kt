@@ -79,8 +79,8 @@ import tv.telegram.ui.components.ConfirmDialog
  * shell supplies the 58dp side margin, so this screen only adds the 10dp that lifts
  * its content from the shell's 96dp origin to the frame's 106dp.
  *
- * Row rules, straight from the frames: the section holding focus is a white pill with the
- * the top bar); display-only rows (Version, License) are unfilled; the actionable row
+ * Row rules, straight from the frames: the section holding focus is a white pill with its rows
+ * filled beneath it; display-only rows (Version, License) are unfilled; the actionable row
  * ("Check for updates") sits on a surface-container panel and turns white while focused.
  * Everything is 4dp rounded.
  */
@@ -94,7 +94,7 @@ internal fun SettingsScreen(
     versionName: String = BuildConfig.VERSION_NAME,
     /**
      * The shell hands the top bar's Down here: it must point at something *this* page
-     * actually composes, otherwise the bar's focus search targets an unattached requester
+     * actually composes, otherwise the bar's focus search targets an unattached requester and
      * leaves focus on the bar.
      */
     contentEntryFocus: FocusRequester? = null,

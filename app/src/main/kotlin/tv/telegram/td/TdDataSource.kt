@@ -18,8 +18,8 @@ import java.io.RandomAccessFile
  * FROM BYTE 0: the download only ever starts at 0 and appends. Nothing else is
  * trusted, because TDLib's byte counters describe "bytes on disk" rather than
  * a contiguous prefix, and an offset (windowed) download leaves a hole below it
- * ended in "UnrecognizedInputFormatException" / "Invalid NAL length" for
- * exactly that reason — the extractor was fed bytes nobody had written.
+ * that the extractor reads as data and chokes on — it was fed bytes nobody had
+ * written.
  *
  * The consequence is deliberate: seeking into a region that has not downloaded
  * yet means WAITING for the download to reach it, and gives up with a retryable
@@ -78,7 +78,8 @@ class TdDataSource(
      * Opens the streamed file, tolerating the window-reset race.
      *
      * A reset deletes the file, but TDLib's next UpdateFile can still carry the
-     * path and wait for the recreated file instead of failing playback.
+     * old temp path, so the first RandomAccessFile hits ENOENT: drop that path
+     * and wait for the recreated file instead of failing playback.
      */
     private fun openStreamFile(fileId: Int, position: Long): RandomAccessFile? {
         val deadline = System.currentTimeMillis() + PATH_OPEN_WAIT_MS

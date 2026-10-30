@@ -43,8 +43,9 @@ internal val RightSheetInk = Color(0xFF43474E)
 internal val RightSheetRule = Color(0xFF8E9099).copy(alpha = 0.1f)
 
 /**
- * rounded only on the side that faces the picture. Own window (Popup), so it sits above the
- * player without resizing it; Back falls through to the screen's own handler, as before.
+ * A 384x512 sheet flush with the right edge, 14dp from the top, rounded only on the side that
+ * faces the picture. Own window (Popup), so it sits above the player without resizing it; Back
+ * falls through to the screen's own handler, as before.
  *
  * The caller owns visibility; [restoreFocus] gets focus back after the sheet leaves.
  */

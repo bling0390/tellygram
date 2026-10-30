@@ -119,8 +119,8 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 
 /**
  * The visual half of a media card, shared by the grid and the album popup so the two cannot
- * album's "+N". Focus and key handling stay with each caller — the grid drives a four-way
- * graph, the popup only Left/Right.
+ * drift apart — down to details like the album's "+N". Focus and key handling stay with each
+ * caller: the grid drives a four-way graph, the popup only Left/Right.
  */
 @Composable
 internal fun BoxScope.MediaCardContent(item: MediaItem, state: HomeState) {

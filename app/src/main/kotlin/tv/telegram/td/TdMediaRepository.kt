@@ -507,7 +507,8 @@ internal fun shouldStopPaging(added: Int, extraPages: Int, maxExtraPages: Int = 
 
 /**
  * Album members in display order. TDLib hands messages back newest-first, but an album reads in
- * next/previous share this list, so both follow the same order. The card's cover is unaffected:
+ * chronological order, so this reverses them. next/previous share this list, so both follow the
+ * same order. The card's cover is unaffected:
  * it is the item the whole album hangs off, not members[0].
  */
 internal fun albumMembersInDisplayOrder(members: List<MediaItem>): List<MediaItem> = members.reversed()

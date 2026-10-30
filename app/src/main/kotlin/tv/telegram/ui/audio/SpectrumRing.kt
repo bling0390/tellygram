@@ -13,8 +13,8 @@ import kotlin.math.min
 import kotlin.math.sin
 
 /**
- * of bars, coloured along the radius, resting as a ring at the minimum radius whenever there is
- * nothing to show.
+ * A radial spectrum visual: the tap's band levels as a ring of bars, coloured along the radius,
+ * resting at the minimum radius whenever there is nothing to show.
  *
  * It only draws what the tap measured — a silent or unreadable stream is the resting ring, never a
  * decorative animation.

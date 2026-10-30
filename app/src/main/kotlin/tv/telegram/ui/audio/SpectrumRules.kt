@@ -12,8 +12,8 @@ import kotlin.math.sqrt
 import tv.telegram.ui.home.HomeSpec
 
 /**
- * The circular spectrum's maths, kept out of the drawing code so it can be unit tested
- * function to the smoothed band levels is decided here.
+ * The circular spectrum's maths, kept out of the drawing code so it can be unit tested:
+ * how raw band magnitudes become the smoothed 0..1 levels is decided here.
  *
  * The visual layer only ever sees the returned 0..1 band levels, so a wrong-looking ring can be
  * traced to a rule here rather than to the Canvas.

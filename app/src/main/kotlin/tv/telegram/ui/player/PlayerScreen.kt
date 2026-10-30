@@ -166,7 +166,7 @@ fun PlayerScreen(
     onClose: () -> Unit,
     onNavigateTo: (Int) -> Unit,
     /**
-     * already filtered to the types this screen plays. Null means the chat's loaded media.
+     * Items already filtered to the types this screen plays. Null means the chat's loaded media.
      */
     items: List<MediaItem>? = null,
 ) {
@@ -1283,7 +1283,9 @@ private fun Seeker(
 }
 
 /**
- * the video (which auto-plays and resumes from its saved position). Up returns to the seeker,
+ * The video strip under the seeker. Focus moves the highlight only; OK switches the video
+ * (which auto-plays and resumes from its saved position). Up returns to the seeker, Down hides
+ * the controller.
  */
 @Composable
 private fun VideoStrip(
