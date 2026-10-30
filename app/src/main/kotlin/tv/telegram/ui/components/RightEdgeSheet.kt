@@ -110,7 +110,6 @@ internal fun RightEdgeSheet(
 }
 
 /** Right edge, 14dp down: x = 576 on the 960 canvas. */
-/** Right edge, 14dp down: x = 576 on the 960 canvas. */
 private class RightEdgePosition(private val topPx: Int) : PopupPositionProvider {
     override fun calculatePosition(
         anchorBounds: IntRect,

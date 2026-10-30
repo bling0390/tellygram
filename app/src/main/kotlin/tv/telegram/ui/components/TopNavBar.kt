@@ -61,7 +61,6 @@ enum class TopNavTab { Chat, Setting }
 
 val TopNavBarHeight = 32.dp
 /** Design: bar top edge at y=32, page content starts at y=96. */
-/** Design: bar top edge at y=32, page content starts at y=96. */
 val TopNavBarTopMargin = 32.dp
 val TopNavBarBottomGap = 32.dp
 val TopNavBarSideMargin = 58.dp
@@ -185,7 +184,6 @@ fun TopNavBar(
 }
 
 /** Shown when no avatar is injected (previews, tests). */
-/** Shown when no avatar is injected (previews, tests). */
 @Composable
 private fun TopNavDefaultAvatar() {
     Box(
@@ -205,7 +203,6 @@ private fun TopNavTabButton(
     // tag rides on the label below.
     containerTag: String,
     onFocused: () -> Unit,
-    /** OK on this entry: hand focus to the page's content. */
     /** OK on this entry: hand focus to the page's content. */
     onConfirmed: () -> Unit,
     downFocus: FocusRequester? = null,
@@ -270,12 +267,9 @@ private fun TopNavTabButton(
 
 private object TopNavColors {
     /** Unfocused tab and logo label: the design's material-theme/sys/dark/on-surface. */
-    /** Unfocused tab and logo label: the design's material-theme/sys/dark/on-surface. */
     val Label = Color(0xFFC7C6CA)
     /** Label sitting on the filled pill: material-theme/sys/dark/inverse-on-surface. */
-    /** Label sitting on the filled pill: material-theme/sys/dark/inverse-on-surface. */
     val LabelActive = Color(0xFF1A1C1E)
-    /** The pill itself: material-theme/white, 81x32, 4dp rounded. */
     /** The pill itself: material-theme/white, 81x32, 4dp rounded. */
     val Pill = Color(0xFFFFFFFF)
 }

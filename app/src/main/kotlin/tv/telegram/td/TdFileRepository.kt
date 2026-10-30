@@ -113,7 +113,6 @@ class TdFileRepository(
         streamMonitors.computeIfAbsent(fileId) { Any() }
 
     /** Wake any thread blocked in awaitStreamPath/awaitStreamBytes for [fileId]. */
-    /** Wake any thread blocked in awaitStreamPath/awaitStreamBytes for [fileId]. */
     private fun wakeStreamWaiters(fileId: Int) {
         streamMonitors[fileId]?.let { m ->
             synchronized(m) { (m as java.lang.Object).notifyAll() }
@@ -289,7 +288,6 @@ class TdFileRepository(
     fun stateFor(fileId: Int): FileDownloadState? = _states.value[fileId]
 
     /** Mark [fileId] as recently used for LRU eviction purposes. */
-    /** Mark [fileId] as recently used for LRU eviction purposes. */
     fun touch(fileId: Int) {
         lastAccess[fileId] = System.currentTimeMillis()
     }
@@ -418,7 +416,6 @@ class TdFileRepository(
      * already covered or the file is complete.
      */
     /** Current window size used for windowed streaming (bytes). */
-    /** Current window size used for windowed streaming (bytes). */
     val streamWindowBytes: Long get() = windowBytes
 
     // TDLib's DownloadFile offset/limit are int32. windowBytes is clamped to
@@ -426,7 +423,6 @@ class TdFileRepository(
     // Int.MAX_VALUE for >2GB files — clamp instead of wrapping negative.
     private fun Long.toIntOffset(): Int = coerceIn(0L, Int.MAX_VALUE.toLong()).toInt()
 
-    /** True when [bytes] fits in 60% of the free space on the files volume. */
     /** True when [bytes] fits in 60% of the free space on the files volume. */
     private fun hasRoomFor(bytes: Long): Boolean {
         if (bytes <= 0L) return true
@@ -495,7 +491,6 @@ class TdFileRepository(
     }
 
     /** Block until TDLib has assigned a local path for the streaming file. */
-    /** Block until TDLib has assigned a local path for the streaming file. */
     fun awaitStreamPath(fileId: Int, timeoutMs: Long = 15_000): String? {
         val monitor = monitorFor(fileId)
         val deadline = System.currentTimeMillis() + timeoutMs
@@ -515,7 +510,6 @@ class TdFileRepository(
         }
     }
 
-    /** Drop the streaming state (called when leaving the player). */
     /** Drop the streaming state (called when leaving the player). */
     fun stopStreaming(fileId: Int) {
         streamingStates.remove(fileId)
@@ -546,7 +540,6 @@ class TdFileRepository(
     }
 
     /** Delete all fully-downloaded files not currently in use (LRU order). */
-    /** Delete all fully-downloaded files not currently in use (LRU order). */
     private fun evictInactiveLocalFiles() {
         val inUse = streamingStates.keys + pendingDownloads.keys + previewDownloads.keys
         val evictable = _states.value.entries
@@ -566,7 +559,6 @@ class TdFileRepository(
      * requirement.
      */
     /** Blocks until the tail probe finishes for [fileId], or the timeout expires. */
-    /** Blocks until the tail probe finishes for [fileId], or the timeout expires. */
     fun awaitTailProbe(fileId: Int, timeoutMs: Long = 12_000L) {
         try {
             probeLatches[fileId]?.await(timeoutMs, TimeUnit.MILLISECONDS)
@@ -575,7 +567,6 @@ class TdFileRepository(
         }
     }
 
-    /** Waits for the size to be known (updateFile), then probes once. */
     /** Waits for the size to be known (updateFile), then probes once. */
     private suspend fun probeTailWhenSized(fileId: Int) {
         val deadline = System.currentTimeMillis() + TAIL_PROBE_TIMEOUT_MS / 2
@@ -651,7 +642,6 @@ class TdFileRepository(
         )
     }
 
-    /** Back to the whole-file sequential download after a probe. */
     /** Back to the whole-file sequential download after a probe. */
     private fun resumeSequential(fileId: Int) {
         client.send(TdApi.DownloadFile(fileId, 1, 0, 0, false))

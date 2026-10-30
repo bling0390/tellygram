@@ -113,18 +113,14 @@ private val CaptionBody = Color(0xFF43474E)
 private val CaptionRule = Color(0xFF8E9099).copy(alpha = 0.1f)
 
 /** One Up/Down press scrolls the caption body by this much. */
-/** One Up/Down press scrolls the caption body by this much. */
 private val CaptionScrollStep = 64.dp
 
-/** Design: content column 836dp inside the full-width bar (960 canvas, 62 a side). */
 /** Design: content column 836dp inside the full-width bar (960 canvas, 62 a side). */
 private val BarContentWidth = 836.dp
 
 /** How long the bar stays up after the last interaction. */
-/** How long the bar stays up after the last interaction. */
 private const val BarAutoHideMs = 4_000L
 
-/** Indices of the photo items, which is what Left/Right step through here. */
 /** Indices of the photo items, which is what Left/Right step through here. */
 internal fun photoIndices(items: List<MediaItem>): List<Int> =
     items.mapIndexedNotNull { i, m -> if (m.type == MediaType.Photo) i else null }
@@ -525,7 +521,6 @@ private fun ErrorPane(onRetry: () -> Unit) {
 }
 
 /** 40dp circle, 20dp glyph; white when active or focused, surface-container otherwise. */
-/** 40dp circle, 20dp glyph; white when active or focused, surface-container otherwise. */
 @Composable
 private fun RoundIconButton(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
@@ -533,7 +528,6 @@ private fun RoundIconButton(
     testTag: String,
     onFocus: () -> Unit = {},
     onBounds: (Rect) -> Unit = {},
-    /** Optional external handle so the strip can hand focus up to the first button. */
     /** Optional external handle so the strip can hand focus up to the first button. */
     requester: FocusRequester? = null,
     downFocus: FocusRequester? = null,
@@ -587,7 +581,6 @@ private fun ThumbStrip(
     items: List<MediaItem>,
     state: HomeState,
     fileStates: Map<Int, FileDownloadState>,
-    /** Only claim focus while the bar is up; a hidden bar must leave it on the photo. */
     /** Only claim focus while the bar is up; a hidden bar must leave it on the photo. */
     visible: Boolean,
     currentFocus: FocusRequester,
@@ -720,14 +713,12 @@ private fun ThumbCell(
 }
 
 /** Menu popup (216 wide, radius 16, background, elevation): rows select with OK. */
-/** Menu popup (216 wide, radius 16, background, elevation): rows select with OK. */
 @Composable
 private fun PreviewMenu(
     rows: List<String>,
     selected: Int,
     onSelect: (Int) -> Unit,
     onDismiss: () -> Unit,
-    /** The button it hangs off, in window coordinates: the menu floats 16dp above it. */
     /** The button it hangs off, in window coordinates: the menu floats 16dp above it. */
     anchor: Rect?,
 ) {

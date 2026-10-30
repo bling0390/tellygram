@@ -168,7 +168,6 @@ internal object HomeSpec {
 }
 
 /** Which of the home screen's three content regions currently holds focus. */
-/** Which of the home screen's three content regions currently holds focus. */
 internal enum class HomeRegion { ChatList, Chips, Grid }
 
 /**
@@ -177,7 +176,6 @@ internal enum class HomeRegion { ChatList, Chips, Grid }
  * the two sides have to share the same requester objects.
  */
 internal class HomeFocus(
-    /** What the top bar's Down lands on: the Archived Chats / Back row. */
     /** What the top bar's Down lands on: the Archived Chats / Back row. */
     val entry: FocusRequester,
     /**
@@ -203,7 +201,6 @@ internal class HomeFocus(
      */
     val archivedRow: FocusRequester,
     /** The card a closed viewer asked us to focus again. */
-    /** The card a closed viewer asked us to focus again. */
     val returnGrid: FocusRequester = FocusRequester(),
 ) {
     /**
@@ -227,7 +224,6 @@ internal fun HomeScreen(
     onOpenPlayer: (Int) -> Unit = {},
     onOpenPhoto: (Int) -> Unit = {},
     onOpenAudio: (Int) -> Unit = {},
-    /** A member picked inside the album popup: the shell routes it by type. */
     /** A member picked inside the album popup: the shell routes it by type. */
     onOpenMediaItem: (MediaItem) -> Unit = {},
     // Focus bridge from the shell: Down from the top bar lands on the selected chat
@@ -673,15 +669,12 @@ private fun ChatList(
     menuIsOwner: Boolean,
     menuReturnFocus: FocusRequester,
     /** Non-null while focus should return to that chat after the menu closes. */
-    /** Non-null while focus should return to that chat after the menu closes. */
     returnFocusChatId: Long?,
-    /** Called once focus actually landed back on that chat, so the pending id can be cleared. */
     /** Called once focus actually landed back on that chat, so the pending id can be cleared. */
     onReturnFocusHandled: () -> Unit,
     onMenuOpen: (ChatItem) -> Unit,
     onMenuClose: () -> Unit,
     onMenuAction: (ChatMenuAction) -> Unit,
-    /** Focus landed on this chat: select it now, and open it once focus settles. */
     /** Focus landed on this chat: select it now, and open it once focus settles. */
     onSelect: (ChatItem) -> Unit,
     /**
@@ -844,9 +837,7 @@ private fun ChatRow(
     onLongPress: () -> Unit,
     menuReturn: FocusRequester?,
     /** This row took focus: it is the selection now, and its media is queried shortly. */
-    /** This row took focus: it is the selection now, and its media is queried shortly. */
     onFocused: () -> Unit,
-    /** OK landed on this row: open the chat without waiting for focus to settle. */
     /** OK landed on this row: open the chat without waiting for focus to settle. */
     onConfirmed: () -> Unit,
 ) {
@@ -1055,7 +1046,6 @@ internal fun MediaFilterRow(
 private fun FilterChip(
     label: String,
     /** True for the filter in effect: it carries the check and is the list's return target. */
-    /** True for the filter in effect: it carries the check and is the list's return target. */
     selected: Boolean,
     isFirst: Boolean,
     isLast: Boolean,
@@ -1155,12 +1145,9 @@ private fun MediaGrid(
     onOpen: (Int) -> Unit,
     onOpenAudio: (Int) -> Unit = {},
     /** Confirming an album card opens the popup instead of a viewer. */
-    /** Confirming an album card opens the popup instead of a viewer. */
     onOpenAlbum: (MediaItem) -> Unit = {},
     /** Confirming a text card opens its content instead of a viewer. */
-    /** Confirming a text card opens its content instead of a viewer. */
     onOpenText: (MediaItem) -> Unit = {},
-    /** Land focus on the remembered cell; HomeScreen owns the scroll-then-request dance. */
     /** Land focus on the remembered cell; HomeScreen owns the scroll-then-request dance. */
     onEnterGrid: () -> Unit,
 ) {
@@ -1350,7 +1337,6 @@ private fun BoxScope.MediaGlyph(imageVector: ImageVector) {
 }
 
 /** The one glyph that genuinely differs from Material's set, so it ships as an asset. */
-/** The one glyph that genuinely differs from Material's set, so it ships as an asset. */
 @Composable
 private fun BoxScope.MediaGlyphFromRes(@DrawableRes res: Int) {
     Icon(
@@ -1363,7 +1349,6 @@ private fun BoxScope.MediaGlyphFromRes(@DrawableRes res: Int) {
     )
 }
 
-/** Album card: Collections glyph + "+N" (design: 48dp glyph, 8dp gap, 14/20 label). */
 /** Album card: Collections glyph + "+N" (design: 48dp glyph, 8dp gap, 14/20 label). */
 @Composable
 private fun BoxScope.MediaAlbumCell(count: Int) {
@@ -1395,6 +1380,5 @@ private fun BoxScope.MediaAlbumCell(count: Int) {
  * a broken one.
  */
 
-/** Every list row in the design spans the full 268dp column. */
 /** Every list row in the design spans the full 268dp column. */
 private fun Modifier.fillMaxSizeWidth(): Modifier = this.then(Modifier.width(HomeSpec.ListWidth))

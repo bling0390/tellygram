@@ -234,7 +234,6 @@ class TdDataSource(
     }
 
     /** Sleeps one poll interval, restoring the interrupt flag if asked to stop. */
-    /** Sleeps one poll interval, restoring the interrupt flag if asked to stop. */
     private fun sleepBriefly() {
         try {
             Thread.sleep(READ_POLL_MS)

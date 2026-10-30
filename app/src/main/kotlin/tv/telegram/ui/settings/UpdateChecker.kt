@@ -10,13 +10,10 @@ import java.net.URL
 internal const val DownloadPageUrl = "https://tellygram.app/personal/"
 
 /** What the settings screen learns from one check. */
-/** What the settings screen learns from one check. */
 internal sealed interface UpdateCheck {
-    /** The release is not newer than what is installed. */
     /** The release is not newer than what is installed. */
     data object UpToDate : UpdateCheck
 
-    /** A newer release: [notes] are the release body with its Markdown reduced to text. */
     /** A newer release: [notes] are the release body with its Markdown reduced to text. */
     data class Available(val version: String, val notes: String) : UpdateCheck
 

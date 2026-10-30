@@ -20,32 +20,25 @@ import tv.telegram.ui.home.HomeSpec
  */
 
 /** Bands drawn around the circle. */
-/** Bands drawn around the circle. */
 internal const val SpectrumBands = 32
 
 /** Samples per analysis window — ~23ms at 44.1kHz. */
-/** Samples per analysis window — ~23ms at 44.1kHz. */
 internal const val SpectrumFftSize = 1024
 
-/** Bottom and top of the band layout: 40Hz to 16kHz, log spaced in between. */
 /** Bottom and top of the band layout: 40Hz to 16kHz, log spaced in between. */
 internal const val SpectrumMinHz = 40f
 internal const val SpectrumMaxHz = 16_000f
 
 /** A band quieter than this reads as silence, so the noise floor does not dance. */
-/** A band quieter than this reads as silence, so the noise floor does not dance. */
 internal const val SpectrumFloorDb = -60f
 
-/** Per-frame smoothing: rises quickly, falls slowly, so the ring breathes instead of flickering. */
 /** Per-frame smoothing: rises quickly, falls slowly, so the ring breathes instead of flickering. */
 internal const val SpectrumAttack = 0.55f
 internal const val SpectrumRelease = 0.18f
 
 /** The lowest band's radius as a fraction of the outer radius: the ring never collapses. */
-/** The lowest band's radius as a fraction of the outer radius: the ring never collapses. */
 internal const val SpectrumMinRadius = 0.45f
 
-/** Hann window, which stops the window edges from smearing the spectrum. */
 /** Hann window, which stops the window edges from smearing the spectrum. */
 internal fun hannWindow(size: Int): FloatArray =
     FloatArray(size) { i -> (0.5 * (1.0 - cos(2.0 * PI * i / (size - 1)))).toFloat() }
@@ -144,7 +137,6 @@ internal fun bandEdges(
 }
 
 /** Mean magnitude per band. A band whose edges landed on one bin reads that bin; an empty one reads 0. */
-/** Mean magnitude per band. A band whose edges landed on one bin reads that bin; an empty one reads 0. */
 internal fun bandLevels(magnitudes: FloatArray, edges: IntArray): FloatArray {
     val bands = edges.size - 1
     return FloatArray(bands) { b ->
@@ -161,7 +153,6 @@ internal fun bandLevels(magnitudes: FloatArray, edges: IntArray): FloatArray {
 }
 
 /** Level as a 0..1 fraction between silence (0) and [floorDb] of headroom. */
-/** Level as a 0..1 fraction between silence (0) and [floorDb] of headroom. */
 internal fun normalizeDb(levels: FloatArray, floorDb: Float = SpectrumFloorDb): FloatArray =
     FloatArray(levels.size) { i ->
         val level = levels[i]
@@ -172,7 +163,6 @@ internal fun normalizeDb(levels: FloatArray, floorDb: Float = SpectrumFloorDb): 
         }.coerceIn(0f, 1f)
     }
 
-/** Per-band smoothing: jump toward a rising target, drift toward a falling one. */
 /** Per-band smoothing: jump toward a rising target, drift toward a falling one. */
 internal fun smooth(
     current: FloatArray,
@@ -186,7 +176,6 @@ internal fun smooth(
     from + (to - from) * k
 }
 
-/** Band level → radius as a fraction of the outer radius. */
 /** Band level → radius as a fraction of the outer radius. */
 internal fun radiusFraction(level: Float, min: Float = SpectrumMinRadius, max: Float = 1f): Float =
     min + (max - min) * level.coerceIn(0f, 1f)

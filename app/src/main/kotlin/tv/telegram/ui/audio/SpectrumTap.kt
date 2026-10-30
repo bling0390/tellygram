@@ -27,7 +27,6 @@ internal class PcmWindows(private val size: Int = SpectrumFftSize) {
     private var filled = 0
 
     /** Adds [count] samples, handing over a fresh window whenever one fills (at most one here). */
-    /** Adds [count] samples, handing over a fresh window whenever one fills (at most one here). */
     fun feed(samples: FloatArray, count: Int, onWindow: (FloatArray) -> Unit) {
         var read = 0
         while (read < count) {
@@ -42,7 +41,6 @@ internal class PcmWindows(private val size: Int = SpectrumFftSize) {
         }
     }
 
-    /** Drops a partial window: called when the stream is flushed or reset. */
     /** Drops a partial window: called when the stream is flushed or reset. */
     fun clear() {
         filled = 0
@@ -68,7 +66,6 @@ internal class SpectrumAudioProcessor(
     private var readable = false
     private var mono = FloatArray(0)
 
-    /** Told the stream's sample rate once it is known, so the band layout can follow it. */
     /** Told the stream's sample rate once it is known, so the band layout can follow it. */
     var onFormat: ((Int) -> Unit)? = null
 
@@ -129,13 +126,11 @@ internal class SpectrumAnalyzer(private val scope: CoroutineScope) {
     val bands: StateFlow<FloatArray> = _bands.asStateFlow()
 
     /** The band layout follows the stream's rate; the edges are recomputed when it is known. */
-    /** The band layout follows the stream's rate; the edges are recomputed when it is known. */
     @Volatile
     private var edges = bandEdges(44_100)
 
     private var previous = FloatArray(SpectrumBands)
 
-    /** Called on the playback thread: post and return. */
     /** Called on the playback thread: post and return. */
     fun offer(window: FloatArray) {
         incoming.trySend(window)
@@ -145,7 +140,6 @@ internal class SpectrumAnalyzer(private val scope: CoroutineScope) {
         if (sampleRate > 0) edges = bandEdges(sampleRate)
     }
 
-    /** E2: no readable PCM means the resting ring, never an error. */
     /** E2: no readable PCM means the resting ring, never an error. */
     fun idle() {
         previous = FloatArray(SpectrumBands)

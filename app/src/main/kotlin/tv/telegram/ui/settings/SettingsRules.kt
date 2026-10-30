@@ -5,7 +5,6 @@ import tv.telegram.ui.home.HomeSpec
 import tv.telegram.ui.components.RowColors
 
 /** Telegram may not have a value for a field; the pane shows an em dash then. */
-/** Telegram may not have a value for a field; the pane shows an em dash then. */
 internal fun orDash(value: String): String = value.ifBlank { "—" }
 
 /**

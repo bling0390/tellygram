@@ -14,10 +14,8 @@ import tv.telegram.ui.components.RowColors
  */
 
 /** Columns in the media grid (design: three 160dp cells). */
-/** Columns in the media grid (design: three 160dp cells). */
 internal const val GridColumns = 3
 
-/** Where the Back key sends focus, per the design's rules. */
 /** Where the Back key sends focus, per the design's rules. */
 internal enum class HomeBackTarget { SelectedChat, FirstGridCell, TopBar }
 
@@ -46,7 +44,6 @@ internal fun backTarget(region: HomeRegion?, gridIndex: Int): HomeBackTarget? = 
 }
 
 /** How a media card is drawn. Album carries its member count for the "+N". */
-/** How a media card is drawn. Album carries its member count for the "+N". */
 internal sealed interface MediaCellKind {
     data object Photo : MediaCellKind
     data object Video : MediaCellKind
@@ -68,7 +65,6 @@ internal fun MediaItem.cellKind(): MediaCellKind = when {
 }
 
 /** Seconds -> "m:ss", or "h:mm:ss" past an hour (matches the design's 01:59:59). */
-/** Seconds -> "m:ss", or "h:mm:ss" past an hour (matches the design's 01:59:59). */
 internal fun formatDuration(totalSeconds: Int): String {
     val s = totalSeconds.coerceAtLeast(0)
     val h = s / 3600
@@ -77,7 +73,6 @@ internal fun formatDuration(totalSeconds: Int): String {
     return if (h > 0) "%d:%02d:%02d".format(h, m, sec) else "%d:%02d".format(m, sec)
 }
 
-/** Colours of one chat row and its badges, decided in one place. */
 /** Colours of one chat row and its badges, decided in one place. */
 internal data class ChatRowColors(val fill: Color, val text: Color, val unreadDot: Color)
 
@@ -114,7 +109,6 @@ internal fun filterChipColors(focused: Boolean): RowColors = if (focused) {
 }
 
 /** What confirming a media card opens. */
-/** What confirming a media card opens. */
 internal enum class MediaOpenTarget { Player, AudioPlayer, PhotoPreview }
 
 /**
@@ -128,7 +122,6 @@ internal fun mediaOpenTarget(kind: MediaCellKind): MediaOpenTarget = when (kind)
     else -> MediaOpenTarget.Player
 }
 
-/** Index of the media item carrying this message id; -1 when it is not loaded. */
 /** Index of the media item carrying this message id; -1 when it is not loaded. */
 internal fun indexOfMessage(items: List<MediaItem>, messageId: Long): Int =
     items.indexOfFirst { it.messageId == messageId }

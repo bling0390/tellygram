@@ -106,7 +106,6 @@ class TdChatRepository(
     }
 
     /** Patch a chat's muted state from a notification-settings update. */
-    /** Patch a chat's muted state from a notification-settings update. */
     private fun applyMuted(chatId: Long, settings: TdApi.ChatNotificationSettings) {
         val muted = isMuted(settings)
         fun patch(list: List<ChatItem>): List<ChatItem> =
@@ -304,7 +303,6 @@ class TdChatRepository(
     }
 
     /** Thumbnail file id of the last media message, for the small preview before the summary text. */
-    /** Thumbnail file id of the last media message, for the small preview before the summary text. */
     private fun messageThumbFileId(message: TdApi.Message): Int? = when (val c = message.content) {
         is TdApi.MessagePhoto -> c.photo.sizes
             .filter { it.photo.id != 0 }
@@ -421,7 +419,6 @@ class TdChatRepository(
         return result
     }
 
-    /** Called on sign-out so a different account cannot inherit stale answers. */
     /** Called on sign-out so a different account cannot inherit stale answers. */
     fun clearOwnerCache() {
         ownerCache.clear()

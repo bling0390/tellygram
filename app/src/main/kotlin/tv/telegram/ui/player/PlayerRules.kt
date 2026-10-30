@@ -15,10 +15,8 @@ internal fun walkIndices(items: List<MediaItem>, type: MediaType): List<Int> =
     items.mapIndexedNotNull { index, item -> index.takeIf { item.type == type } }
 
 /** True when [index] has an earlier entry to step back to. */
-/** True when [index] has an earlier entry to step back to. */
 internal fun hasPreviousIn(walk: List<Int>, index: Int): Boolean = walk.indexOf(index) > 0
 
-/** True when [index] has a later entry to step forward to. */
 /** True when [index] has a later entry to step forward to. */
 internal fun hasNextIn(walk: List<Int>, index: Int): Boolean =
     walk.indexOf(index) in 0 until walk.lastIndex

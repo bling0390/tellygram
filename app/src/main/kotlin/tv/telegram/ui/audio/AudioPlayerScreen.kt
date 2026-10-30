@@ -67,7 +67,6 @@ import tv.telegram.ui.player.neighbourIn
 import tv.telegram.ui.player.walkIndices
 
 /** How often the transport line refreshes while the screen is up. */
-/** How often the transport line refreshes while the screen is up. */
 private const val PositionPollMs = 500L
 
 /**

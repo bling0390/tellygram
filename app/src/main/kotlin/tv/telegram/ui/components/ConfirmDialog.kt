@@ -112,7 +112,6 @@ fun ConfirmDialog(
     radioChecked: Boolean = false,
     onRadioClick: (() -> Unit)? = null,
     /** Long bodies (release notes) scroll inside the panel instead of growing it. */
-    /** Long bodies (release notes) scroll inside the panel instead of growing it. */
     scrollableBody: Boolean = false,
 ) {
     val cancelFocus = remember { FocusRequester() }
@@ -257,7 +256,6 @@ fun ConfirmDialog(
 }
 
 /** One 40dp dialog button: the design's hug-width action, or the filled safe one. */
-/** One 40dp dialog button: the design's hug-width action, or the filled safe one. */
 @Composable
 private fun ConfirmDialogButton(
     label: String,
@@ -314,7 +312,6 @@ private fun ConfirmDialogButton(
 }
 
 /** The dialog's palette, straight from the frames (not from theme roles, which drift). */
-/** The dialog's palette, straight from the frames (not from theme roles, which drift). */
 internal object ConfirmDialogSpec {
     val Panel = Color(0xFFE3E2E6)
     val Title = Color(0xFF121316)
@@ -333,7 +330,6 @@ internal fun confirmDialogButtonColors(primary: Boolean, focused: Boolean): RowC
     else -> RowColors(Color(0x1A000000), ConfirmDialogSpec.Body)
 }
 
-/** The dialog's optional toggle: a 16dp glyph, the label, and nothing that escapes. */
 /** The dialog's optional toggle: a 16dp glyph, the label, and nothing that escapes. */
 @Composable
 private fun ChatRadioRow(

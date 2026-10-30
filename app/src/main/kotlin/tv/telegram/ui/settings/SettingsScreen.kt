@@ -108,7 +108,6 @@ internal fun SettingsScreen(
      */
     checkForUpdate: suspend (String) -> UpdateCheck = ::fetchLatestRelease,
     /** Opens the download page; null hands it to the system. */
-    /** Opens the download page; null hands it to the system. */
     openDownloadPage: ((String) -> Unit)? = null,
 ) {
     var selected by remember { mutableStateOf(SettingsSection.Accounts) }
@@ -358,7 +357,6 @@ internal fun SettingsScreen(
 }
 
 /** The update flow's dialog states: nothing at all while a check is in flight. */
-/** The update flow's dialog states: nothing at all while a check is in flight. */
 private sealed interface UpdateDialog {
     data object UpToDate : UpdateDialog
     data class Available(val version: String, val notes: String) : UpdateDialog
@@ -396,21 +394,16 @@ private enum class SettingsSection(val labelRes: Int, val icon: ImageVector) {
 private fun SectionItem(
     section: SettingsSection,
     /** Called when this row takes focus: focus IS the selection. */
-    /** Called when this row takes focus: focus IS the selection. */
     onSelect: () -> Unit,
-    /** Called when OK lands on it: hand focus to the pane this section shows. */
     /** Called when OK lands on it: hand focus to the pane this section shows. */
     onConfirmed: () -> Unit,
     requester: FocusRequester? = null,
-    /** The chosen row's own requester, so a pane row's Left can return to it. */
     /** The chosen row's own requester, so a pane row's Left can return to it. */
     sectionFocus: FocusRequester? = null,
     rightRequester: FocusRequester? = null,
     cancelDown: Boolean = false,
     /** Up target for the first row: the Setting tab. */
-    /** Up target for the first row: the Setting tab. */
     upRequester: FocusRequester? = null,
-    /** The Help entry is the list's end: only Up may move out of it. */
     /** The Help entry is the list's end: only Up may move out of it. */
     cancelLeft: Boolean = false,
     cancelRight: Boolean = false,
@@ -474,7 +467,6 @@ private fun SectionItem(
 }
 
 /** A display-only row: label on the left, value on the right, no fill (per the frame). */
-/** A display-only row: label on the left, value on the right, no fill (per the frame). */
 @Composable
 private fun DisplayRow(label: String, value: String) {
     Row(
@@ -533,7 +525,6 @@ private fun CheckForUpdatesRow(
 )
 
 /** An actionable row: surface-container at rest, white with the dark label once focused. */
-/** An actionable row: surface-container at rest, white with the dark label once focused. */
 @Composable
 private fun ActionRow(
     label: String,
@@ -541,7 +532,6 @@ private fun ActionRow(
     onClick: () -> Unit,
     leftRequester: FocusRequester? = null,
     entryRequester: FocusRequester? = null,
-    /** OK on the section row above lands here: this is the pane's first focusable row. */
     /** OK on the section row above lands here: this is the pane's first focusable row. */
     firstRequester: FocusRequester? = null,
 ) {
@@ -596,7 +586,6 @@ private fun LanguageRow(
     onSelect: () -> Unit,
     leftRequester: FocusRequester? = null,
     entryRequester: FocusRequester? = null,
-    /** Carried by the pane's first row, where OK on the section row above lands. */
     /** Carried by the pane's first row, where OK on the section row above lands. */
     firstRequester: FocusRequester? = null,
     // The list is a closed column: Up at the first row, Down at the last one and Right
@@ -696,10 +685,8 @@ private fun languageLabel(lang: Language): String = when (lang) {
 }
 
 /** Focus tracking helper: keeps every row's focus bookkeeping identical. */
-/** Focus tracking helper: keeps every row's focus bookkeeping identical. */
 private fun Modifier.onFocusState(onChange: (Boolean) -> Unit): Modifier =
     this.onFocusChanged { state -> onChange(state.isFocused) }
 
-/** Rows span the pane's 452dp column. */
 /** Rows span the pane's 452dp column. */
 private fun Modifier.fillMaxSizeWidth(): Modifier = this.then(Modifier.width(HomeSpec.SettingsPaneWidth))

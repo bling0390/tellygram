@@ -65,7 +65,6 @@ internal fun ChatContextMenu(
     chat: ChatItem,
     archived: Boolean,
     /** Resolved by the screen before opening: the destructive row is worded per owner. */
-    /** Resolved by the screen before opening: the destructive row is worded per owner. */
     isOwner: Boolean,
     top: Dp,
     onSelect: (ChatMenuAction) -> Unit,
@@ -201,7 +200,6 @@ private fun Icon16(icon: ImageVector, focused: Boolean) {
     )
 }
 
-/** Pin, mute and archive flip their glyph with the state; delete never does. */
 /** Pin, mute and archive flip their glyph with the state; delete never does. */
 internal fun chatMenuIcon(action: ChatMenuAction, muted: Boolean, archived: Boolean): ImageVector =
     when (action) {

@@ -7,7 +7,6 @@ import tv.telegram.td.MediaItem
  */
 
 /** The app's "no value" mark; the settings rows use the same one. */
-/** The app's "no value" mark; the settings rows use the same one. */
 internal const val AudioDash = "—"
 
 /**
@@ -30,14 +29,12 @@ internal fun audioArtist(item: MediaItem): String? =
     item.performer?.trim()?.takeIf { it.isNotEmpty() }
 
 /** Where a +/- [deltaSeconds] jump lands, clamped to the track (decision C2: 10-second steps). */
-/** Where a +/- [deltaSeconds] jump lands, clamped to the track (decision C2: 10-second steps). */
 internal fun seekTarget(positionMs: Long, deltaSeconds: Int, durationMs: Long): Long {
     val target = positionMs + deltaSeconds * 1_000L
     if (target <= 0L) return 0L
     return if (durationMs > 0L) target.coerceAtMost(durationMs) else target
 }
 
-/** Progress as 0..1; a duration we do not know yet reads as 0 rather than as a full bar. */
 /** Progress as 0..1; a duration we do not know yet reads as 0 rather than as a full bar. */
 internal fun progressFraction(positionMs: Long, durationMs: Long): Float =
     if (durationMs <= 0L) 0f else (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)

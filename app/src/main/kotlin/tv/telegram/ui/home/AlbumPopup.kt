@@ -61,12 +61,10 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.drawscope.Stroke
 
 /** The popup's palette, taken from the frames (3558:2184). */
-/** The popup's palette, taken from the frames (3558:2184). */
 internal object AlbumPopupSpec {
     val Panel = Color(0xFFE3E2E6)        // inverse-surface
     val Title = Color(0xFF121316)        // surface
     val Body = Color(0xFF43474E)         // surface-variant
-    /** The hairline between the caption and the strip: outline at 10%. */
     /** The hairline between the caption and the strip: outline at 10%. */
     val Divider = Color(0x1A8E9099)
     val Scrim = Color(0x991A1C1E)
@@ -82,13 +80,11 @@ internal object AlbumPopupSpec {
 internal fun AlbumPopup(
     members: List<MediaItem>,
     /** Same card content as the grid: thumbnails, their loading/glyph states and the badges. */
-    /** Same card content as the grid: thumbnails, their loading/glyph states and the badges. */
     state: HomeState,
     onOpenMember: (Int) -> Unit,
     onDismiss: () -> Unit,
     caption: String? = null,
     tagPrefix: String = "album-popup",
-    /** The member the popup should focus when it (re)opens; null focuses the first one. */
     /** The member the popup should focus when it (re)opens; null focuses the first one. */
     focusMessageId: Long? = null,
 ) {
@@ -188,12 +184,10 @@ internal fun AlbumPopup(
 }
 
 /** One member: the grid's card content, with the popup's own Left/Right-only focus graph. */
-/** One member: the grid's card content, with the popup's own Left/Right-only focus graph. */
 @Composable
 private fun AlbumMemberTile(
     member: MediaItem,
     state: HomeState,
-    /** This tile owns the popup's entry focus (the first one, or the member that was reopened). */
     /** This tile owns the popup's entry focus (the first one, or the member that was reopened). */
     isEntry: Boolean,
     isFirst: Boolean,

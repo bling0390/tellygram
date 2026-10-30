@@ -137,7 +137,6 @@ internal fun BoxScope.MediaCardContent(item: MediaItem, state: HomeState) {
 }
 
 /** How long a card waits for its thumbnail before falling back to the glyph. */
-/** How long a card waits for its thumbnail before falling back to the glyph. */
 internal const val ThumbnailTimeoutMs = 6_000L
 
 @Composable
@@ -385,7 +384,6 @@ private fun BoxScope.MediaThumbnail(item: MediaItem, state: HomeState, isVideo: 
 internal fun MediaCard(
     focused: Boolean,
     tag: String? = null,
-    /** The ring's tint while unfocused: the card's own fill by default, a light outline in the popup. */
     /** The ring's tint while unfocused: the card's own fill by default, a light outline in the popup. */
     borderColor: Color = HomeSpec.SurfaceContainer,
     modifier: Modifier = Modifier,

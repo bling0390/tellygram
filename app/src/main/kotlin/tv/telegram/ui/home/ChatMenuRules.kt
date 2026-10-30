@@ -12,11 +12,9 @@ import kotlin.math.min
 internal enum class ChatMenuAction { Pin, Mute, Archive, Delete }
 
 /** One row's height and the menu's own height, straight from the frames. */
-/** One row's height and the menu's own height, straight from the frames. */
 internal const val ChatMenuItemHeightDp = 40f
 internal const val ChatMenuHeightDp = 188f
 
-/** How long OK must be held before the popover opens. */
 /** How long OK must be held before the popover opens. */
 internal const val ChatMenuLongPressMs = 500L
 
@@ -34,7 +32,6 @@ internal fun chatMenuLabelRes(
 
 internal const val ChatMenuAnchorGapDp = 4f
 
-/** A chat row's height: a 32dp avatar with 8dp above and below. */
 /** A chat row's height: a 32dp avatar with 8dp above and below. */
 internal const val ChatRowHeightDp = 48f
 
@@ -54,7 +51,6 @@ internal fun chatMenuTop(rowTop: Dp, listHeight: Dp, menuHeight: Dp): Dp {
 }
 
 /** Which copy a destructive action needs: private, a group I own, a group I'm in, or a channel. */
-/** Which copy a destructive action needs: private, a group I own, a group I'm in, or a channel. */
 internal enum class ChatDeleteCase { Private, GroupOwner, GroupMember, Channel }
 
 /**
@@ -69,7 +65,6 @@ internal fun chatDeleteCase(type: ChatType, isOwner: Boolean): ChatDeleteCase = 
 }
 
 /** The menu's fourth row — always destructive, worded per case. */
-/** The menu's fourth row — always destructive, worded per case. */
 internal fun chatMenuDestructiveLabelRes(case: ChatDeleteCase): Int = when (case) {
     ChatDeleteCase.Private -> R.string.chat_menu_delete
     ChatDeleteCase.GroupOwner -> R.string.chat_menu_delete_and_leave
@@ -83,7 +78,6 @@ internal fun chatDeleteTitleRes(case: ChatDeleteCase): Int = when (case) {
     ChatDeleteCase.Channel -> R.string.chat_delete_title_channel
 }
 
-/** Private and channel bodies take no name; the owner's group body names the group. */
 /** Private and channel bodies take no name; the owner's group body names the group. */
 internal fun chatDeleteBodyRes(case: ChatDeleteCase): Int = when (case) {
     ChatDeleteCase.Private -> R.string.chat_delete_body_private

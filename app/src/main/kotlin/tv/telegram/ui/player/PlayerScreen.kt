@@ -1700,7 +1700,6 @@ private fun TryAgainButton(onRetry: () -> Unit) {
 }
 
 /** "H.264 · 4.5 Mbps" straight off the prepared track; null until prepare finishes. */
-/** "H.264 · 4.5 Mbps" straight off the prepared track; null until prepare finishes. */
 private fun describeVideo(tracks: Tracks): String? {
     val group = tracks.groups.firstOrNull { it.type == C.TRACK_TYPE_VIDEO } ?: return null
     val index = (0 until group.length).firstOrNull { group.isTrackSupported(it) } ?: 0
@@ -1719,7 +1718,6 @@ private fun describeVideo(tracks: Tracks): String? {
     return name + bitrate
 }
 
-/** "AAC · 2ch"; the row that explains "picture but no sound". */
 /** "AAC · 2ch"; the row that explains "picture but no sound". */
 private fun describeAudio(tracks: Tracks): String? {
     val group = tracks.groups.firstOrNull { it.type == C.TRACK_TYPE_AUDIO } ?: return null
@@ -1748,7 +1746,6 @@ private fun formatMs(ms: Long): String {
     return if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%d:%02d".format(m, s)
 }
 
-/** Sheet content: the five metadata rows, a rule, then the caption (design order). */
 /** Sheet content: the five metadata rows, a rule, then the caption (design order). */
 @Composable
 private fun ColumnScope.MediaInfoBody(
