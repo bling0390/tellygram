@@ -163,7 +163,6 @@ fun ChatsScreen(
         mediaItems.any { it.messageId == id }
     }
 
-    // Toast 即时提醒：聊天列表加载失败时弹一次
     val context = LocalContext.current
     LaunchedEffect(chatListError) {
         if (chatListError != null) {
@@ -605,8 +604,7 @@ private fun SidebarItem(
 ) {
     val ctx = LocalContext.current
     val containerColor = when {
-        selected -> MaterialTheme.colorScheme.primaryContainer // 胶囊高亮（与侧边栏一致）
-        // 置顶会话空闲态浅底色，仅用于区分；聚焦/选中时被覆盖。
+        selected -> MaterialTheme.colorScheme.primaryContainer
         chat.isPinned -> MaterialTheme.colorScheme.surface
         else -> Color.Transparent
     }
@@ -816,6 +814,7 @@ private fun UnreadDot(modifier: Modifier = Modifier) {
 }
 
 /** Chat-type glyph for the title row: Person (private) / Groups (group) / Campaign (channel). */
+/** Chat-type glyph for the title row: Person (private) / Groups (group) / Campaign (channel). */
 private fun ChatType.typeIcon(): ImageVector? = when (this) {
     ChatType.Private -> Icons.Default.Person
     ChatType.Group -> Icons.Default.Groups
@@ -823,6 +822,7 @@ private fun ChatType.typeIcon(): ImageVector? = when (this) {
     else -> null
 }
 
+/** Seconds → "m:ss", or "h:mm:ss" once the duration reaches an hour. */
 /** Seconds → "m:ss", or "h:mm:ss" once the duration reaches an hour. */
 private fun formatDuration(totalSeconds: Int): String {
     val s = totalSeconds.coerceAtLeast(0)
@@ -1197,7 +1197,6 @@ private fun SidebarMediaCard(
     val thumbId = item.thumbnailFileId
     // Reactive thumbnail state: the old one-shot fileStateFor() read never
     // recomposed when the download landed, so a card that fetched its
-    // thumbnail kept spinning forever (same bug PlayerScreen already fixed
     // for its own file). Collect the repo state map so the card recomposes
     // the moment the thumbnail becomes Local.
     val fileStates by viewModel.fileRepo.states.collectAsStateWithLifecycle()
@@ -1477,11 +1476,13 @@ private fun PhotoFullscreen(
 }
 
 /** A destructive chat action that needs a second confirmation before running. */
+/** A destructive chat action that needs a second confirmation before running. */
 private sealed interface ChatConfirmAction {
     data class Delete(val chat: ChatItem) : ChatConfirmAction
     data class Archive(val chat: ChatItem, val archived: Boolean) : ChatConfirmAction
 }
 
+/** The D-pad / keyboard keys that fire a click on a focused item (the "OK" button). */
 /** The D-pad / keyboard keys that fire a click on a focused item (the "OK" button). */
 private fun Key.isConfirmKey(): Boolean =
     this == Key.DirectionCenter || this == Key.Enter || this == Key.NumPadEnter

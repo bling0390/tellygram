@@ -22,7 +22,6 @@ import java.util.concurrent.TimeUnit
 sealed class FileDownloadState {
     data object Remote : FileDownloadState()
     data class Pending(val expectedSize: Int = 0) : FileDownloadState()
-    /** Bytes on disk so a plain download can show a real percentage (2026-10-22). */
     data class Downloading(val downloaded: Long, val expected: Long) : FileDownloadState()
     data class Local(val path: String) : FileDownloadState()
     data class Failed(val reason: String) : FileDownloadState()
@@ -73,7 +72,6 @@ data class StreamingState(
     val resetAtMs: Long = 0,
     // Tail window [tailStart, tailEnd) kept in a SIDE file, never in the streaming file: the
     // streaming file must stay a pure prefix from byte 0, or its length can no longer tell
-    // us how far the download got (2026-10-28, after a sparse-file version stalled playback).
     val tailPath: String? = null,
     val tailStart: Long = 0,
     val tailEnd: Long = 0,
@@ -114,6 +112,7 @@ class TdFileRepository(
     private fun monitorFor(fileId: Int): Any =
         streamMonitors.computeIfAbsent(fileId) { Any() }
 
+    /** Wake any thread blocked in awaitStreamPath/awaitStreamBytes for [fileId]. */
     /** Wake any thread blocked in awaitStreamPath/awaitStreamBytes for [fileId]. */
     private fun wakeStreamWaiters(fileId: Int) {
         streamMonitors[fileId]?.let { m ->
@@ -157,7 +156,6 @@ class TdFileRepository(
         }
 
         // Plain downloads (photo preview, thumbnails): expose the byte counts so the UI can
-        // show a real percentage instead of an indeterminate spinner (2026-10-22). Streaming
         // keeps its own state below, with the activeStart clamp for re-pointed windows.
         if (streamingStates[fileId] == null && local.isDownloadingActive && !local.isDownloadingCompleted) {
             _states.value = _states.value + (
@@ -179,7 +177,6 @@ class TdFileRepository(
             // the state incoherent (activeStart ahead of downloadedSize), so
             // every availability check failed and the reader waited out its
             // budget on a download that had nothing reported for it yet
-            // (frontier=3.5MB vs pos=866MB in the 2026-09-13 log).
             val reported = local.downloadedSize.toLong()
             val clamped = if (local.isDownloadingCompleted) reported
             else reported.coerceAtLeast(cur.activeStart)
@@ -222,7 +219,6 @@ class TdFileRepository(
 
             // A whole-file download must never fill the TV's storage: with every video now
             // streaming first, this path is the fallback, and it is the only one that can grow
-            // without bound (the streaming window is capped) (2026-10-28).
             val expectedBytes = fileObj.expectedSize.toLong().takeIf { it > 0 }
                 ?: fileObj.size.toLong()
             if (!hasRoomFor(expectedBytes)) {
@@ -245,7 +241,6 @@ class TdFileRepository(
             }
             path
         } catch (e: Throwable) {
-            // Never let a file fetch crash the app — callers fall back to placeholder.
             Log.w(TAG, "ensureLocal($fileId) threw", e)
             pendingDownloads.remove(fileId)
             _states.value = _states.value + (fileId to FileDownloadState.Failed("exception: ${e.javaClass.simpleName}"))
@@ -293,6 +288,7 @@ class TdFileRepository(
 
     fun stateFor(fileId: Int): FileDownloadState? = _states.value[fileId]
 
+    /** Mark [fileId] as recently used for LRU eviction purposes. */
     /** Mark [fileId] as recently used for LRU eviction purposes. */
     fun touch(fileId: Int) {
         lastAccess[fileId] = System.currentTimeMillis()
@@ -373,7 +369,6 @@ class TdFileRepository(
     // dropped, so a re-download probes again.
     private val tailProbed = mutableSetOf<Int>()
     // One gate per file being probed: the data source waits on it before opening the file, so
-    // the tail probe's delete-and-restart happens while nobody holds a handle (2026-10-28).
     private val probeLatches = ConcurrentHashMap<Int, CountDownLatch>()
 
     fun startStreaming(fileId: Int, priority: Int = 1) {
@@ -384,7 +379,6 @@ class TdFileRepository(
             // outlive its bytes (our own deleteLocalFile on player exit, an evicted cache
             // file), and expecting "completed, size 0" made TdDataSource report end-of-input
             // at byte 0 — which ExoPlayer surfaces as UnrecognizedInputFormatException
-            // (2026-10-28).
             val onDisk = runCatching { File(existing.path).length() }.getOrDefault(0L)
             if (onDisk > 0L) {
                 streamingStates[fileId] = StreamingState(
@@ -401,7 +395,6 @@ class TdFileRepository(
         // Fresh contiguous download from 0. The delete matters: bytes left by
         // an earlier attempt (a windowed download from an older build, or a
         // seek) are NOT a prefix, and serving them as one is what fed the
-        // extractor holes (2026-09-13).
         resetStreamWindow(fileId, 0, priority)
         if (TAIL_PREFETCH_ENABLED && probeLatches[fileId] == null && tailProbed.add(fileId)) {
             val latch = CountDownLatch(1)
@@ -425,6 +418,7 @@ class TdFileRepository(
      * already covered or the file is complete.
      */
     /** Current window size used for windowed streaming (bytes). */
+    /** Current window size used for windowed streaming (bytes). */
     val streamWindowBytes: Long get() = windowBytes
 
     // TDLib's DownloadFile offset/limit are int32. windowBytes is clamped to
@@ -432,6 +426,7 @@ class TdFileRepository(
     // Int.MAX_VALUE for >2GB files — clamp instead of wrapping negative.
     private fun Long.toIntOffset(): Int = coerceIn(0L, Int.MAX_VALUE.toLong()).toInt()
 
+    /** True when [bytes] fits in 60% of the free space on the files volume. */
     /** True when [bytes] fits in 60% of the free space on the files volume. */
     private fun hasRoomFor(bytes: Long): Boolean {
         if (bytes <= 0L) return true
@@ -500,6 +495,7 @@ class TdFileRepository(
     }
 
     /** Block until TDLib has assigned a local path for the streaming file. */
+    /** Block until TDLib has assigned a local path for the streaming file. */
     fun awaitStreamPath(fileId: Int, timeoutMs: Long = 15_000): String? {
         val monitor = monitorFor(fileId)
         val deadline = System.currentTimeMillis() + timeoutMs
@@ -519,6 +515,7 @@ class TdFileRepository(
         }
     }
 
+    /** Drop the streaming state (called when leaving the player). */
     /** Drop the streaming state (called when leaving the player). */
     fun stopStreaming(fileId: Int) {
         streamingStates.remove(fileId)
@@ -549,6 +546,7 @@ class TdFileRepository(
     }
 
     /** Delete all fully-downloaded files not currently in use (LRU order). */
+    /** Delete all fully-downloaded files not currently in use (LRU order). */
     private fun evictInactiveLocalFiles() {
         val inUse = streamingStates.keys + pendingDownloads.keys + previewDownloads.keys
         val evictable = _states.value.entries
@@ -563,11 +561,11 @@ class TdFileRepository(
      * Fetches the last [TAIL_PROBE_BYTES] of [fileId] once, looks for the MP4 'moov' box and,
      * when it is there, records it as a known-good tail window. Playback can then start from
      * the prefix while the sequential download continues; a non-faststart MP4 becomes playable
-     * without downloading the whole file (2026-10-28).
      *
      * Any failure simply resumes the sequential download: the tail is an optimisation, never a
      * requirement.
      */
+    /** Blocks until the tail probe finishes for [fileId], or the timeout expires. */
     /** Blocks until the tail probe finishes for [fileId], or the timeout expires. */
     fun awaitTailProbe(fileId: Int, timeoutMs: Long = 12_000L) {
         try {
@@ -577,6 +575,7 @@ class TdFileRepository(
         }
     }
 
+    /** Waits for the size to be known (updateFile), then probes once. */
     /** Waits for the size to be known (updateFile), then probes once. */
     private suspend fun probeTailWhenSized(fileId: Int) {
         val deadline = System.currentTimeMillis() + TAIL_PROBE_TIMEOUT_MS / 2
@@ -652,6 +651,7 @@ class TdFileRepository(
         )
     }
 
+    /** Back to the whole-file sequential download after a probe. */
     /** Back to the whole-file sequential download after a probe. */
     private fun resumeSequential(fileId: Int) {
         client.send(TdApi.DownloadFile(fileId, 1, 0, 0, false))
@@ -734,7 +734,6 @@ class TdFileRepository(
      *
      * A window reset deletes the file, but TDLib's next UpdateFile can still
      * carry the old temp path, and awaitStreamPath would hand that dead path to
-     * a RandomAccessFile (FileNotFoundException in the 2026-09-13 log).
      * Dropping it parks readers until the recreated file is reported.
      */
     fun invalidateStreamPath(fileId: Int, path: String) {
@@ -764,7 +763,6 @@ class TdFileRepository(
         // start evicting inactive files, then reset the active stream window.
         private const val LOW_DISK_WATERMARK_BYTES = 800L * 1024 * 1024
 
-        // OFF (2026-10-28): three device attempts (sparse file, side file, gated side file)
         // each broke playback outright, so the probe does not run in shipped builds. Re-enable
         // only with a device in hand and a log capture that is not all NUL bytes.
         private const val TAIL_PREFETCH_ENABLED = false

@@ -65,7 +65,6 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.type
 
 /**
- * JetStream confirmation dialog — Figma 1114:8669 ("Delete account?").
  *
  * Tokens read off the node:
  *  - surface = `sys/dark/inverse-surface` (#E3E2E6): the dialog is LIGHT against
@@ -81,7 +80,6 @@ import androidx.compose.ui.input.key.type
  *  - button labels are `title/small` = Inter Medium 14/20, which in this app is
  *    `labelLarge` — its own `titleSmall` is 12/16 Regular, so it is not the match.
  *
- * Decisions the file does not settle (all spec 2026-09-13):
  *  - focus starts on the SAFE button: an accidental D-pad OK must not run a
  *    destructive action (the chat confirm dialog already worked this way).
  *  - focused buttons take `secondaryContainer` for fill and
@@ -109,11 +107,11 @@ fun ConfirmDialog(
     tagPrefix: String? = null,
     /**
      * Optional toggle above the buttons. The private delete dialog uses it for "also delete
-     * for the other side"; the default is unchecked (product, 2026-09-27).
      */
     radioLabel: String? = null,
     radioChecked: Boolean = false,
     onRadioClick: (() -> Unit)? = null,
+    /** Long bodies (release notes) scroll inside the panel instead of growing it. */
     /** Long bodies (release notes) scroll inside the panel instead of growing it. */
     scrollableBody: Boolean = false,
 ) {
@@ -122,7 +120,6 @@ fun ConfirmDialog(
     val radioFocus = remember { FocusRequester() }
     // Long bodies scroll with the D-pad: the panel's preview pass turns Up/Down into scroll
     // requests, so the buttons keep their focus behaviour — the same trick the text popup uses
-    // (2026-10-18). Up/Down are free here: Cancel's Up is already sealed.
     val bodyScroll = rememberScrollState()
     val bodyScope = rememberCoroutineScope()
     val stepPx = with(LocalDensity.current) { 72.dp.toPx() }
@@ -185,7 +182,6 @@ fun ConfirmDialog(
                 color = ConfirmDialogSpec.Body,
                 style = MaterialTheme.typography.bodyMedium,
                 // Release notes can be long: scroll them inside the panel instead of growing
-                // it past the screen (2026-10-18).
                 modifier = if (scrollableBody) {
                     Modifier
                         .heightIn(max = 320.dp)
@@ -261,6 +257,7 @@ fun ConfirmDialog(
 }
 
 /** One 40dp dialog button: the design's hug-width action, or the filled safe one. */
+/** One 40dp dialog button: the design's hug-width action, or the filled safe one. */
 @Composable
 private fun ConfirmDialogButton(
     label: String,
@@ -317,6 +314,7 @@ private fun ConfirmDialogButton(
 }
 
 /** The dialog's palette, straight from the frames (not from theme roles, which drift). */
+/** The dialog's palette, straight from the frames (not from theme roles, which drift). */
 internal object ConfirmDialogSpec {
     val Panel = Color(0xFFE3E2E6)
     val Title = Color(0xFF121316)
@@ -335,6 +333,7 @@ internal fun confirmDialogButtonColors(primary: Boolean, focused: Boolean): RowC
     else -> RowColors(Color(0x1A000000), ConfirmDialogSpec.Body)
 }
 
+/** The dialog's optional toggle: a 16dp glyph, the label, and nothing that escapes. */
 /** The dialog's optional toggle: a 16dp glyph, the label, and nothing that escapes. */
 @Composable
 private fun ChatRadioRow(

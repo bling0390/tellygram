@@ -67,10 +67,10 @@ import tv.telegram.ui.player.neighbourIn
 import tv.telegram.ui.player.walkIndices
 
 /** How often the transport line refreshes while the screen is up. */
+/** How often the transport line refreshes while the screen is up. */
 private const val PositionPollMs = 500L
 
 /**
- * The audio player (decision B, 2026-10-16): a track gets its own screen instead of the
  * video-shaped one.
  *
  * Decided shape: transport is play/pause, +/-10s, previous/next and a linear progress line — no
@@ -140,7 +140,6 @@ fun AudioPlayerScreen(
         val listener = object : Player.Listener {
             override fun onPlaybackStateChanged(playbackState: Int) {
                 if (playbackState == Player.STATE_ENDED) {
-                    // 播完即删 (decision 6): the track is done, so the local copy goes — the
                     // remote reference stays in TDLib and a replay re-fetches it.
                     viewModel.fileRepo.deleteLocalFile(current.fileId)
                     if (queueHasNext) stepFromQueue(1)
@@ -178,7 +177,6 @@ fun AudioPlayerScreen(
     LaunchedEffect(current.fileId) { runCatching { playPauseFocus.requestFocus() } }
 
     // Record the return target when the track opens, not only on our exit action
-    // (2026-10-21): a pop that the system or the NavHost handles never reaches `exit`, and the
     // grid then had no card to focus on return.
     LaunchedEffect(current.messageId) {
         android.util.Log.i("HomeBack", "audio player open: hint=${current.messageId}")

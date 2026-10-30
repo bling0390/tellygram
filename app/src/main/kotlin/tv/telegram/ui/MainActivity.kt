@@ -128,7 +128,6 @@ private fun AppNavHost(viewModel: MainViewModel, backController: BackController)
     val navController = rememberNavController()
     // Back belongs to the controller (see BackController). The NavHost registers its own back
     // callback after this tree's handler and the dispatcher is LIFO, so it swallowed Back before
-    // our dispatch ever ran — the log showed no "BackHandler fired" at all (2026-10-18).
     LaunchedEffect(navController) {
         navController.enableOnBackPressed(false)
         android.util.Log.i("HomeBack", "NavHost back disabled; the controller owns Back")
@@ -140,7 +139,6 @@ private fun AppNavHost(viewModel: MainViewModel, backController: BackController)
     // must not appear on them.
     val inHome = showsRail(currentRoute)
 
-    // Settings is a NavHost page now (Figma 623:1208 lays the section list and
     // the detail pane out side by side), not a drawer overlay: the rail
     // navigates to it like any other destination and Back pops it.
     // Focus target for the rail's settings item — the drawer returns focus
@@ -269,7 +267,6 @@ private fun AppNavHost(viewModel: MainViewModel, backController: BackController)
     // FocusRequester throws as soon as the focus search touches it.
     val settingsContentFocus = remember { androidx.compose.ui.focus.FocusRequester() }
     val homeTopBarFocus = remember { androidx.compose.ui.focus.FocusRequester() }
-    // The Setting tab's own requester: the settings list's first row routes Up here (2026-10-22).
     val settingTabFocus = remember { androidx.compose.ui.focus.FocusRequester() }
 
     // D-pad presses play the platform's navigation sounds for the whole
@@ -307,7 +304,6 @@ private fun AppNavHost(viewModel: MainViewModel, backController: BackController)
                         }
                     },
                     onTabConfirmed = { tab ->
-                        // OK on a tab hands focus to that page's content (2026-10-15): the chat
                         // list's entry for Chat — its Archived row, the list's first
                         // focusable — and the first section row for Setting. Both are the
                         // requesters the bar's Down already uses, so the two keys take one
@@ -338,7 +334,6 @@ private fun AppNavHost(viewModel: MainViewModel, backController: BackController)
                 Spacer(Modifier.height(TopNavBarBottomGap))
             }
 
-            // Entering the shell hands focus to the bar's Chat entry, once (2026-10-15):
             // nothing else requests it, and the platform does not choose a first focusable
             // on its own. Keyed on isShellPage, so a page switch inside the shell — which
             // keeps it true — never takes focus back out of the list the user moved into.
@@ -442,7 +437,6 @@ private fun AppNavHost(viewModel: MainViewModel, backController: BackController)
                 arguments = listOf(navArgument("messageId") { type = NavType.LongType }),
                 // Full-screen photo viewer: cut, do not fade. The home's side is already
                 // None, so a fade here read as "home vanishes, preview fades in over the
-                // background" (2026-10-21).
                 enterTransition = { EnterTransition.None },
                 exitTransition = { ExitTransition.None },
                 popEnterTransition = { EnterTransition.None },
@@ -748,7 +742,6 @@ private fun RailItem(
 /**
  * True only for the routes that still live behind the legacy navigation rail. The shell
  * pages (HomeScreen, SettingsScreen) draw the global top bar instead — showing both was
- * the bug: the settings page rendered the rail *and* the bar, with the rail's width
  * reserved on top.
  */
 internal fun showsRail(route: String?): Boolean =

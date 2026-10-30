@@ -48,7 +48,6 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 
 /**
- * The app's top bar — Figma "Nav" instance (93:1018), 844dp wide and 32dp tall.
  *
  * It lives outside the NavHost (see MainActivity's shell) so it survives
  * navigation: pages below it swap, the bar does not, which keeps its focus and
@@ -61,6 +60,7 @@ import androidx.compose.ui.unit.dp
 enum class TopNavTab { Chat, Setting }
 
 val TopNavBarHeight = 32.dp
+/** Design: bar top edge at y=32, page content starts at y=96. */
 /** Design: bar top edge at y=32, page content starts at y=96. */
 val TopNavBarTopMargin = 32.dp
 val TopNavBarBottomGap = 32.dp
@@ -89,7 +89,6 @@ fun TopNavBar(
     selectedTabFocus: FocusRequester? = null,
     /**
      * The Setting tab's own requester: the settings page's first row routes Up here instead
-     * of letting the default search find the Chat tab (2026-10-22).
      */
     settingTabFocus: FocusRequester? = null,
     contentFocus: FocusRequester? = null,
@@ -115,7 +114,6 @@ fun TopNavBar(
                 downFocus = contentFocus,
                 requester = selectedTabFocus,
             )
-            // 4dp between the menus (design update, 2026-09-24).
             Spacer(Modifier.width(4.dp))
             TopNavTabButton(
                 label = "Setting",
@@ -176,7 +174,6 @@ fun TopNavBar(
                 modifier = Modifier.size(24.dp),
             )
             Spacer(Modifier.width(6.dp))
-            // TODO(design): the wordmark is Lexend Exa Medium 14, uppercase. That
             //  face is not bundled yet, so it falls back to the theme's Inter.
             Text(
                 text = "TELLYGRAM",
@@ -187,6 +184,7 @@ fun TopNavBar(
     }
 }
 
+/** Shown when no avatar is injected (previews, tests). */
 /** Shown when no avatar is injected (previews, tests). */
 @Composable
 private fun TopNavDefaultAvatar() {
@@ -206,8 +204,8 @@ private fun TopNavTabButton(
     // One testTag per node: the container keeps this stable name, and the focus/blur
     // tag rides on the label below.
     containerTag: String,
-    /** Focus IS selection (2026-10-15): taking focus switches the module. */
     onFocused: () -> Unit,
+    /** OK on this entry: hand focus to the page's content. */
     /** OK on this entry: hand focus to the page's content. */
     onConfirmed: () -> Unit,
     downFocus: FocusRequester? = null,
@@ -224,7 +222,6 @@ private fun TopNavTabButton(
             .height(TopNavBarHeight)
             .clip(RoundedCornerShape(4.dp))
             // Exactly one entry is filled at a time: the one holding focus. There is
-            // no second, page-driven "selected" look any more (2026-10-15).
             .background(navPillColor(focused) ?: Color.Transparent)
             .focusProperties {
                 down = downFocus ?: FocusRequester.Default
@@ -235,7 +232,6 @@ private fun TopNavTabButton(
             .let { if (requester != null) it.focusRequester(requester) else it }
             .onFocusChanged {
                 focused = it.isFocused
-                // Focus selects: the bar has no separate "selected" look any more (2026-10-15).
                 if (it.isFocused) onFocused()
             }
             .focusable()
@@ -274,9 +270,12 @@ private fun TopNavTabButton(
 
 private object TopNavColors {
     /** Unfocused tab and logo label: the design's material-theme/sys/dark/on-surface. */
+    /** Unfocused tab and logo label: the design's material-theme/sys/dark/on-surface. */
     val Label = Color(0xFFC7C6CA)
     /** Label sitting on the filled pill: material-theme/sys/dark/inverse-on-surface. */
+    /** Label sitting on the filled pill: material-theme/sys/dark/inverse-on-surface. */
     val LabelActive = Color(0xFF1A1C1E)
+    /** The pill itself: material-theme/white, 81x32, 4dp rounded. */
     /** The pill itself: material-theme/white, 81x32, 4dp rounded. */
     val Pill = Color(0xFFFFFFFF)
 }

@@ -12,16 +12,14 @@ import kotlin.math.min
 internal enum class ChatMenuAction { Pin, Mute, Archive, Delete }
 
 /** One row's height and the menu's own height, straight from the frames. */
+/** One row's height and the menu's own height, straight from the frames. */
 internal const val ChatMenuItemHeightDp = 40f
 internal const val ChatMenuHeightDp = 188f
 
 /** How long OK must be held before the popover opens. */
+/** How long OK must be held before the popover opens. */
 internal const val ChatMenuLongPressMs = 500L
 
-/**
- * The label for an action in its current state: 置顶/取消置顶, 静音/取消静音,
- * 归档/取消归档. Delete is constant.
- */
 internal fun chatMenuLabelRes(
     action: ChatMenuAction,
     pinned: Boolean,
@@ -34,9 +32,9 @@ internal fun chatMenuLabelRes(
     ChatMenuAction.Delete -> R.string.chat_menu_delete
 }
 
-/** How far the popover sits from the row it belongs to (product, 2026-09-28). */
 internal const val ChatMenuAnchorGapDp = 4f
 
+/** A chat row's height: a 32dp avatar with 8dp above and below. */
 /** A chat row's height: a 32dp avatar with 8dp above and below. */
 internal const val ChatRowHeightDp = 48f
 
@@ -56,10 +54,10 @@ internal fun chatMenuTop(rowTop: Dp, listHeight: Dp, menuHeight: Dp): Dp {
 }
 
 /** Which copy a destructive action needs: private, a group I own, a group I'm in, or a channel. */
+/** Which copy a destructive action needs: private, a group I own, a group I'm in, or a channel. */
 internal enum class ChatDeleteCase { Private, GroupOwner, GroupMember, Channel }
 
 /**
- * Channel never distinguishes the owner (product, 2026-09-27) — leaving is all anyone gets.
  * Groups do: the creator's frame says "Delete and leave".
  */
 internal fun chatDeleteCase(type: ChatType, isOwner: Boolean): ChatDeleteCase = when (type) {
@@ -70,6 +68,7 @@ internal fun chatDeleteCase(type: ChatType, isOwner: Boolean): ChatDeleteCase = 
     else -> ChatDeleteCase.Private
 }
 
+/** The menu's fourth row — always destructive, worded per case. */
 /** The menu's fourth row — always destructive, worded per case. */
 internal fun chatMenuDestructiveLabelRes(case: ChatDeleteCase): Int = when (case) {
     ChatDeleteCase.Private -> R.string.chat_menu_delete
@@ -84,6 +83,7 @@ internal fun chatDeleteTitleRes(case: ChatDeleteCase): Int = when (case) {
     ChatDeleteCase.Channel -> R.string.chat_delete_title_channel
 }
 
+/** Private and channel bodies take no name; the owner's group body names the group. */
 /** Private and channel bodies take no name; the owner's group body names the group. */
 internal fun chatDeleteBodyRes(case: ChatDeleteCase): Int = when (case) {
     ChatDeleteCase.Private -> R.string.chat_delete_body_private
@@ -101,7 +101,6 @@ internal fun chatDeleteConfirmRes(case: ChatDeleteCase): Int = when (case) {
 
 /**
  * Only a real private chat carries the "delete for the other side" toggle: Saved Messages has
- * no other side (product, 2026-09-27), and a channel or group has no single counterpart.
  */
 internal fun chatDeleteHasRadio(type: ChatType, isOwner: Boolean): Boolean =
     type == ChatType.Private
@@ -115,7 +114,6 @@ internal fun chatDeleteRevokes(type: ChatType, isOwner: Boolean, radioChecked: B
     type == ChatType.Private -> radioChecked
     // A group owner's frame promises the whole history goes; their server-side delete does it.
     type == ChatType.Group -> isOwner
-    // A channel owner cannot leave: their "Leave" deletes the channel (product, 2026-09-27).
     type == ChatType.Channel -> isOwner
     else -> false
 }

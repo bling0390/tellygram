@@ -115,7 +115,6 @@ fun SearchScreen(
             .background(MaterialTheme.colorScheme.background),
     ) {
         Column(
-            // Figma (3:293 / 665:1686): the search page has no page heading —
             // the field IS the top of the page — and content is inset 58dp
             // ((960 - 844) / 2), the same margin the player controller uses.
             modifier = Modifier
@@ -208,7 +207,6 @@ private fun SearchBar(
             .height(64.dp)
             .clip(RoundedCornerShape(4.dp))
             .background(MaterialTheme.colorScheme.background)
-            // Figma Text field: 1px Outline hairline at rest, 2px Primary
             // stroke while focused — the focus cue is the border, not a scale.
             .border(
                 width = if (focused) 2.dp else 1.dp,
@@ -230,7 +228,6 @@ private fun SearchBar(
             },
     ) {
         Row(
-            // Figma: 20px / 28px padding (focused state).
             modifier = Modifier.fillMaxSize().padding(horizontal = 28.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -242,13 +239,11 @@ private fun SearchBar(
                 } else {
                     MaterialTheme.colorScheme.onSurface
                 },
-                // Figma uses Inter 500 14px here (our titleSmall).
                 style = MaterialTheme.typography.titleSmall,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
             if (focused) {
-                // Figma's 1px Primary I-beam caret.
                 Spacer(Modifier.width(4.dp))
                 Box(
                     Modifier
@@ -274,7 +269,6 @@ private fun ResultsGrid(
 ) {
     LazyVerticalGrid(
         columns = GridCells.Fixed(4),
-        // Figma cards sit 20px apart.
         horizontalArrangement = Arrangement.spacedBy(20.dp),
         verticalArrangement = Arrangement.spacedBy(20.dp),
         modifier = Modifier.fillMaxSize(),
@@ -303,7 +297,6 @@ private fun ResultCard(
     Card(
         onClick = onClick,
         scale = CardDefaults.scale(focusedScale = 1.05f),
-        // Figma cards carry a 0.5px rgba(255,255,255,0.1) hairline, and the
         // selected card is outlined with a 3px white stroke.
         border = CardDefaults.border(
             Border(BorderStroke(0.5.dp, Color.White.copy(alpha = 0.1f))),
@@ -390,7 +383,6 @@ private fun DpadKeyboard(
     ) {
         // Plain Box, not Card(onClick = {}): the empty onClick made the whole
         // panel an accidental focus target. This is just a rounded backdrop.
-        // Figma keyboard body is #1D2228 with a 4px radius.
         Box(
             modifier = Modifier
                 .fillMaxWidth(0.8f)
@@ -459,7 +451,6 @@ private fun KeyButton(
     Card(
         onClick = onClick,
         scale = CardDefaults.scale(focusedScale = 1.10f),
-        // Figma keyboard keys: rgba(58,67,78,0.5) at rest, solid white with
         // Grey/800 (#3C4043) text while active; the primary (search) key is
         // #3A4B5D with white text.
         colors = CardDefaults.colors(
@@ -483,7 +474,6 @@ private fun KeyButton(
         ) {
             Text(
                 label,
-                // Figma label: Roboto Medium 16px in Grey/300 (#DADCE0).
                 color = when {
                     accent -> Color.White
                     keyFocused -> Color(0xFF3C4043)

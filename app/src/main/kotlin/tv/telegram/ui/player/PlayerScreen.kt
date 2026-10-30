@@ -141,7 +141,6 @@ import tv.telegram.ui.components.RightSheetRule
 
 private const val TAG = "PlayerScreen"
 
-// JetStream seeker handle colour (Figma dark-palette "Outline" tone). Lives
 // here because tv-material3 exposes no slot for it in the colour scheme.
 // Playhead handle geometry: a 16dp disc with a 4dp white ring, filled with the
 // theme's outline colour (JetStream dark/outline = #8E9099). Drawn only while
@@ -149,7 +148,6 @@ private const val TAG = "PlayerScreen"
 private val SeekHandleSize = 16.dp
 private val SeekHandleBorder = 4.dp
 
-// Figma 685:1449 -> Seeker (4157:25985) is a fixed 844dp band: 48dp time slot,
 // 8dp gap, the bar, 8dp gap, 48dp time slot. Pinning the bar to the leftover
 // 732dp (and both time slots to 48dp) keeps the track from re-measuring while
 // the time strings grow — 0:00 -> 1:08:24 used to stretch it mid-playback.
@@ -168,7 +166,6 @@ fun PlayerScreen(
     onClose: () -> Unit,
     onNavigateTo: (Int) -> Unit,
     /**
-     * Set when the viewer was opened by message id (plan (a), 2026-09-30): the list to walk,
      * already filtered to the types this screen plays. Null means the chat's loaded media.
      */
     items: List<MediaItem>? = null,
@@ -200,7 +197,6 @@ fun PlayerScreen(
     val current = mediaItems[index]
 
     // Record the return target when the player opens, not only when our Back action runs
-    // (2026-10-21): a pop that the system or the NavHost handles never reaches closePlayer,
     // and the grid then had no card to focus on return. Keyed on the item so walking to the
     // next video updates it.
     LaunchedEffect(current.messageId) {
@@ -218,7 +214,6 @@ fun PlayerScreen(
     }
 
     // The videos this screen walks with prev/next. The type is a parameter because the audio
-    // player walks its own list through the same rule (2026-10-16).
     val videoIndices = remember(mediaItems) { walkIndices(mediaItems, MediaType.Video) }
     val hasPrevVideo = hasPreviousIn(videoIndices, index)
     val hasNextVideo = hasNextIn(videoIndices, index)
@@ -231,7 +226,6 @@ fun PlayerScreen(
     // Reactive file state: collect the repo's state map so this screen
     // recomposes when a download completes (path appears) or fails. The old
     // one-shot stateFor() read never recomposed, so a file that had to be
-    // re-downloaded (方案 A deletes the local copy on player exit) kept
     // currentPath == null forever → the prepare effect never ran → infinite
     // spinner / black screen.
     val fileStates by viewModel.fileRepo.states.collectAsStateWithLifecycle()
@@ -249,8 +243,6 @@ fun PlayerScreen(
     // Every video streams now, whether Telegram marked it streamable or not: the tail probe
     // fetches an end-of-file 'moov', so a non-faststart MP4 no longer has to be downloaded in
     // full before it can start. Files that still fail to parse fall back to a complete local
-    // copy on the first source error (2026-10-28).
-    // Reverted to the supportsStreaming gate (2026-10-28): streaming every file regressed
     // playback on device, so only Telegram's streamable videos use td:// again. The tail
     // prefetch stays in the tree, disabled, until it can be verified on hardware.
     val canStream = current.type == MediaType.Video && current.supportsStreaming &&
@@ -281,14 +273,12 @@ fun PlayerScreen(
     // transition was still animating — which dropped frames when opening a video
     // from the media grid. Compose a plain shell first and let the player in
     // once that window has passed. No poster here any more: artwork flashing up
-    // ahead of the video read as a glitch (2026-09-13).
     var playerReady by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         delay(PLAYER_INIT_DELAY_MS)
         playerReady = true
     }
     if (!playerReady) {
-        // Spinner intentionally removed (2026-10-27, on request): the shell is a plain
         // backdrop for the ~250ms before the player is built.
         Box(
             modifier = Modifier
@@ -303,8 +293,6 @@ fun PlayerScreen(
             // Let MediaCodec fall back to the platform's software decoder when
             // the hardware one refuses the format. TV boxes reject anything
             // past 8-bit 4:2:0, so an H.264 High 4:4:4 clip fails init outright
-            // (ERROR_CODE_DECODER_INIT_FAILED, format_supported=
-            // NO_EXCEEDS_CAPABILITIES, 2026-09-13). Free when the hardware
             // decoder accepts; slow-but-playing beats a hard failure when it
             // does not.
             .setRenderersFactory(
@@ -328,7 +316,6 @@ fun PlayerScreen(
             }
     }
     DisposableEffect(exo) {
-        // 方案 A：播完即删 — video reaches its end → drop the local copy
         // (TDLib keeps the remote reference; streaming videos re-download
         // almost instantly on next play, non-streaming ones re-download on
         // demand). Prevents finished videos from piling up on tiny TV
@@ -347,7 +334,6 @@ fun PlayerScreen(
         }
     }
 
-    // 方案 A：退出播放器即删 — leaving the player screen also drops the
     // current file's local copy (in addition to the ENDED hook above, which
     // only fires when a video plays to completion). Skipping away mid-video
     // otherwise leaves the half-downloaded file on disk forever.
@@ -413,11 +399,9 @@ fun PlayerScreen(
     // player silently black (there was no onPlayerError listener at all).
     var playerError by remember(current.fileId) { mutableStateOf<String?>(null) }
     // True when the failure is the device refusing the format rather than a
-    // playback bug — those get a plain-language line above the technical dump.
     var playerErrorUnsupportedCodec by remember(current.fileId) { mutableStateOf(false) }
     // One automatic recovery for a stream ExoPlayer cannot recognise — the usual cause is a
     // stale "completed" download whose file has no bytes left. Restarting the download from 0
-    // is cheaper than showing the error overlay (2026-10-28).
     var unrecognizedRetries by remember(current.fileId) { mutableIntStateOf(0) }
     val retryPlayback = {
         playerError = null
@@ -435,7 +419,6 @@ fun PlayerScreen(
     // false during BUFFERING after a seek, playWhenReady doesn't.
     var nowPlaying by remember(current.fileId) { mutableStateOf(exo.playWhenReady) }
     // Codec/bitrate for the info drawer: TDLib never carries them, the player does once
-    // tracks exist (2026-10-27).
     var videoCodecInfo by remember(current.fileId) { mutableStateOf<String?>(null) }
     var audioCodecInfo by remember(current.fileId) { mutableStateOf<String?>(null) }
     DisposableEffect(exo) {
@@ -452,7 +435,6 @@ fun PlayerScreen(
                     // How many bytes are actually on disk decides the recovery: with data
                     // present the stream is fine but the extractor got a non-zero start (or
                     // the MP4 keeps its moov at the end) — play a complete local copy. With
-                    // nothing on disk the download state is stale — start it over (2026-10-28).
                     val path = viewModel.fileRepo.streamState(current.fileId)?.path
                         ?: (fileStates[current.fileId] as? FileDownloadState.Local)?.path
                     val onDisk = path?.let { File(it).length() } ?: 0L
@@ -479,7 +461,6 @@ fun PlayerScreen(
                 }
                 playerError = error.errorCodeName + ": " + (error.message ?: "")
                 // A decoder that refused the format is a device capability
-                // limit, not a bug worth showing as a MediaCodec dump.
                 playerErrorUnsupportedCodec =
                     error.errorCodeName.startsWith("ERROR_CODE_DECODER") ||
                         error.message?.contains("NO_EXCEEDS_CAPABILITIES") == true
@@ -538,9 +519,7 @@ fun PlayerScreen(
     // Rotation corrects THIS file's shape, so it does not carry over: 90° on a
     // portrait clip is right, but the same 90° on the next landscape video lays
     // it on its side. Keyed on the file id so a recomposition of the same video
-    // can never clear a fresh pick (2026-09-13).
     LaunchedEffect(current.fileId) { rotation = 0 }
-    // Figma 3622:2125: original ratio (FIT), or a crop to 1:1 / 4:3 / 16:9. A
     // viewing preference, so it survives a video switch while the player is open.
     var aspect by remember { mutableStateOf<VideoAspect?>(null) }
     var lastInteractionMs by remember { mutableStateOf(System.currentTimeMillis()) }
@@ -591,8 +570,6 @@ fun PlayerScreen(
             fileInfo = viewModel.fileRepo.fileInfo(current.fileId)
         }
     }
-
-
 
     // Back hides the controller first; a second Back leaves the player.
     // An open popover first, then the info drawer, then the controller.
@@ -696,7 +673,6 @@ fun PlayerScreen(
         } ?: downloadError?.let { stringResource(R.string.player_download_failed, it) }
 
         if (errorMsg != null) {
-            // Figma 3679:2204 / 3679:2362: title, wrapped message, Try again pill; the
             // controller stays visible underneath and the retry button takes focus.
             Box(
                 modifier = Modifier
@@ -777,16 +753,13 @@ fun PlayerScreen(
                         ) as PlayerView).apply {
                             useController = false // custom compose controller below
                             // Belt and braces with app:show_buffering="never": our own
-                            // CircularProgressIndicator is the only loading indicator (2026-10-27).
                             setShowBuffering(PlayerView.SHOW_BUFFERING_NEVER)
                             resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
                             player = exo
                             // The letterbox around the video matches the app's background
-                            // (#1A1C1E), not pure black (product, 2026-10-21).
                             setBackgroundColor(HomeSpec.Background.toArgb())
                             // media3's shutter (the panel shown until the first frame) defaults
                             // to BLACK and sits above this background, so buffering read as a
-                            // black screen behind the spinner. Match the app backdrop (2026-10-27).
                             setShutterBackgroundColor(HomeSpec.Background.toArgb())
                         }
                     },
@@ -898,8 +871,6 @@ fun PlayerScreen(
             )
         }
 
-        // Figma 3678:2349: the player gets its own 384x512 sheet — the shared
-        // RightDrawer fills the height, which the design does not (2026-10-27).
         RightEdgeSheet(
             visible = showInfo,
             onDismiss = { showInfo = false },
@@ -1035,9 +1006,7 @@ private fun PlayerController(
         playFocus.requestFocus()
     }
 
-    // Figma 3678:2255: a flat 20% bar over the video, rounded 4, with a 1px
     // white 2% hairline along its top edge — not the full-frame gradient the
-    // old controller painted (2026-10-27).
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -1050,7 +1019,6 @@ private fun PlayerController(
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         // Actions only: the design's Label column is empty now, the caption
-        // lives in the info drawer (2026-10-27).
         Row(
             modifier = Modifier
                 .width(836.dp)
@@ -1220,7 +1188,6 @@ private fun Seeker(
         onProgressFocusChange(isFocused)
     }
 
-    // Figma 3678:2402: 48dp time slots either side, a constant 5dp bar in
     // between; the handle appears only while the bar itself has focus.
     Row(
         modifier = modifier.fillMaxWidth(),
@@ -1263,7 +1230,6 @@ private fun Seeker(
                         }
                     },
             ) {
-                // Figma: track 20% white, buffered 45% white, played solid white.
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -1317,9 +1283,7 @@ private fun Seeker(
 }
 
 /**
- * Figma 3678:2301: the video strip under the seeker. Focus moves the highlight only; OK switches
  * the video (which auto-plays and resumes from its saved position). Up returns to the seeker,
- * Down hides the controller (2026-10-27).
  */
 @Composable
 private fun VideoStrip(
@@ -1451,7 +1415,6 @@ private fun ControllerButton(
     // JetStream circular button: Surface Variant base + On Surface icon, both
     // at the design's 80% node opacity.
     // Focus swaps to the light On Secondary Container fill (#D9E3F8) with an On
-    // Secondary icon (#273141) — spec 2026-09-12. Kept fully opaque so the
     // focused control reads on a 10-foot UI.
     val bg = if (isFocused) {
         MaterialTheme.colorScheme.onSecondaryContainer
@@ -1488,7 +1451,6 @@ private fun ControllerButton(
 // Decode TDLib's embedded minithumbnail (raw JPEG bytes — it ships inside the
 // message, so nothing is downloaded) into something Compose can draw.
 // ── Player popovers ───────────────────────────────────────────────────────
-// Figma 1117:15358 ("Menu", component set 1117:9959) is the JetStream popover
 // the design shows for the subtitle picker; the player's pickers reuse it: a
 // 216dp column, 16dp radius, background-token fill under the design's elevation
 // shadow, 8/12dp list padding and 40dp rows (10/12 padding around the 20dp line
@@ -1503,10 +1465,6 @@ private val PlayerPopoverListPaddingH = 12.dp
 // Which picker the controller has open, if any.
 private enum class PlayerPopover { Speed, Aspect }
 
-/**
- * Figma 3622:2125 aspect menu. Null is the video's own ratio (FIT); the rest crop the picture
- * to that ratio, the same rule the photo viewer uses (2026-10-27).
- */
 private enum class VideoAspect(val label: String, val ratio: Float) {
     Square("1:1", 1f),
     FourThree("4:3", 4f / 3f),
@@ -1541,7 +1499,6 @@ private fun <T> PlayerPopoverMenuPopup(
             // Picking closes the popover here rather than at each call site: a
             // call site only owns the state, and the first one that forgot to
             // clear it left a menu sitting over the video with the tick already
-            // moved (2026-09-13).
             onSelect = { item ->
                 onSelect(item)
                 onDismiss()
@@ -1685,7 +1642,6 @@ private fun PlayerPopoverItem(
         Text(
             text = label,
             color = fg,
-            // Figma title/small = Inter Medium 500 / 14 / 20, which is this
             // app's labelLarge (its own titleSmall is 12/16 Regular).
             style = MaterialTheme.typography.labelLarge,
         )
@@ -1742,6 +1698,7 @@ private fun TryAgainButton(onRetry: () -> Unit) {
 }
 
 /** "H.264 · 4.5 Mbps" straight off the prepared track; null until prepare finishes. */
+/** "H.264 · 4.5 Mbps" straight off the prepared track; null until prepare finishes. */
 private fun describeVideo(tracks: Tracks): String? {
     val group = tracks.groups.firstOrNull { it.type == C.TRACK_TYPE_VIDEO } ?: return null
     val index = (0 until group.length).firstOrNull { group.isTrackSupported(it) } ?: 0
@@ -1760,6 +1717,7 @@ private fun describeVideo(tracks: Tracks): String? {
     return name + bitrate
 }
 
+/** "AAC · 2ch"; the row that explains "picture but no sound". */
 /** "AAC · 2ch"; the row that explains "picture but no sound". */
 private fun describeAudio(tracks: Tracks): String? {
     val group = tracks.groups.firstOrNull { it.type == C.TRACK_TYPE_AUDIO } ?: return null
@@ -1788,6 +1746,7 @@ private fun formatMs(ms: Long): String {
     return if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%d:%02d".format(m, s)
 }
 
+/** Sheet content: the five metadata rows, a rule, then the caption (design order). */
 /** Sheet content: the five metadata rows, a rule, then the caption (design order). */
 @Composable
 private fun ColumnScope.MediaInfoBody(

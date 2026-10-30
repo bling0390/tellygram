@@ -12,7 +12,6 @@ import tv.telegram.td.TdFileRepository
 import tv.telegram.ui.audio.SpectrumRenderersFactory
 
 /**
- * How a correctly configured player is built (decision A1, 2026-10-16): the one place that knows
  * what our players need — the decoder fallback TV boxes require, the audio focus ExoPlayer takes
  * on our behalf, and the TdDataSource that plays straight out of TDLib.
  *
@@ -24,7 +23,6 @@ internal fun buildAudioPlayer(
     context: Context,
     fileRepo: TdFileRepository,
     /**
-     * The spectrum tap, when this player should feed one (2026-10-16). Null builds an untouched
      * player — the switch decision A1 asked for, so a caller that does not want the ring pays
      * nothing for it.
      */

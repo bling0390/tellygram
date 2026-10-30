@@ -8,7 +8,6 @@ import kotlin.math.max
  * Telegram ships several sizes per photo (typically 90 / 320 / 800 …). The smallest is too soft
  * for a 160dp TV card once upscaled, and the largest is wasteful for a thumbnail, so the rule is:
  * the smallest size whose long edge still reaches [minLongEdge], falling back to the largest
- * available when the source itself is smaller than that (2026-10-21).
  *
  * Pure so the choice can be unit tested without TDLib objects.
  */

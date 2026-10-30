@@ -37,14 +37,12 @@ import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import kotlinx.coroutines.delay
 
-/** Figma's light surface for side sheets (photo caption, player information). */
 internal val RightSheetPanel = Color(0xFFE3E2E6)
 internal val RightSheetTitle = Color(0xFF121316)
 internal val RightSheetInk = Color(0xFF43474E)
 internal val RightSheetRule = Color(0xFF8E9099).copy(alpha = 0.1f)
 
 /**
- * Figma 3669:2277 / 3678:2349: a 384x512 sheet flush with the right edge, 14dp from the top,
  * rounded only on the side that faces the picture. Own window (Popup), so it sits above the
  * player without resizing it; Back falls through to the screen's own handler, as before.
  *
@@ -110,6 +108,7 @@ internal fun RightEdgeSheet(
     }
 }
 
+/** Right edge, 14dp down: x = 576 on the 960 canvas. */
 /** Right edge, 14dp down: x = 576 on the 960 canvas. */
 private class RightEdgePosition(private val topPx: Int) : PopupPositionProvider {
     override fun calculatePosition(

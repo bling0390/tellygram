@@ -15,19 +15,21 @@ import tv.telegram.td.SenderInfo
 internal interface HomeState {
     val chatList: StateFlow<List<ChatItem>>
     /** The archived half of the list: what the Archived Chats row swaps in. */
+    /** The archived half of the list: what the Archived Chats row swaps in. */
     val archiveChats: StateFlow<List<ChatItem>>
     val mediaItems: StateFlow<List<MediaItem>>
     /**
      * The chat whose media the wall is showing. Owned by the data layer so a viewer round trip
      * (which tears this screen's composition down) cannot lose it and make focus coming back to
-     * the list re-query the same chat (2026-10-17).
      */
     val currentChatId: StateFlow<Long?>
     val mediaLoadingMore: StateFlow<Boolean>
     val mediaExhausted: StateFlow<Boolean>
     /** Live download state per file id, for avatars and thumbnails. */
+    /** Live download state per file id, for avatars and thumbnails. */
     val fileStates: StateFlow<Map<Int, FileDownloadState>>
 
+    /** Card to focus after a full-screen viewer closes; null when there is none. */
     /** Card to focus after a full-screen viewer closes; null when there is none. */
     val playerReturnFocusMessageId: StateFlow<Long?>
 
@@ -35,6 +37,7 @@ internal interface HomeState {
     fun openChat(chatId: Long)
     fun loadMoreMedia()
     fun setMediaFilter(filter: MediaFilter)
+    /** Remembered by the player / photo preview when they close. */
     /** Remembered by the player / photo preview when they close. */
     fun setPlayerReturnFocus(messageId: Long)
     fun consumePlayerReturnFocus()
@@ -44,12 +47,16 @@ internal interface HomeState {
     fun toggleChatMute(chatId: Long, muted: Boolean)
     fun toggleChatArchive(chatId: Long, archived: Boolean)
     /** The popover's fourth row: revoke comes from chatDeleteRevokes(). */
+    /** The popover's fourth row: revoke comes from chatDeleteRevokes(). */
     fun deleteChat(chat: ChatItem, revoke: Boolean)
+    /** Resolved on demand for groups; cached, so a long press costs one call at most. */
     /** Resolved on demand for groups; cached, so a long press costs one call at most. */
     suspend fun isGroupOwner(chatId: Long): Boolean
     /** Resolved lazily when a text popup opens; null when it cannot be resolved. */
+    /** Resolved lazily when a text popup opens; null when it cannot be resolved. */
     suspend fun senderInfoFor(item: MediaItem): SenderInfo?
 
+    /** Plan (a): the list a message-addressed viewer walks, and where it starts. */
     /** Plan (a): the list a message-addressed viewer walks, and where it starts. */
     fun openViewerByMessage(items: List<MediaItem>, messageId: Long)
 }

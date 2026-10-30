@@ -61,13 +61,14 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.drawscope.Stroke
 
 /** The popup's palette, taken from the frames (3558:2184). */
+/** The popup's palette, taken from the frames (3558:2184). */
 internal object AlbumPopupSpec {
     val Panel = Color(0xFFE3E2E6)        // inverse-surface
     val Title = Color(0xFF121316)        // surface
     val Body = Color(0xFF43474E)         // surface-variant
     /** The hairline between the caption and the strip: outline at 10%. */
+    /** The hairline between the caption and the strip: outline at 10%. */
     val Divider = Color(0x1A8E9099)
-    /** Same dim as the dialogs: the frames' blur is not used (product, 2026-09-30). */
     val Scrim = Color(0x991A1C1E)
 }
 
@@ -81,11 +82,13 @@ internal object AlbumPopupSpec {
 internal fun AlbumPopup(
     members: List<MediaItem>,
     /** Same card content as the grid: thumbnails, their loading/glyph states and the badges. */
+    /** Same card content as the grid: thumbnails, their loading/glyph states and the badges. */
     state: HomeState,
     onOpenMember: (Int) -> Unit,
     onDismiss: () -> Unit,
     caption: String? = null,
     tagPrefix: String = "album-popup",
+    /** The member the popup should focus when it (re)opens; null focuses the first one. */
     /** The member the popup should focus when it (re)opens; null focuses the first one. */
     focusMessageId: Long? = null,
 ) {
@@ -93,7 +96,6 @@ internal fun AlbumPopup(
     val listState = rememberLazyListState()
     val hasCaption = !caption.isNullOrBlank()
     // Which member owns the entry focus: the one that was opened before a viewer took over, or
-    // the first one on a fresh open (2026-10-17).
     val focusIndex = remember(members, focusMessageId) { albumFocusIndex(members, focusMessageId) }
 
     // The Dialog is its own window, so the first request can beat the node; retry a frame. A
@@ -132,7 +134,6 @@ internal fun AlbumPopup(
             ) {
                 Column(
                     // Full content width: a 371dp column left ~237dp of empty panel on the
-                    // right of the caption (2026-10-21). The caption wraps to the panel now.
                     modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
@@ -144,14 +145,12 @@ internal fun AlbumPopup(
                     if (hasCaption) {
                         Text(
                             // Free to wrap: the caption grows the header (and the panel with
-                            // it) instead of being clipped to two lines (product, 2026-10-01).
                             text = caption.orEmpty(),
                             style = MaterialTheme.typography.bodyMedium,
                             color = AlbumPopupSpec.Body,
                         )
                     }
                 }
-                // No caption means no hairline either (product, 2026-09-30).
                 if (hasCaption) {
                     Box(
                         modifier = Modifier
@@ -189,10 +188,12 @@ internal fun AlbumPopup(
 }
 
 /** One member: the grid's card content, with the popup's own Left/Right-only focus graph. */
+/** One member: the grid's card content, with the popup's own Left/Right-only focus graph. */
 @Composable
 private fun AlbumMemberTile(
     member: MediaItem,
     state: HomeState,
+    /** This tile owns the popup's entry focus (the first one, or the member that was reopened). */
     /** This tile owns the popup's entry focus (the first one, or the member that was reopened). */
     isEntry: Boolean,
     isFirst: Boolean,

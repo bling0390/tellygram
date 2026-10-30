@@ -20,12 +20,10 @@ import androidx.tv.material3.Typography
 import androidx.tv.material3.darkColorScheme
 import androidx.tv.material3.lightColorScheme
 
-// JetStream design tokens (Figma: 📺 JetStream - Streaming App).
 //   Dark palette = node 76:671 ("Dark"); type scale = node 76:599; shape = 76:807.
 // Sizes/weights AND the family match JetStream's Inter scale: Inter is bundled
 // in res/font (SIL OFL 1.1, see res/raw/inter_ofl.txt). Inter carries no CJK
 // glyphs, so Chinese copy falls back to the system CJK font automatically —
-// the latin/汉字 mix is expected and accepted (decision 2026-09-11). JetStream
 // ships no light palette, so the light scheme below is kept from the original
 // tellygram theme.
 

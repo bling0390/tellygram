@@ -65,6 +65,7 @@ internal fun ChatContextMenu(
     chat: ChatItem,
     archived: Boolean,
     /** Resolved by the screen before opening: the destructive row is worded per owner. */
+    /** Resolved by the screen before opening: the destructive row is worded per owner. */
     isOwner: Boolean,
     top: Dp,
     onSelect: (ChatMenuAction) -> Unit,
@@ -84,7 +85,6 @@ internal fun ChatContextMenu(
 
     // Back closes the popover from anywhere inside it. NOT via onKeyEvent on this Column:
     // key events only bubble along the FOCUS path, and this Column is not a focus node, so a
-    // handler here never saw them (2026-10-02 report).
     BackHandler(enabled = true) { onDismiss() }
 
     Column(
@@ -201,6 +201,7 @@ private fun Icon16(icon: ImageVector, focused: Boolean) {
     )
 }
 
+/** Pin, mute and archive flip their glyph with the state; delete never does. */
 /** Pin, mute and archive flip their glyph with the state; delete never does. */
 internal fun chatMenuIcon(action: ChatMenuAction, muted: Boolean, archived: Boolean): ImageVector =
     when (action) {

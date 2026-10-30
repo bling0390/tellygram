@@ -119,7 +119,6 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 
 /**
  * The visual half of a media card, shared by the grid and the album popup so the two cannot
- * drift (2026-09-30): the thumbnail with its loading/glyph states, the type glyphs and the
  * album's "+N". Focus and key handling stay with each caller — the grid drives a four-way
  * graph, the popup only Left/Right.
  */
@@ -128,9 +127,7 @@ internal fun BoxScope.MediaCardContent(item: MediaItem, state: HomeState) {
     when (item.cellKind()) {
         // Audio is the one glyph-only kind the design draws.
         is MediaCellKind.Audio -> MediaGlyph(Icons.Outlined.AudioFile)
-        // Text: the message body itself, as the design draws it (2026-10-21).
         is MediaCellKind.Text -> MediaTextCell(item)
-        // Album: the members as an aspect-ratio collage (2026-10-21).
         is MediaCellKind.Album -> MediaAlbumMosaic(item, state)
         // Photo / video: the thumbnail is the card; the file glyph stands in when there is
         // nothing to show.
@@ -139,6 +136,7 @@ internal fun BoxScope.MediaCardContent(item: MediaItem, state: HomeState) {
     }
 }
 
+/** How long a card waits for its thumbnail before falling back to the glyph. */
 /** How long a card waits for its thumbnail before falling back to the glyph. */
 internal const val ThumbnailTimeoutMs = 6_000L
 
@@ -158,7 +156,6 @@ private fun BoxScope.MediaGlyph(imageVector: ImageVector) {
  * One album tile: the embedded minithumbnail paints immediately as a placeholder, the
  * downloaded thumbnail (TDLib's medium size — see pickThumbnail) covers it once it lands, and
  * the type glyph is the last resort. The minithumbnail alone was visibly soft at TV sizes
- * (2026-10-21).
  */
 @Composable
 private fun BoxScope.AlbumTile(
@@ -208,7 +205,6 @@ private fun BoxScope.AlbumTile(
 
 /**
  * Text card (design 3645:2269): the message body, 12/8 padding, 12/16 Medium, clipped at six
- * lines. No sender, time or title (product, 2026-10-21).
  */
 @Composable
 private fun BoxScope.MediaTextCell(item: MediaItem) {
@@ -226,7 +222,6 @@ private fun BoxScope.MediaTextCell(item: MediaItem) {
             .fillMaxSize()
             // 10dp top/bottom (not the frame's 12) so six 16dp lines fit the 96dp body:
             // with 12 the font padding left only five full lines plus an ellipsis
-            // (product, 2026-10-21).
             .padding(horizontal = 8.dp, vertical = 10.dp),
     )
 }
@@ -235,7 +230,6 @@ private fun BoxScope.MediaTextCell(item: MediaItem) {
  * Album card (design 3638:2249): the members as a collage that keeps each one's aspect ratio
  * and fills the card exactly, with 2dp seams. Small images are TDLib's embedded
  * minithumbnails — nothing to download and nothing big to decode. No glyph, no "+N"
- * (product, 2026-10-21).
  */
 @Composable
 private fun BoxScope.MediaAlbumMosaic(item: MediaItem, state: HomeState) {
@@ -320,7 +314,6 @@ private fun BoxScope.MediaThumbnail(item: MediaItem, state: HomeState, isVideo: 
             model = remember(localPath) { ImageRequest.Builder(ctx).data(File(localPath!!)).crossfade(false).build() },
             contentDescription = item.caption,
             // Fit the long edge instead of cropping: the whole frame stays visible and the
-            // card's fill shows beside it (product, 2026-10-01).
             contentScale = ContentScale.Fit,
             onError = { imageFailed = true },
             modifier = Modifier
@@ -393,6 +386,7 @@ internal fun MediaCard(
     focused: Boolean,
     tag: String? = null,
     /** The ring's tint while unfocused: the card's own fill by default, a light outline in the popup. */
+    /** The ring's tint while unfocused: the card's own fill by default, a light outline in the popup. */
     borderColor: Color = HomeSpec.SurfaceContainer,
     modifier: Modifier = Modifier,
     content: @Composable BoxScope.() -> Unit,
@@ -400,7 +394,6 @@ internal fun MediaCard(
     Box(
         modifier = Modifier
             // The SLOT is the box model now: 166x126 holds the 3dp ring plus the 160x120 card,
-            // so the ring lives inside a layout box and no ancestor's clip can cut it (2026-10-01).
             .size(
                 width = HomeSpec.CellWidth + HomeSpec.FocusBorder * 2,
                 height = HomeSpec.CellHeight + HomeSpec.FocusBorder * 2,
@@ -408,7 +401,6 @@ internal fun MediaCard(
             .let { if (tag != null) it.testTag(tag) else it }
             // The ring is drawn BEFORE the clip. Compose's clip() also clips the drawing of the
             // modifiers after it, and the ring sits entirely OUTSIDE the card — so drawing it
-            // after the clip left only its corners visible (2026-10-01 report). Drawn first, the
             // card paints over its inner half and the outer 3dp is the visible edge.
             .focusStroke(
                 draw = true,

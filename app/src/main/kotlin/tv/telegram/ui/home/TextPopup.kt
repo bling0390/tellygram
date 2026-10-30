@@ -62,16 +62,16 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 
 /** The text popup's palette and cap, from the frames (3588:2212). */
+/** The text popup's palette and cap, from the frames (3588:2212). */
 internal object TextPopupSpec {
     val Panel = Color(0xFFE3E2E6)   // inverse-surface
     val Title = Color(0xFF121316)   // surface
     val Body = Color(0xFF43474E)    // surface-variant
-    /** Same dim as the dialogs: the frames' blur is not used (product, 2026-10-02). */
     val Scrim = Color(0x991A1C1E)
+    /** Shown behind the avatar while its file is on its way (or when there is none). */
     /** Shown behind the avatar while its file is on its way (or when there is none). */
     val AvatarFallback = Color(0xFFC4C6CF)
 
-    /** The body stops growing here and scrolls inside instead (product, 2026-10-02). */
     val MaxTextHeight = 400.dp
 }
 
@@ -85,8 +85,10 @@ internal object TextPopupSpec {
 internal fun TextPopup(
     text: String,
     /** Resolved lazily by the screen; null falls back to the literal "Sender:". */
+    /** Resolved lazily by the screen; null falls back to the literal "Sender:". */
     senderName: String?,
     avatarFileId: Int?,
+    /** The sender's id: the shared Avatar uses it for the fallback colour. */
     /** The sender's id: the shared Avatar uses it for the fallback colour. */
     senderId: Long,
     state: HomeState,
@@ -163,7 +165,6 @@ internal fun TextPopup(
                             .testTag("$tagPrefix-body")
                             .verticalScroll(bodyScroll)
                             // Belt and braces: turn D-pad Up/Down into scroll requests even if
-                            // the focus has not landed yet (2026-10-02 report).
                             .onPreviewKeyEvent { ev: androidx.compose.ui.input.key.KeyEvent ->
                                 if (ev.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                                 when (ev.key) {
@@ -180,7 +181,6 @@ internal fun TextPopup(
                             }
                             // Focusable so the TV remote's Up/Down scroll it: verticalScroll
                             // alone only handles drag/wheel. The popup focuses it on open
-                            // (product, 2026-10-02).
                             .focusRequester(bodyFocus)
                             .focusable(),
                     ) {

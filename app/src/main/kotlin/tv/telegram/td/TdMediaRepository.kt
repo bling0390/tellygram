@@ -48,7 +48,6 @@ class TdMediaRepository(
     // what happens to be loaded.
     private var currentFilter: MediaFilter = MediaFilter.All
 
-
     init {
         scope.launch {
             client.updates.collect { obj -> dispatch(obj) }
@@ -79,7 +78,6 @@ class TdMediaRepository(
             if (idx >= 0) {
                 val updated = _items.value.toMutableList()
                 val cur = updated[idx]
-                // The popup shows the members, so the new one joins them too (2026-09-30).
                 updated[idx] = cur.copy(
                     albumSize = cur.albumSize + 1,
                     albumMembers = cur.albumMembers + item,
@@ -142,7 +140,6 @@ class TdMediaRepository(
         _items.value = items
         knownMessageIds.addAll(items.map { it.messageId })
         _loaded.value = true
-        // Same rule as loadMore (2026-10-18): a short first page is not the end of the chat —
         // TDLib can answer a 100-message request with fewer messages while history remains.
         if (resp.messages.isEmpty()) {
             _exhausted.value = true
@@ -198,11 +195,9 @@ class TdMediaRepository(
             // dedupes just in case a message comes back twice.
             // A page can legitimately yield nothing new — service messages, or an album
             // already collapsed into an earlier page. Treating that as "the chat is over"
-            // was the bug: the grid stopped loading at the first such page. Keep pulling
             // instead, bounded so a chat full of junk cannot spin here (openAndLoad does
             // the same dance for its first page).
             //
-            // The cursor is re-read every round (2026-10-17): the page just fetched advances
             // oldestFetchedMessageId, and keeping the pre-loop value made every retry ask for
             // the same page again — three identical answers with nothing added.
             var extraPages = 0
@@ -218,7 +213,6 @@ class TdMediaRepository(
                         currentFilter.searchFilter(), 0L,
                     ),
                     // Without a timeout a hung request kept `loadingMore` true forever: the grid
-                    // never asked again and the log simply stopped at the last page (2026-10-18).
                     timeoutMs = 10_000L,
                 ).valueOrNull<TdApi.Messages>()
                 if (resp == null) {
@@ -240,7 +234,6 @@ class TdMediaRepository(
                     _items.value = _items.value + added
                     knownMessageIds.addAll(newItems.map { it.messageId })
                 }
-                // Only an EMPTY page means the chat has run out (2026-10-18). TDLib can answer
                 // a 100-message request with fewer messages while plenty of history remains: a
                 // channel with 80k media stopped at 60 items because the fourth page came back
                 // short. A short page just means advance the cursor and ask again.
@@ -398,7 +391,6 @@ class TdMediaRepository(
                     TdApi.SearchMessagesFilterEmpty(), 0L,
                 ),
                 // Same timeout as the page fetches: this runs inside loadMore, and a hang here
-                // would leave its loading flag set exactly the same way (2026-10-18).
                 timeoutMs = 10_000L,
             ).valueOrNull<TdApi.Messages>()?.messages ?: return
             if (extra.isEmpty()) return
@@ -444,7 +436,6 @@ class TdMediaRepository(
 
     /**
      * The size stored as the item's thumbnail: the medium box (see [pickThumbnailIndex]), not
-     * the smallest — a 90px size upscaled to a 160dp TV card was visibly soft (2026-10-21).
      */
     private fun pickThumbnail(sizes: Array<TdApi.PhotoSize>): TdApi.PhotoSize? {
         val usable = sizes.filter { it.photo.id != 0 }
@@ -455,7 +446,6 @@ class TdMediaRepository(
     companion object {
         private const val TAG = "TdMediaRepo"
     }
-    /** The sender's name and avatar for the text popup: one request for both (2026-10-02). */
     suspend fun senderInfo(item: MediaItem): SenderInfo? {
         if (item.senderId == 0L) return null
         return if (item.senderIsChat) {
@@ -482,7 +472,6 @@ class TdMediaRepository(
 /**
  * The audio branch of the message mapping, lifted out of [TdMediaRepository.parseMessage] so it
  * can be unit tested without a TDLib client. It is the only place a track's own metadata — title,
- * artist, file name, mime type, size — reaches a [MediaItem] (2026-10-16).
  *
  * TDLib reports an absent ID3 field as an empty string rather than null, and the player's
  * fallback chain (title -> file name -> "unknown track") keys on null, so the empty case is
@@ -518,7 +507,6 @@ internal fun shouldStopPaging(added: Int, extraPages: Int, maxExtraPages: Int = 
 
 /**
  * Album members in display order. TDLib hands messages back newest-first, but an album reads in
- * the order it was sent — oldest first (product, 2026-10-01). The popup's strip and the viewer's
  * next/previous share this list, so both follow the same order. The card's cover is unaffected:
  * it is the item the whole album hangs off, not members[0].
  */

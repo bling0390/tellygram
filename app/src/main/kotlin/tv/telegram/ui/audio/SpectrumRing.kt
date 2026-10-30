@@ -13,7 +13,6 @@ import kotlin.math.min
 import kotlin.math.sin
 
 /**
- * The circular spectrum that took the cover's place (decisions D1-D3, 2026-10-16): a mirrored ring
  * of bars, coloured along the radius, resting as a ring at the minimum radius whenever there is
  * nothing to show.
  *

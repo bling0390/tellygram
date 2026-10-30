@@ -4,7 +4,6 @@ import androidx.compose.ui.geometry.Rect
 import kotlin.math.abs
 
 /**
- * The album card's collage (design node 3636:2311, 2026-10-21).
  *
  * Members keep their own aspect ratio, every row fills the card's width, and the finished
  * block is scaled to fill its height exactly — the frame's seven-member card comes out as
@@ -31,7 +30,6 @@ internal fun albumMosaicRects(
     var bestError = Float.MAX_VALUE
 
     // Mask 0 is the "every member in one row" split; leaving it out made a two-member
-    // album fall back to a single rect (caught by the size sweep, 2026-10-21).
     for (mask in 0 until (1 shl (clamped.size - 1))) {
         var rows = 1
         for (boundary in 0 until clamped.size - 1) {

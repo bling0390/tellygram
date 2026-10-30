@@ -106,6 +106,7 @@ class TdChatRepository(
     }
 
     /** Patch a chat's muted state from a notification-settings update. */
+    /** Patch a chat's muted state from a notification-settings update. */
     private fun applyMuted(chatId: Long, settings: TdApi.ChatNotificationSettings) {
         val muted = isMuted(settings)
         fun patch(list: List<ChatItem>): List<ChatItem> =
@@ -303,6 +304,7 @@ class TdChatRepository(
     }
 
     /** Thumbnail file id of the last media message, for the small preview before the summary text. */
+    /** Thumbnail file id of the last media message, for the small preview before the summary text. */
     private fun messageThumbFileId(message: TdApi.Message): Int? = when (val c = message.content) {
         is TdApi.MessagePhoto -> c.photo.sizes
             .filter { it.photo.id != 0 }
@@ -385,7 +387,6 @@ class TdChatRepository(
     /**
      * The destructive action behind the menu's fourth row. `revoke` comes from the rules:
      * the private toggle decides it, a group owner always wipes the history for everyone,
-     * and a channel owner's "Leave" deletes the channel (product, 2026-09-27).
      */
     suspend fun deleteChat(chat: ChatItem, revoke: Boolean) {
         when {
@@ -411,7 +412,6 @@ class TdChatRepository(
     // chat does not change while the app runs.
     private val ownerCache = mutableMapOf<Long, Boolean>()
 
-    /** Whether the signed-in user created this group (product decision, 2026-09-27). */
     suspend fun isGroupOwner(chatId: Long, myUserId: Long): Boolean {
         ownerCache[chatId]?.let { return it }
         val admins = client.execute(TdApi.GetChatAdministrators(chatId), timeoutMs = 5_000L)
@@ -421,6 +421,7 @@ class TdChatRepository(
         return result
     }
 
+    /** Called on sign-out so a different account cannot inherit stale answers. */
     /** Called on sign-out so a different account cannot inherit stale answers. */
     fun clearOwnerCache() {
         ownerCache.clear()

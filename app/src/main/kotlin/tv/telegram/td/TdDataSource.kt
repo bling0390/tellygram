@@ -18,7 +18,6 @@ import java.io.RandomAccessFile
  * FROM BYTE 0: the download only ever starts at 0 and appends. Nothing else is
  * trusted, because TDLib's byte counters describe "bytes on disk" rather than
  * a contiguous prefix, and an offset (windowed) download leaves a hole below it
- * that a reader cannot tell apart from data. Five live sessions on 2026-09-13
  * ended in "UnrecognizedInputFormatException" / "Invalid NAL length" for
  * exactly that reason — the extractor was fed bytes nobody had written.
  *
@@ -61,7 +60,6 @@ class TdDataSource(
         Log.d(TAG, "open: file=$fileId pos=${dataSpec.position} len=${dataSpec.length}")
         fileRepo.startStreaming(fileId, priority = 1)
         // The probe deletes and restarts the file while looking for the MP4 index: finish it
-        // before taking a handle, or reads race the reset (2026-10-28).
         fileRepo.awaitTailProbe(fileId)
 
         // A seek never re-points the download: the file stays a contiguous
@@ -80,8 +78,6 @@ class TdDataSource(
      * Opens the streamed file, tolerating the window-reset race.
      *
      * A reset deletes the file, but TDLib's next UpdateFile can still carry the
-     * old temp path, so the first RandomAccessFile hits ENOENT (live log
-     * 2026-09-13: FileNotFoundException on .../tdlib-files/temp/38). Drop that
      * path and wait for the recreated file instead of failing playback.
      */
     private fun openStreamFile(fileId: Int, position: Long): RandomAccessFile? {
@@ -103,8 +99,6 @@ class TdDataSource(
     override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
         // End-of-input is only legal at the true end of a COMPLETE file. The MP4
         // extractor turns an unexpected EOF in the middle of a sample into
-        // ERROR_CODE_PARSING_CONTAINER_MALFORMED and kills playback, even when
-        // the bytes had simply not arrived yet (live log, 2026-09-13: our
         // "download stalled" IOException, then ExoPlayer retried and died with
         // an EOFException out of Mp4Extractor.readSample). Every "not there
         // yet" path below therefore waits for the download frontier, and
@@ -150,7 +144,6 @@ class TdDataSource(
 
             // Known-good tail window: a non-faststart MP4 keeps its 'moov' at the end. The
             // probe saved those bytes in a SIDE file, so serve them from there and leave the
-            // streaming file's "pure prefix" invariant untouched (2026-10-28).
             val tailEnd = st.tailEnd
             val tailPath = st.tailPath
             if (tailPath != null && tailEnd > st.tailStart &&
@@ -240,6 +233,7 @@ class TdDataSource(
     }
 
     /** Sleeps one poll interval, restoring the interrupt flag if asked to stop. */
+    /** Sleeps one poll interval, restoring the interrupt flag if asked to stop. */
     private fun sleepBriefly() {
         try {
             Thread.sleep(READ_POLL_MS)
@@ -255,13 +249,11 @@ class TdDataSource(
      * prefix: every byte below it is data. This is the only frontier the reader
      * trusts — TDLib's downloadedSize counts bytes on disk rather than a
      * contiguous prefix, and offset downloads left holes that read as zeros and
-     * killed playback (2026-09-13).
      */
     private fun prefixEnd(state: StreamingState, handle: RandomAccessFile): Long {
         if (state.completed) {
             // A completed state with no size (a Local entry we never measured) must not
             // short-circuit to 0: that reads as end-of-input at byte 0 and kills the
-            // extractor. Fall back to the file's real length (2026-10-28).
             return state.expectedSize.takeIf { it > 0L }
                 ?: runCatching { handle.length() }.getOrDefault(0L)
         }
@@ -273,7 +265,6 @@ class TdDataSource(
             if (touched < state.resetAtMs) return 0L
         }
         // The tail lives in a side file, so the streaming file is a pure prefix again and its
-        // own length is the whole truth (2026-10-28).
         return try { handle.length() } catch (_: IOException) { 0L }
     }
 

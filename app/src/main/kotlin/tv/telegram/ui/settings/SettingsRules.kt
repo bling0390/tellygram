@@ -4,14 +4,12 @@ import androidx.compose.ui.graphics.Color
 import tv.telegram.ui.home.HomeSpec
 import tv.telegram.ui.components.RowColors
 
-
-
+/** Telegram may not have a value for a field; the pane shows an em dash then. */
 /** Telegram may not have a value for a field; the pane shows an em dash then. */
 internal fun orDash(value: String): String = value.ifBlank { "—" }
 
 /**
  * A section row in the left list: the one holding focus is filled white with the dark
- * inverse label. Focus IS the selection (2026-10-15), so there is no second, chosen-only
  * look — the same rule the top bar follows.
  */
 internal fun sectionItemColors(focused: Boolean): RowColors = if (focused) {
@@ -22,7 +20,6 @@ internal fun sectionItemColors(focused: Boolean): RowColors = if (focused) {
 
 /**
  * The chosen language's trailing check: white on the dark row (the product decision of
- * 2026-09-25), and dark on the focused white row where white would vanish.
  */
 internal fun trailingIconColor(focused: Boolean): Color =
     if (focused) HomeSpec.InverseOnSurface else HomeSpec.White
@@ -43,6 +40,4 @@ internal fun actionableRowColors(highlighted: Boolean): RowColors = if (highligh
 } else {
     RowColors(HomeSpec.SurfaceContainer, HomeSpec.OnSurface)
 }
-
-
 

@@ -99,41 +99,40 @@ import tv.telegram.ui.focus.BackRegistration
 import tv.telegram.ui.home.HomeSpec
 import tv.telegram.ui.home.HomeState
 
-/** Figma 3656:2929 aspect menu: crop the photo to this ratio (Cover). */
 private enum class PreviewAspect(val label: String, val ratio: Float) {
     Square("1:1", 1f),
     FourThree("4:3", 4f / 3f),
     Wide("16:9", 16f / 9f),
 }
 
-/** Figma 3653:2222 rotation menu; display only, never touches the file. */
 private val RotationOptions = listOf("0°", "90°", "180°", "270°")
 
-/** Figma 3669:2277: the caption sheet is the one light surface in the viewer. */
 private val CaptionPanel = Color(0xFFE3E2E6)
 private val CaptionTitle = Color(0xFF121316)
 private val CaptionBody = Color(0xFF43474E)
 private val CaptionRule = Color(0xFF8E9099).copy(alpha = 0.1f)
 
 /** One Up/Down press scrolls the caption body by this much. */
+/** One Up/Down press scrolls the caption body by this much. */
 private val CaptionScrollStep = 64.dp
 
+/** Design: content column 836dp inside the full-width bar (960 canvas, 62 a side). */
 /** Design: content column 836dp inside the full-width bar (960 canvas, 62 a side). */
 private val BarContentWidth = 836.dp
 
 /** How long the bar stays up after the last interaction. */
+/** How long the bar stays up after the last interaction. */
 private const val BarAutoHideMs = 4_000L
 
+/** Indices of the photo items, which is what Left/Right step through here. */
 /** Indices of the photo items, which is what Left/Right step through here. */
 internal fun photoIndices(items: List<MediaItem>): List<Int> =
     items.mapIndexedNotNull { i, m -> if (m.type == MediaType.Photo) i else null }
 
 /**
- * Full-screen photo preview (Figma 3656:2929 / 3656:3016 / 3658:3269 / 3658:3117 / 3653:2222).
  *
  * Left/Right walk the photos, Back exits. The bottom bar auto-hides; any key brings it back and
  * hands focus to the current photo's slot in the strip. Aspect crops (Cover), rotation is display
- * only and lasts for this visit, Info is a placeholder for now (2026-10-22 decisions).
  */
 @Composable
 internal fun PhotoPreviewScreen(
@@ -141,12 +140,10 @@ internal fun PhotoPreviewScreen(
     index: Int,
     onClose: () -> Unit,
     /**
-     * Set when the preview was opened by message id (plan (a), 2026-09-30): the list to walk,
      * already filtered to photos. Null means the chat's loaded media.
      */
     overrideItems: List<MediaItem>? = null,
 ) {
-    // The photo being shown, kept locally (2026-10-22): stepping with the D-pad or focusing a
     // strip thumb switches the picture without a route change, so the display settings survive
     // the walk and a thumb renders the moment it takes focus.
     var current by remember { mutableIntStateOf(index) }
@@ -155,9 +152,7 @@ internal fun PhotoPreviewScreen(
     val fileStates by state.fileStates.collectAsStateWithLifecycle()
     val imageFocus = remember { FocusRequester() }
     // The current strip slot: the bar hands focus here on open, and Down from the action
-    // buttons returns to it (2026-10-22).
     val stripFocus = remember { FocusRequester() }
-    // Up from the strip lands here: the first round button of the action row (2026-10-23).
     val actionsFocus = remember { FocusRequester() }
 
     // Display settings last for this visit only: entering or leaving the preview resets them.
@@ -165,22 +160,17 @@ internal fun PhotoPreviewScreen(
     var aspect by remember { mutableStateOf<PreviewAspect?>(null) }
     var aspectMenu by remember { mutableStateOf(false) }
     var rotationMenu by remember { mutableStateOf(false) }
-    /** Figma 3669:2277: the caption sheet, only reachable when the photo carries one. */
     var captionOpen by remember { mutableStateOf(false) }
-    // The buttons' window bounds: each menu floats 16dp above its own button (2026-10-22).
     var aspectAnchor by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
     var rotationAnchor by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
 
-    // Hidden on entry: the photo gets the screen, any key reveals the bar (2026-10-22).
     var barVisible by remember { mutableStateOf(false) }
     var lastInteraction by remember { mutableLongStateOf(System.currentTimeMillis()) }
     // Once the user moves into the strip or a button the auto-hide timer stops, the way the
-    // player's controller stays up while its button row has focus (2026-10-22).
     var interacted by remember { mutableStateOf(false) }
     var retryTick by remember { mutableIntStateOf(0) }
     val scope = rememberCoroutineScope()
     // Hide the bar and hand focus back after the fade, like the player's controller
-    // (2026-10-22). Down from the strip and Up from the buttons call this too.
     val hideBar: () -> Unit = {
         barVisible = false
         interacted = false
@@ -197,7 +187,6 @@ internal fun PhotoPreviewScreen(
     if (current !in items.indices) return
     val item = items[current]
 
-    // Record the return target as the shown photo changes (2026-10-22): Back then lands on the
     // card that was actually being looked at.
     LaunchedEffect(current, items.size) {
         items.getOrNull(current)?.let { state.setPlayerReturnFocus(it.messageId) }
@@ -225,7 +214,6 @@ internal fun PhotoPreviewScreen(
     }
 
     val fileState = fileStates[item.fileId]
-    // Full-size file only: the thumbnail is a placeholder, never the "photo" (2026-10-22).
     val fullPath = (fileState as? FileDownloadState.Local)?.path ?: item.localPath
     val thumbPath = item.thumbnailLocalPath
     LaunchedEffect(item.fileId, retryTick) {
@@ -281,7 +269,6 @@ internal fun PhotoPreviewScreen(
                 if (event.type != KeyEventType.KeyUp) return@onKeyEvent false
                 when (event.key) {
                     Key.DirectionLeft -> {
-                        // Left/Right only walk the photos: the bar stays hidden (2026-10-22).
                         if (!barVisible) { step(-1); true } else false
                     }
                     Key.DirectionRight -> {
@@ -300,7 +287,6 @@ internal fun PhotoPreviewScreen(
     ) {
         when {
             isError -> {
-                // Figma 3658:3269 / 3658:3117.
                 ErrorPane(onRetry = { retryTick++; reveal() })
             }
             fullPath != null -> {
@@ -321,8 +307,6 @@ internal fun PhotoPreviewScreen(
             }
             else -> {
                 // Placeholder first (the 320 thumbnail file only — the embedded minithumbnail
-                // was dropped from this pane on 2026-10-23), then the 48dp ring with a real
-                // percentage (2026-10-22).
                 val ctx = LocalContext.current
                 if (thumbPath != null) {
                     AsyncImage(
@@ -342,7 +326,6 @@ internal fun PhotoPreviewScreen(
                         CircularProgressIndicator(
                             progress = { fraction },
                             modifier = Modifier.size(48.dp),
-                            // Figma: the track is white at 8%, the sweep is white (2026-10-22).
                             color = Color.White,
                             trackColor = Color.White.copy(alpha = 0.08f),
                         )
@@ -361,7 +344,6 @@ internal fun PhotoPreviewScreen(
             }
         }
 
-        // Bottom bar: gradient + shadow per Figma, content column 836dp fixed.
         AnimatedVisibility(
             visible = barVisible,
             enter = fadeIn(tween(150)),
@@ -372,8 +354,6 @@ internal fun PhotoPreviewScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag("photo-bar")
-                    // Figma 3653:2222: flat rgba(0,0,0,.2), a 1px white 2% hairline along the
-                    // top edge, no shadow (2026-10-23).
                     .background(Color.Black.copy(alpha = 0.2f), RoundedCornerShape(4.dp))
                     .drawBehind {
                         drawRect(
@@ -387,7 +367,6 @@ internal fun PhotoPreviewScreen(
             ) {
                 Box(
                     modifier = Modifier.width(BarContentWidth),
-                    // Figma: the counter sits on the row's baseline (align bottom).
                     contentAlignment = Alignment.BottomCenter,
                 ) {
                     Text(
@@ -397,7 +376,6 @@ internal fun PhotoPreviewScreen(
                         modifier = Modifier.testTag("photo-counter"),
                     )
                     if (!isError) {
-                        // Figma: aspect ratio (active when a crop is set), rotation, info.
                         Row(
                             modifier = Modifier.align(Alignment.CenterEnd),
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -428,7 +406,6 @@ internal fun PhotoPreviewScreen(
                                 testTag = "photo-rotation",
                             )
                             // No caption, no button: an empty sheet would be worse than a
-                            // missing control (2026-10-23).
                             if (!item.caption.isNullOrBlank()) {
                                 RoundIconButton(
                                     icon = Icons.Outlined.Info,
@@ -455,7 +432,6 @@ internal fun PhotoPreviewScreen(
                     visible = barVisible,
                     currentFocus = stripFocus,
                     // Up from the strip goes to the first round button; the error pane has no
-                    // action row, so there it stays put (2026-10-23).
                     upFocus = if (isError) null else actionsFocus,
                     onSelect = { current = it },
                     onInteraction = {
@@ -502,7 +478,6 @@ internal fun PhotoPreviewScreen(
     }
 }
 
-/** Figma 3658:3269: broken-image glyph, "Try again" pill and nothing else over the photo. */
 @Composable
 private fun ErrorPane(onRetry: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
@@ -550,6 +525,7 @@ private fun ErrorPane(onRetry: () -> Unit) {
 }
 
 /** 40dp circle, 20dp glyph; white when active or focused, surface-container otherwise. */
+/** 40dp circle, 20dp glyph; white when active or focused, surface-container otherwise. */
 @Composable
 private fun RoundIconButton(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
@@ -558,9 +534,9 @@ private fun RoundIconButton(
     onFocus: () -> Unit = {},
     onBounds: (Rect) -> Unit = {},
     /** Optional external handle so the strip can hand focus up to the first button. */
+    /** Optional external handle so the strip can hand focus up to the first button. */
     requester: FocusRequester? = null,
     downFocus: FocusRequester? = null,
-    /** While this button's menu is open the button shows its default look (2026-10-22). */
     menuOpen: Boolean = false,
 ) {
     var focused by remember { mutableStateOf(false) }
@@ -573,7 +549,6 @@ private fun RoundIconButton(
             // No selected state: white only while focused, and never while its menu is open.
             .background(if (highlighted) HomeSpec.White else Color(0xCC1E2023))
             .onGloballyPositioned { onBounds(it.boundsInWindow()) }
-            // Down returns to the current strip slot; Up leaves the bar (2026-10-22).
             .focusProperties {
                 if (downFocus != null) down = downFocus
                 up = FocusRequester.Cancel
@@ -605,7 +580,6 @@ private fun RoundIconButton(
     }
 }
 
-/** Figma: 112x84 thumbs, 10dp apart, the current one carrying a 3dp white stroke. */
 @Composable
 private fun ThumbStrip(
     photos: List<Int>,
@@ -613,6 +587,7 @@ private fun ThumbStrip(
     items: List<MediaItem>,
     state: HomeState,
     fileStates: Map<Int, FileDownloadState>,
+    /** Only claim focus while the bar is up; a hidden bar must leave it on the photo. */
     /** Only claim focus while the bar is up; a hidden bar must leave it on the photo. */
     visible: Boolean,
     currentFocus: FocusRequester,
@@ -630,7 +605,6 @@ private fun ThumbStrip(
         if (!visible || position < 0) return@LaunchedEffect
         // Opened from the grid at a far index, the slot is not composed yet: the bar used to
         // ask for focus once, miss, and leave it on the photo. Bring the slot in first (the
-        // animated scroll takes frames), then retry while it is being laid out (2026-10-23).
         if (position !in listState.layoutInfo.visibleItemsInfo.map { it.index }) {
             runCatching { listState.scrollToItem(position) }
         }
@@ -678,7 +652,6 @@ private fun ThumbCell(
     val ctx = LocalContext.current
     val thumbFileId = member.thumbnailFileId ?: 0
     // Medium thumbnail (pickThumbnail), requested like the album tiles: without this the strip
-    // only ever had the tiny embedded minithumbnail and looked soft (2026-10-22).
     val localPath = (fileStates[thumbFileId] as? FileDownloadState.Local)?.path
         ?: member.thumbnailLocalPath
         ?: member.localPath
@@ -688,7 +661,6 @@ private fun ThumbCell(
 
     Box(
         modifier = Modifier
-            // 118x90 slot with the 3dp stroke OUTSIDE the 112x84 picture (2026-10-22).
             .size(width = 118.dp, height = 90.dp)
             .border(
                 3.dp,
@@ -698,16 +670,13 @@ private fun ThumbCell(
             .let { if (requester != null) it.focusRequester(requester) else it }
             .focusProperties {
                 down = FocusRequester.Cancel
-                // Up leaves the strip for the first round button (2026-10-23).
                 up = upFocus ?: FocusRequester.Cancel
-                // A one-photo strip has nowhere to go right (2026-10-23).
                 if (singleItem) right = FocusRequester.Cancel
             }
             .onFocusChanged {
                 focused = it.isFocused
                 if (it.isFocused) {
                     onInteraction()
-                    // Focusing a thumb renders it at once; OK is not needed (2026-10-22).
                     onClick()
                 }
             }
@@ -751,6 +720,7 @@ private fun ThumbCell(
 }
 
 /** Menu popup (216 wide, radius 16, background, elevation): rows select with OK. */
+/** Menu popup (216 wide, radius 16, background, elevation): rows select with OK. */
 @Composable
 private fun PreviewMenu(
     rows: List<String>,
@@ -758,11 +728,11 @@ private fun PreviewMenu(
     onSelect: (Int) -> Unit,
     onDismiss: () -> Unit,
     /** The button it hangs off, in window coordinates: the menu floats 16dp above it. */
+    /** The button it hangs off, in window coordinates: the menu floats 16dp above it. */
     anchor: Rect?,
 ) {
     val rowFocus = remember { FocusRequester() }
     // Rows stay non-focusable for one frame: otherwise the popup window auto-focuses the first
-    // row before the request lands on the selected one (2026-10-22).
     var armed by remember { mutableStateOf(false) }
     val gapPx = with(LocalDensity.current) { 16.dp.roundToPx() }
     LaunchedEffect(Unit) {
@@ -789,7 +759,6 @@ private fun PreviewMenu(
                 val isSelected = i == selected
                 var focused by remember { mutableStateOf(false) }
                 // Focus owns the white background; selection shows as a white label plus the
-                // check (2026-10-22).
                 val bg = if (focused) HomeSpec.White else Color.Transparent
                 val fg = when {
                     focused -> HomeSpec.InverseOnSurface
@@ -838,7 +807,6 @@ private fun PreviewMenu(
 }
 
 /**
- * Menu position: 16dp above its button, right edges aligned (Figma 3656:2929 / 3653:2222).
  * Falls back to the bottom-right corner when the button bounds are not known yet.
  */
 private class AboveButtonPosition(
@@ -852,7 +820,6 @@ private class AboveButtonPosition(
         popupContentSize: IntSize,
     ): IntOffset {
         val a = anchor
-        // Centred on the button's vertical axis (2026-10-22).
         val x = a?.let { (it.center.x - popupContentSize.width / 2f).toInt() }
             ?: (windowSize.width - popupContentSize.width)
         val y = a?.let { (it.top - popupContentSize.height - gapPx).toInt() }
@@ -864,10 +831,6 @@ private class AboveButtonPosition(
     }
 }
 
-/**
- * Figma 3669:2277: a right-edge sheet, 384x512 at 14dp from the top, light panel with a dark
- * title, a 10% rule and a scrolling body (2026-10-23).
- */
 @Composable
 private fun CaptionSheet(text: String, onDismiss: () -> Unit) {
     val focus = remember { FocusRequester() }
@@ -876,7 +839,6 @@ private fun CaptionSheet(text: String, onDismiss: () -> Unit) {
     val step = with(LocalDensity.current) { CaptionScrollStep.roundToPx().toFloat() }
     val topPx = with(LocalDensity.current) { 14.dp.roundToPx() }
     // Same one-frame arming as PreviewMenu: the popup window would otherwise focus its first
-    // focusable child before the request lands (2026-10-23).
     var armed by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         withFrameNanos { }
@@ -893,7 +855,6 @@ private fun CaptionSheet(text: String, onDismiss: () -> Unit) {
             modifier = Modifier
                 .width(384.dp)
                 .height(512.dp)
-                // Figma rounds only the edge that faces the photo.
                 .background(
                     CaptionPanel,
                     RoundedCornerShape(topStart = 4.dp, bottomStart = 4.dp),
@@ -934,7 +895,6 @@ private fun CaptionSheet(text: String, onDismiss: () -> Unit) {
     }
 }
 
-/** Right edge, 14dp down: Figma 3669:2277 sits at x=576 on the 960 canvas. */
 private class RightEdgeSheetPosition(private val topPx: Int) : PopupPositionProvider {
     override fun calculatePosition(
         anchorBounds: IntRect,

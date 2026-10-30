@@ -7,14 +7,16 @@ import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
 
-/** Where the update dialog's confirm button goes (product decision, 2026-10-18). */
 internal const val DownloadPageUrl = "https://tellygram.app/personal/"
 
 /** What the settings screen learns from one check. */
+/** What the settings screen learns from one check. */
 internal sealed interface UpdateCheck {
+    /** The release is not newer than what is installed. */
     /** The release is not newer than what is installed. */
     data object UpToDate : UpdateCheck
 
+    /** A newer release: [notes] are the release body with its Markdown reduced to text. */
     /** A newer release: [notes] are the release body with its Markdown reduced to text. */
     data class Available(val version: String, val notes: String) : UpdateCheck
 
@@ -66,7 +68,6 @@ internal suspend fun fetchLatestRelease(currentVersion: String): UpdateCheck =
         }
         val version = releaseVersion(json.optString("tag_name"))
             ?: return@withContext UpdateCheck.Failed(UpdateFailure.Parse)
-        // Only a newer release is offered (2026-10-18): the comparison strips the -debug suffix
         // upstream and counts segments numerically, so 1.0.100 beats 1.0.99.
         if (!isNewerVersion(version, currentVersion)) {
             return@withContext UpdateCheck.UpToDate

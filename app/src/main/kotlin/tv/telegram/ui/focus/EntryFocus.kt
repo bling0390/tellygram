@@ -29,7 +29,6 @@ import androidx.compose.ui.focus.FocusRequester
  */
 @Composable
 fun EntryFocus(active: Boolean, target: FocusRequester?) {
-    // One shot per shell composition (2026-10-21): returning from a full-screen viewer flips
     // `active` false → true again, and focusing the bar then stole the card focus the viewer
     // had just restored. A fresh composition — sign out and back in — starts over, so a real
     // entry still lands on the bar.

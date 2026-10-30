@@ -38,7 +38,6 @@ sealed class NavEvent {
 
 class MainViewModel(app: Application) : AndroidViewModel(app), HomeState, SettingsState {
 
-
     val auth = TdAuth(client = TdClient, scope = viewModelScope)
     val chatRepo = TdChatRepository(client = TdClient, scope = viewModelScope)
     val mediaRepo = TdMediaRepository(client = TdClient, scope = viewModelScope)
@@ -198,6 +197,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app), HomeState, Settin
     val themeMode: StateFlow<ThemeMode> = _themeMode.asStateFlow()
 
     /** Set by logOut(): the Closed state that follows is ours, not a startup failure. */
+    /** Set by logOut(): the Closed state that follows is ours, not a startup failure. */
     @Volatile private var signOutRequested = false
 
     private val _language = MutableStateFlow(Language.English)
@@ -272,6 +272,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app), HomeState, Settin
         }
     }
 
+    /** Playback rates offered by the player's speed popover, slowest first. */
     /** Playback rates offered by the player's speed popover, slowest first. */
     val playerSpeeds: List<Float> = listOf(0.5f, 1.0f, 1.5f, 2.0f)
 
@@ -351,7 +352,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app), HomeState, Settin
                 val wasInit = prev is AuthState.WaitTdlibParams || prev is AuthState.WaitEncryptionKey
                 val nowInit = st is AuthState.WaitTdlibParams || st is AuthState.WaitEncryptionKey
                 if (!coldStartHandled && wasInit && !nowInit) {
-                    // 冷启动：离开初始化态 → 首次定向（唯一一次）
                     coldStartHandled = true
                     when {
                         isReady -> { emitNav(NavEvent.GoToHome); wasReady = true }
@@ -359,7 +359,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app), HomeState, Settin
                         else -> { /* 初始化阶段 Error：留在冷启动页兑底 */ }
                     }
                 } else if (isReady && !wasReady && !(prev is AuthState.WaitTdlibParams || prev is AuthState.WaitEncryptionKey)) {
-                    // 非冷启动路径进入 Ready（扫码成功等）
                     emitNav(NavEvent.GoToHome)
                 }
                 wasReady = isReady
@@ -376,6 +375,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app), HomeState, Settin
         viewModelScope.launch { mediaRepo.loadMore() }
     }
 
+    /** Switching a filter chip re-queries the media wall from page one. */
     /** Switching a filter chip re-queries the media wall from page one. */
     override fun setMediaFilter(filter: MediaFilter) {
         val chatId = mediaRepo.currentChatId.value ?: return
@@ -397,6 +397,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app), HomeState, Settin
     }
 
     /** Download only the first chunk of a file — enough for a hover preview. */
+    /** Download only the first chunk of a file — enough for a hover preview. */
     suspend fun ensurePreviewFile(fileId: Int): String? = fileRepo.ensurePreview(fileId)
 }
 
@@ -408,6 +409,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app), HomeState, Settin
 internal fun shouldRestartClosedClient(state: AuthState, signOutRequested: Boolean): Boolean =
     signOutRequested && state is AuthState.Closed
 
+/** What a message-addressed viewer walks, and where it starts. */
 /** What a message-addressed viewer walks, and where it starts. */
 data class ViewerContext(
     val items: List<MediaItem>,

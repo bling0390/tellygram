@@ -80,7 +80,6 @@ import tv.telegram.ui.components.ConfirmDialog
  * its content from the shell's 96dp origin to the frame's 106dp.
  *
  * Row rules, straight from the frames: the section holding focus is a white pill with the
- * dark inverse label, and taking focus selects it (2026-10-15: focus IS the selection, as in
  * the top bar); display-only rows (Version, License) are unfilled; the actionable row
  * ("Check for updates") sits on a surface-container panel and turns white while focused.
  * Everything is 4dp rounded.
@@ -96,28 +95,24 @@ internal fun SettingsScreen(
     /**
      * The shell hands the top bar's Down here: it must point at something *this* page
      * actually composes, otherwise the bar's focus search targets an unattached requester
-     * and throws (see the settings crasher). It is only the Down target — arriving on the
-     * page deliberately does NOT take focus (2026-10-15), so switching to the Setting tab
      * leaves focus on the bar.
      */
     contentEntryFocus: FocusRequester? = null,
     /**
      * The Setting tab's requester: Up from the list's first row lands there instead of
-     * letting the default search find the Chat tab (2026-10-22).
      */
     topBarFocus: FocusRequester? = null,
     modifier: Modifier = Modifier,
     /**
      * How the About pane's "Check for updates" asks GitHub. Injectable so the UI tests can
-     * answer without a network call (2026-10-18).
      */
     checkForUpdate: suspend (String) -> UpdateCheck = ::fetchLatestRelease,
+    /** Opens the download page; null hands it to the system. */
     /** Opens the download page; null hands it to the system. */
     openDownloadPage: ((String) -> Unit)? = null,
 ) {
     var selected by remember { mutableStateOf(SettingsSection.Accounts) }
     var showLogOut by remember { mutableStateOf(false) }
-    // Update check: one request at a time, and one dialog for its outcome (2026-10-18).
     var checking by remember { mutableStateOf(false) }
     var updateDialog by remember { mutableStateOf<UpdateDialog?>(null) }
     val context = LocalContext.current
@@ -126,12 +121,10 @@ internal fun SettingsScreen(
     // Left/Right between the section list and the pane: Right from the list always reaches
     // the pane's entry stop, and a pane row going Left returns to the CHOSEN section (the
     // default geometric search drifted to whichever item happened to sit leftwards).
-    // Where a pane row's Left lands. Taking focus selects a section (2026-10-15), so the
     // chosen section is always the one that last held focus: one requester covers both the
     // "return to the chosen section" and the "return where I came from" cases.
     val selectedSectionFocus = remember { FocusRequester() }
     val paneEntryFocus = remember { FocusRequester() }
-    // Where OK on a section row lands: the pane's FIRST focusable row (2026-10-15). In
     // Accounts and About that is the single actionable row; in the language pane it is the
     // first language. Deliberately separate from paneEntryFocus, which the Right key uses and
     // which remembers the row the user last visited.
@@ -146,7 +139,6 @@ internal fun SettingsScreen(
     val user by state.currentUser.collectAsStateWithLifecycle()
     val language by state.language.collectAsStateWithLifecycle()
 
-    // Opaque like the home screen's root (2026-10-15): the window has a backdrop, but the
     // NavHost keeps the outgoing page composed while a tab switch settles, and a transparent
     // root let the two content areas draw into the same box.
     Box(modifier = modifier.fillMaxSize().background(HomeSpec.Background)) {
@@ -166,7 +158,6 @@ internal fun SettingsScreen(
             SettingsSection.entries.forEachIndexed { index, section ->
                 SectionItem(
                     section = section,
-                    // Focus IS the selection: taking focus switches the pane (2026-10-15).
                     onSelect = { selected = section },
                     // OK enters the pane this section shows. Help composes no focusable row, so
                     // there is nowhere to go and the press stays on the row.
@@ -351,7 +342,6 @@ internal fun SettingsScreen(
                         onConfirm = {
                             // Hand it to the system and leave the panel up: a box with no
                             // browser shows its own prompt, and only Back or Cancel closes
-                            // this dialog (2026-10-18).
                             if (openDownloadPage != null) {
                                 openDownloadPage(DownloadPageUrl)
                             } else {
@@ -368,6 +358,7 @@ internal fun SettingsScreen(
 }
 
 /** The update flow's dialog states: nothing at all while a check is in flight. */
+/** The update flow's dialog states: nothing at all while a check is in flight. */
 private sealed interface UpdateDialog {
     data object UpToDate : UpdateDialog
     data class Available(val version: String, val notes: String) : UpdateDialog
@@ -383,7 +374,6 @@ private fun UpdateFailure.messageRes(): Int = when (this) {
 /**
  * Hands the download page to the system. A TV without a browser answers with its own prompt
  * ("you don't have an app to do that"), and a box without even that fails silently — either way
- * this side has nothing further to show (2026-10-18).
  */
 private fun openInBrowser(context: Context, url: String) {
     runCatching {
@@ -394,7 +384,6 @@ private fun openInBrowser(context: Context, url: String) {
         android.util.Log.i("SettingsUpdate", "could not open $url: ${it.javaClass.simpleName}")
     }
 }
-
 
 private enum class SettingsSection(val labelRes: Int, val icon: ImageVector) {
     Accounts(R.string.settings_account, Icons.Outlined.Person),
@@ -407,16 +396,21 @@ private enum class SettingsSection(val labelRes: Int, val icon: ImageVector) {
 private fun SectionItem(
     section: SettingsSection,
     /** Called when this row takes focus: focus IS the selection. */
+    /** Called when this row takes focus: focus IS the selection. */
     onSelect: () -> Unit,
+    /** Called when OK lands on it: hand focus to the pane this section shows. */
     /** Called when OK lands on it: hand focus to the pane this section shows. */
     onConfirmed: () -> Unit,
     requester: FocusRequester? = null,
+    /** The chosen row's own requester, so a pane row's Left can return to it. */
     /** The chosen row's own requester, so a pane row's Left can return to it. */
     sectionFocus: FocusRequester? = null,
     rightRequester: FocusRequester? = null,
     cancelDown: Boolean = false,
     /** Up target for the first row: the Setting tab. */
+    /** Up target for the first row: the Setting tab. */
     upRequester: FocusRequester? = null,
+    /** The Help entry is the list's end: only Up may move out of it. */
     /** The Help entry is the list's end: only Up may move out of it. */
     cancelLeft: Boolean = false,
     cancelRight: Boolean = false,
@@ -480,6 +474,7 @@ private fun SectionItem(
 }
 
 /** A display-only row: label on the left, value on the right, no fill (per the frame). */
+/** A display-only row: label on the left, value on the right, no fill (per the frame). */
 @Composable
 private fun DisplayRow(label: String, value: String) {
     Row(
@@ -516,7 +511,6 @@ private fun LicenseRow() =
     DisplayRow(stringResource(R.string.settings_about_row_license), stringResource(R.string.settings_about_license_value))
 
 /**
- * The frame's actionable row: asks GitHub whether a newer release exists (2026-10-18). The label
  * reports the request while it is in flight, so a slow network does not read as a dead button.
  */
 @Composable
@@ -539,6 +533,7 @@ private fun CheckForUpdatesRow(
 )
 
 /** An actionable row: surface-container at rest, white with the dark label once focused. */
+/** An actionable row: surface-container at rest, white with the dark label once focused. */
 @Composable
 private fun ActionRow(
     label: String,
@@ -546,6 +541,7 @@ private fun ActionRow(
     onClick: () -> Unit,
     leftRequester: FocusRequester? = null,
     entryRequester: FocusRequester? = null,
+    /** OK on the section row above lands here: this is the pane's first focusable row. */
     /** OK on the section row above lands here: this is the pane's first focusable row. */
     firstRequester: FocusRequester? = null,
 ) {
@@ -600,6 +596,7 @@ private fun LanguageRow(
     onSelect: () -> Unit,
     leftRequester: FocusRequester? = null,
     entryRequester: FocusRequester? = null,
+    /** Carried by the pane's first row, where OK on the section row above lands. */
     /** Carried by the pane's first row, where OK on the section row above lands. */
     firstRequester: FocusRequester? = null,
     // The list is a closed column: Up at the first row, Down at the last one and Right
@@ -699,8 +696,10 @@ private fun languageLabel(lang: Language): String = when (lang) {
 }
 
 /** Focus tracking helper: keeps every row's focus bookkeeping identical. */
+/** Focus tracking helper: keeps every row's focus bookkeeping identical. */
 private fun Modifier.onFocusState(onChange: (Boolean) -> Unit): Modifier =
     this.onFocusChanged { state -> onChange(state.isFocused) }
 
+/** Rows span the pane's 452dp column. */
 /** Rows span the pane's 452dp column. */
 private fun Modifier.fillMaxSizeWidth(): Modifier = this.then(Modifier.width(HomeSpec.SettingsPaneWidth))

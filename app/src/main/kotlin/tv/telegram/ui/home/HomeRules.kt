@@ -14,8 +14,10 @@ import tv.telegram.ui.components.RowColors
  */
 
 /** Columns in the media grid (design: three 160dp cells). */
+/** Columns in the media grid (design: three 160dp cells). */
 internal const val GridColumns = 3
 
+/** Where the Back key sends focus, per the design's rules. */
 /** Where the Back key sends focus, per the design's rules. */
 internal enum class HomeBackTarget { SelectedChat, FirstGridCell, TopBar }
 
@@ -28,7 +30,6 @@ internal fun isFirstRow(index: Int, columns: Int = GridColumns): Boolean = index
 
 /**
  * The cell focus enters the grid on: the one the user last left it from, clamped to what the chat
- * actually has (2026-10-17). The caller resets the remembered value when the chat changes, so a
  * switched chat always enters at [0,0]; a chat with fewer cells than the remembered index also
  * falls back to the start instead of landing past the end.
  */
@@ -44,6 +45,7 @@ internal fun backTarget(region: HomeRegion?, gridIndex: Int): HomeBackTarget? = 
     null -> null
 }
 
+/** How a media card is drawn. Album carries its member count for the "+N". */
 /** How a media card is drawn. Album carries its member count for the "+N". */
 internal sealed interface MediaCellKind {
     data object Photo : MediaCellKind
@@ -66,6 +68,7 @@ internal fun MediaItem.cellKind(): MediaCellKind = when {
 }
 
 /** Seconds -> "m:ss", or "h:mm:ss" past an hour (matches the design's 01:59:59). */
+/** Seconds -> "m:ss", or "h:mm:ss" past an hour (matches the design's 01:59:59). */
 internal fun formatDuration(totalSeconds: Int): String {
     val s = totalSeconds.coerceAtLeast(0)
     val h = s / 3600
@@ -75,10 +78,10 @@ internal fun formatDuration(totalSeconds: Int): String {
 }
 
 /** Colours of one chat row and its badges, decided in one place. */
+/** Colours of one chat row and its badges, decided in one place. */
 internal data class ChatRowColors(val fill: Color, val text: Color, val unreadDot: Color)
 
 /**
- * How long focus must rest on a chat before its media is queried (2026-10-15). Focus
  * selects a chat for the eye at once, but the query waits: holding Down through a long
  * list would otherwise fire one TDLib query per row it passes. OK skips the wait.
  */
@@ -88,13 +91,11 @@ internal const val ChatOpenDebounceMs = 300L
  * Row state -> colours.
  *
  * The design annotates the chat-name row so the filled background belongs to the row that
- * holds focus — which is also the selected chat, since focus IS the selection (2026-10-15).
  * A pinned chat keeps the plain styling and shows its state through the pin glyph. `pinned`
  * is accepted and deliberately ignored so the rule is stated once and can be asserted: a
  * pinned row must look exactly like a plain one.
  */
 internal fun chatRowColors(highlighted: Boolean, pinned: Boolean): ChatRowColors = if (highlighted) {
-    // The 2026-09-26 frames draw the focused/selected row as the white pill with the dark
     // label (it used to be the on-surface grey), and keep the brighter tertiary-fixed dot.
     ChatRowColors(HomeSpec.White, HomeSpec.InverseOnSurface, HomeSpec.TertiaryFixed)
 } else {
@@ -102,18 +103,17 @@ internal fun chatRowColors(highlighted: Boolean, pinned: Boolean): ChatRowColors
 }
 
 /**
- * The filter chips' two looks (design 3608:2203, 2026-10-16): the white pill with the dark
  * label belongs to FOCUS alone, and the check — not the fill — is what marks the filter in
  * effect. A chip that is merely applied therefore keeps the outlined look with a white label.
  */
 internal fun filterChipColors(focused: Boolean): RowColors = if (focused) {
     RowColors(HomeSpec.White, HomeSpec.InverseOnSurface)
 } else {
-    // Opaque page colour rather than transparent (2026-10-17): the chip then reads exactly as it
     // did on the page — the colour is the page's own — but nothing behind it can show through.
     RowColors(HomeSpec.Background, HomeSpec.White)
 }
 
+/** What confirming a media card opens. */
 /** What confirming a media card opens. */
 internal enum class MediaOpenTarget { Player, AudioPlayer, PhotoPreview }
 
@@ -123,12 +123,12 @@ internal enum class MediaOpenTarget { Player, AudioPlayer, PhotoPreview }
  */
 internal fun mediaOpenTarget(kind: MediaCellKind): MediaOpenTarget = when (kind) {
     is MediaCellKind.Photo -> MediaOpenTarget.PhotoPreview
-    // A track gets its own screen (2026-10-16): the video-shaped player has no picture to show
     // for it and its walk list is videos only, so it is the wrong home for audio.
     is MediaCellKind.Audio -> MediaOpenTarget.AudioPlayer
     else -> MediaOpenTarget.Player
 }
 
+/** Index of the media item carrying this message id; -1 when it is not loaded. */
 /** Index of the media item carrying this message id; -1 when it is not loaded. */
 internal fun indexOfMessage(items: List<MediaItem>, messageId: Long): Int =
     items.indexOfFirst { it.messageId == messageId }
@@ -136,7 +136,6 @@ internal fun indexOfMessage(items: List<MediaItem>, messageId: Long): Int =
 /**
  * The grid card that stands for [messageId]: the card itself, or the album card whose members
  * include it — album members are grouped under their representative, so a preview opened from
- * the album popup has to return to that card too (2026-10-17). -1 when the wall holds neither.
  */
 internal fun gridIndexForMessage(items: List<MediaItem>, messageId: Long): Int {
     val direct = indexOfMessage(items, messageId)
@@ -146,7 +145,6 @@ internal fun gridIndexForMessage(items: List<MediaItem>, messageId: Long): Int {
 
 /**
  * Which album member the popup should focus: the one that was opened before a viewer took over,
- * so Back lands where the user was, or the first when there is no such member (2026-10-17).
  */
 internal fun albumFocusIndex(members: List<MediaItem>, messageId: Long?): Int {
     if (messageId == null) return 0
@@ -156,14 +154,12 @@ internal fun albumFocusIndex(members: List<MediaItem>, messageId: Long?): Int {
 
 /**
  * The chat row that acts as the list's entry: the selected chat, or the first row of the list
- * actually showing when nothing is selected yet (2026-10-17 — the archived list used to compare
  * against the main one, which left it with no entry row at all).
  */
 internal fun entryChatId(selectedChatId: Long?, visibleChats: List<ChatItem>): Long? =
     selectedChatId ?: visibleChats.firstOrNull()?.id
 
 /**
- * The Verified badge. The 2026-09-27 spec: on the focused (white) row it takes the row's
  * own inverse-on-surface, so it reads as part of the label; at rest it keeps the brand
  * primary that the earlier frames drew.
  */
@@ -180,13 +176,11 @@ internal fun albumHeaderCaption(members: List<MediaItem>): String? =
 
 /**
  * The space BETWEEN slots, given the gap the design wants between the visible cards: the ring
- * band sits inside each slot, so two adjacent slots contribute a band each (2026-10-01).
  */
 internal fun slotGap(cellGap: Dp, ring: Dp): Dp = cellGap - ring * 2
 
 /**
  * Where focus has to go back after a menu action reordered the list: the chat with [id], found by
- * id rather than by the index it used to sit at — a pin sends it to the top (2026-10-17). Null
  * when there is nothing to return to: no id, or the chat left this list (archived/deleted).
  */
 internal fun returnFocusIndex(chats: List<ChatItem>, id: Long?): Int? {
