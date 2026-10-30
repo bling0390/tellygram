@@ -27,5 +27,6 @@ private fun soundEffectFor(key: Key): Int? = when (key) {
     Key.DirectionLeft -> SoundEffectConstants.NAVIGATION_LEFT
     Key.DirectionRight -> SoundEffectConstants.NAVIGATION_RIGHT
     Key.DirectionCenter, Key.Enter -> SoundEffectConstants.CLICK
+    Key.Back -> SoundEffectConstants.CLICK
     else -> null
 }
